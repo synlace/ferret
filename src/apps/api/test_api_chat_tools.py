@@ -755,3 +755,31 @@ class TestStreamSessionMessage:
         done_events = [e for e in events if e.get("type") == "done"]
         assert len(done_events) == 1, f"Expected 1 done event, got: {done_events}"
         assert "messages" in done_events[0]
+
+    @pytest.mark.asyncio
+    async def test_stream_returns_503_when_no_key_provisioned(self, client, mem_db):
+        """
+        When the project has no provisioned OpenRouter key, the streaming
+        endpoint must return HTTP 503 with a JSON body whose 'detail' field
+        mentions 'provisioned key' — so the frontend can detect it and show
+        the helper notice instead of silently doing nothing.
+        """
+        # Ensure the temp project exists but has NO key seeded
+        await mem_db.seed_temp_project()
+
+        create_resp = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
+        session_id = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/chats/{session_id}/messages/stream",
+            json={"message": "Hello"},
+        )
+
+        assert resp.status_code == 503, (
+            f"Expected 503 when no key is provisioned, got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert "detail" in body, f"Expected 'detail' in response body, got: {body}"
+        assert "provisioned key" in body["detail"], (
+            f"Expected 'provisioned key' in detail, got: {body['detail']!r}"
+        )

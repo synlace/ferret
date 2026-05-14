@@ -37,7 +37,7 @@ interface WorkspaceSession {
   workspace_dir: string | null; created_at: string
 }
 interface ChatMsg {
-  role: "user" | "assistant" | "tool"; content: string | null
+  role: "user" | "assistant" | "tool" | "notice"; content: string | null
   name?: string; toolArgs?: string; toolArgsRaw?: string
   tool_call_id?: string
   tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>
@@ -350,7 +350,17 @@ function WorkspacesPageInner() {
         body: JSON.stringify({ message: userMsg.content, model, max_tool_calls: maxToolCalls }),
         signal: abort.signal,
       })
-      if (!res.ok || !res.body) { setLoading(false); return }
+      if (!res.ok) {
+        let detail = "Unknown error"
+        try { const errBody = await res.json(); detail = errBody.detail ?? detail } catch { /* ignore */ }
+        const isNoKey = detail.includes("provisioned key")
+        const content = isNoKey
+          ? `**No API key configured for this project.**\n\nGo to **Projects → Keys → Create Key** to provision one, then come back and send your message.`
+          : `Error: ${detail}`
+        setMessages(prev => [...prev, { role: "notice", content, timestamp: nowTs() }])
+        setLoading(false); return
+      }
+      if (!res.body) { setLoading(false); return }
       const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = ""
       streamDoneReceived.current = false
 
@@ -406,7 +416,12 @@ function WorkspacesPageInner() {
             }
           } else if (evt.type === "error") {
             streamDoneReceived.current = true
-            setMessages(prev => [...prev, { role: "assistant", content: `Error: ${evt.detail ?? evt.message ?? "Unknown error"}`, timestamp: nowTs() }])
+            const detail: string = evt.detail ?? evt.message ?? "Unknown error"
+            const isNoKey = detail.includes("provisioned key")
+            const content = isNoKey
+              ? `**No API key configured for this project.**\n\nGo to **Projects → Keys → Create Key** to provision one, then come back and send your message.`
+              : `Error: ${detail}`
+            setMessages(prev => [...prev, { role: "assistant", content, timestamp: nowTs() }])
             setStreamingContent(""); setLiveToolCalls([]); setLoading(false)
           }
         } catch { /**/ }
@@ -719,6 +734,18 @@ function WorkspacesPageInner() {
                   )
                 }
                 if (msg.role === "assistant" && !(msg.content ?? "").trim()) return null
+                if (msg.role === "notice") {
+                  return (
+                    <div key={i} className="flex flex-col items-start">
+                      <div className="max-w-[80%] px-3 py-2 text-sm border bg-orange-500/10 text-orange-200 border-orange-500/30">
+                        <MarkdownContent content={msg.content ?? ""} />
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 px-1">
+                        <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
+                      </div>
+                    </div>
+                  )
+                }
                 return (
                   <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
                     <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-orange-500/15 text-white border-orange-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>

@@ -1141,10 +1141,8 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
     try:
         project_id, _api_key, _project = await _resolve_project_and_key(session_id, project_id)
     except HTTPException as e:
-        # Can't raise inside a StreamingResponse generator, so return error SSE immediately
-        async def _err():
-            yield f"data: {json.dumps({'type': 'error', 'detail': e.detail})}\n\n"
-        return StreamingResponse(_err(), media_type="text/event-stream")
+        # Return a plain JSON error — the frontend checks res.ok and handles it.
+        raise
 
     _project_model = (_project.get("default_model") if _project else None) or deps.OPENROUTER_MODEL
     model = body.model or _project_model
