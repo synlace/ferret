@@ -1,0 +1,140 @@
+"use client"
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { ShieldCheck, Download, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+
+export default function SettingsPage() {
+  const [certStatus, setCertStatus] = useState<"idle" | "downloading" | "ok" | "error">("idle")
+  const [certError, setCertError] = useState<string | null>(null)
+
+  const downloadCert = async () => {
+    setCertStatus("downloading")
+    setCertError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/ca-cert`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(body.detail ?? `HTTP ${res.status}`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "ferret-ca-cert.pem"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setCertStatus("ok")
+    } catch (err) {
+      setCertError(err instanceof Error ? err.message : "Download failed")
+      setCertStatus("error")
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden bg-neutral-950 text-white">
+
+      {/* Page header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
+        <h1 className="text-sm font-bold text-white">Settings</h1>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+
+        {/* CA Certificate section */}
+        <div className="border-b border-neutral-800">
+          {/* Section header */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900">
+            <ShieldCheck className="w-4 h-4 text-orange-400 flex-shrink-0" />
+            <span className="text-xs font-semibold text-white uppercase tracking-wider">CA Certificate</span>
+          </div>
+
+          <div className="px-4 py-3 space-y-3">
+            <p className="text-xs text-neutral-400">
+              Import this certificate into your browser or OS trust store to intercept HTTPS traffic without security warnings.
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={downloadCert}
+                disabled={certStatus === "downloading"}
+                size="sm"
+                className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
+              >
+                {certStatus === "downloading" ? (
+                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Downloading…</>
+                ) : certStatus === "ok" ? (
+                  <><CheckCircle className="w-3 h-3 mr-1.5" /> Downloaded</>
+                ) : (
+                  <><Download className="w-3 h-3 mr-1.5" /> Download ferret-ca-cert.pem</>
+                )}
+              </Button>
+              {certStatus === "ok" && (
+                <span className="text-xs text-green-400">Certificate saved successfully</span>
+              )}
+            </div>
+
+            {certStatus === "error" && certError && (
+              <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{certError}</span>
+              </div>
+            )}
+
+            {/* Installation instructions */}
+            <div className="space-y-2 pt-1">
+              <p className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Installation instructions</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 border border-neutral-800 divide-y md:divide-y-0 md:divide-x divide-neutral-800">
+                {/* Firefox */}
+                <div className="p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-white">Firefox</p>
+                  <ol className="text-xs text-neutral-400 space-y-1 list-decimal list-inside">
+                    <li>Open <span className="text-neutral-200">Settings → Privacy &amp; Security</span></li>
+                    <li>Scroll to <span className="text-neutral-200">Certificates → View Certificates</span></li>
+                    <li>Click <span className="text-neutral-200">Authorities → Import</span></li>
+                    <li>Select <code className="text-emerald-400">ferret-ca-cert.pem</code></li>
+                    <li>Check <span className="text-neutral-200">"Trust this CA to identify websites"</span></li>
+                  </ol>
+                </div>
+
+                {/* Chrome / macOS */}
+                <div className="p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-white">Chrome / macOS</p>
+                  <ol className="text-xs text-neutral-400 space-y-1 list-decimal list-inside">
+                    <li>Double-click <code className="text-emerald-400">ferret-ca-cert.pem</code></li>
+                    <li>Keychain Access opens — add to <span className="text-neutral-200">System</span></li>
+                    <li>Find the cert, double-click it</li>
+                    <li>Expand <span className="text-neutral-200">Trust</span> → set to <span className="text-neutral-200">Always Trust</span></li>
+                    <li>Restart Chrome</li>
+                  </ol>
+                </div>
+
+                {/* Linux */}
+                <div className="p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-white">Linux (system-wide)</p>
+                  <ol className="text-xs text-neutral-400 space-y-1 list-decimal list-inside">
+                    <li>Copy cert to <code className="text-emerald-400">/usr/local/share/ca-certificates/ferret.crt</code></li>
+                    <li>Run <code className="text-emerald-400">sudo update-ca-certificates</code></li>
+                    <li>For Chrome: open <span className="text-neutral-200">chrome://settings/certificates</span> → Authorities → Import</li>
+                  </ol>
+                </div>
+              </div>
+
+              <p className="text-xs text-neutral-600">
+                The certificate is generated by mitmproxy on first proxy start and is unique to this installation.
+                Stored at <code className="text-neutral-500">~/.mitmproxy/mitmproxy-ca-cert.pem</code> inside the container.
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}

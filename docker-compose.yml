@@ -1,0 +1,90 @@
+services:
+  # ── Docker socket proxy ────────────────────────────────────────────────────
+  # Exposes only the Docker API operations Ferret actually needs:
+  #   CONTAINERS=1  → inspect/list containers (needed to find ferret-lab)
+  #   EXEC=1        → docker exec (needed to run AI-generated tests/scripts)
+  #   POST=1        → required for exec create + start calls
+  # Everything else (image pull, volume mount, privileged container creation)
+  # is denied, limiting the blast radius if the API container is compromised.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  api:
+    build:
+      context: src/apps/api
+      dockerfile: Dockerfile
+    image: ferret-api:latest
+    ports:
+      - "8000:8000"
+      - "1337:1337"
+    environment:
+      PROXY_HOST: ${PROXY_HOST:-0.0.0.0}
+      PROXY_PORT: ${PROXY_PORT:-1337}
+      OPENROUTER_PROVISIONING_KEY: ${OPENROUTER_PROVISIONING_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-3-flash-preview}
+      FERRET_TESTS_DIR: /data/tests
+      FERRET_WORKSPACES_DIR: /data/workspaces
+      FERRET_SANDBOX_CONTAINER: ferret-lab
+      # Route Docker CLI calls through the socket proxy instead of the raw socket.
+      DOCKER_HOST: tcp://docker-proxy:2375
+    volumes:
+      - ${FERRET_DATA_DIR:-./data}:/data
+    depends_on:
+      - docker-proxy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  ui:
+    build:
+      context: src/apps/ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SIGINT_URL: ${NEXT_PUBLIC_SIGINT_URL:-}
+    image: ferret-ui:latest
+    ports:
+      - "${UI_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  lab:
+    build:
+      context: src/apps/lab
+      dockerfile: Dockerfile
+    image: ferret-lab:latest
+    container_name: ferret-lab
+    volumes:
+      - ${FERRET_DATA_DIR:-./data}:/data
+      - ${FERRET_DATA_DIR:-./data}/workspaces:/workspaces
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_PTRACE
+    restart: unless-stopped
+    depends_on:
+      - api
+
+# No named volumes — data is bind-mounted to ${FERRET_DATA_DIR:-./data} on the host.
+# This makes ./data/tests, ./data/mitmproxy, ./data/workspaces, etc. directly accessible for editing.
+# The lab container also gets ./data/workspaces mounted at /workspaces so scripts/tests
+# written by the AI are accessible at the same path the API uses when building docker exec commands.

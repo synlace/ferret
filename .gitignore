@@ -1,0 +1,10 @@
+# Runtime data directory (bind-mounted into containers via FERRET_DATA_DIR)
+data/
+
+# Environment files — use .env.example as the template
+.env
+.env.local
+.env.*.local
+
+# Design mockups — not part of the shipped product
+mockups/

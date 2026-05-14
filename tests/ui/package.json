@@ -1,0 +1,12 @@
+{
+  "name": "ferret-ui-tests",
+  "version": "1.0.0",
+  "description": "FERRET UI end-to-end tests (Playwright)",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/link-playwright.cjs"
+  },
+  "devDependencies": {
+    "tslib": "latest"
+  }
+}
