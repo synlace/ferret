@@ -4,20 +4,50 @@
 
 ## Screenshots
 
+<table>
+<tr>
+<td width="50%">
+
 ![Findings](assets/20260515_004014.png)
+
 **Findings** — AI-generated findings list with severity, host, type, and status. Tracks vulnerabilities across projects with evidence from intercepted traffic.
 
+</td>
+<td width="50%">
+
 ![History](assets/20260515_004037.png)
+
 **History** — Full request/response history with AI annotations. Browse, filter, and inspect every proxied request with timing and size metrics.
 
+</td>
+</tr>
+<tr>
+<td width="50%">
+
 ![Gnaw](assets/20260515_004055.png)
+
 **Gnaw** — Persistent repeater tabs. Edit and resend requests manually with full request/response editors and proxy routing.
 
+</td>
+<td width="50%">
+
 ![Workspaces](assets/20260515_004131.png)
+
 **Workspaces** — AI chat session with script runner and tool panel. Write and execute scripts against the target, with AI context scoped to the current project.
 
+</td>
+</tr>
+<tr>
+<td width="50%">
+
 ![Snare](assets/20260515_004201.png)
+
 **Snare** — Intercept and modify requests in-flight. Queue pending requests and edit them before forwarding or dropping.
+
+</td>
+<td width="50%"></td>
+</tr>
+</table>
 
 ---
 
