@@ -2,18 +2,13 @@
 
 **AI-assisted HTTP interception and analysis for security testers.**
 
-![ferret UI](assets/20260515_000102.png)
-
 ## Screenshots
 
-| Screenshot | View |
-|---|---|
-| ![](assets/20260515_004014.png) | **Findings** — AI-generated findings list with severity, host, type, and status |
-| ![](assets/20260515_004037.png) | **History** — Request history with request/response detail and AI annotation |
-| ![](assets/20260515_004055.png) | **Gnaw** — Persistent repeater with request/response editor |
-| ![](assets/20260515_004103.png) | **Findings** — Findings detail with evidence panel |
-| ![](assets/20260515_004131.png) | **Workspaces** — AI chat session with script runner and tool panel |
-| ![](assets/20260515_004201.png) | **Snare** — Intercepted requests queue with in-flight editing |
+![Findings](assets/20260515_004014.png)
+![History](assets/20260515_004037.png)
+![Gnaw](assets/20260515_004055.png)
+![Workspaces](assets/20260515_004131.png)
+![Snare](assets/20260515_004201.png)
 
 ---
 
