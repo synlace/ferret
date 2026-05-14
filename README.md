@@ -10,14 +10,14 @@
 
 ![Findings](assets/20260515_004014.png)
 
-**Findings** — AI-generated findings list with severity, host, type, and status. Tracks vulnerabilities across projects with evidence from intercepted traffic.
+**Findings** — Vulnerability list with severity, host, type, and AI-generated evidence.
 
 </td>
 <td width="50%">
 
 ![History](assets/20260515_004037.png)
 
-**History** — Full request/response history with AI annotations. Browse, filter, and inspect every proxied request with timing and size metrics.
+**History** — Proxied request log with AI annotations, timing, and response detail.
 
 </td>
 </tr>
@@ -26,14 +26,14 @@
 
 ![Gnaw](assets/20260515_004055.png)
 
-**Gnaw** — Persistent repeater tabs. Edit and resend requests manually with full request/response editors and proxy routing.
+**Gnaw** — Persistent repeater. Edit and resend requests with full request/response editors.
 
 </td>
 <td width="50%">
 
 ![Workspaces](assets/20260515_004131.png)
 
-**Workspaces** — AI chat session with script runner and tool panel. Write and execute scripts against the target, with AI context scoped to the current project.
+**Workspaces** — AI chat with script runner. Execute scripts against the target with project-scoped context.
 
 </td>
 </tr>
@@ -42,10 +42,16 @@
 
 ![Snare](assets/20260515_004201.png)
 
-**Snare** — Intercept and modify requests in-flight. Queue pending requests and edit them before forwarding or dropping.
+**Snare** — Intercept requests in-flight. Edit and forward or drop before they reach the server.
 
 </td>
-<td width="50%"></td>
+<td width="50%">
+
+![Workspaces — Test Runner](assets/20260515_004939.png)
+
+**Workspaces (Tests)** — Write and run pytest tests in the workspace with inline output.
+
+</td>
 </tr>
 </table>
 
