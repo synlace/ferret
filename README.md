@@ -10,7 +10,7 @@
 
 ![Findings](assets/20260515_004014.png)
 
-**Findings** — Vulnerability list with severity, host, type, and AI-generated evidence.
+**Findings** — Vulnerability list with severity, host, type, and evidence.
 
 </td>
 <td width="50%">
