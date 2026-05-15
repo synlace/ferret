@@ -1,5 +1,4 @@
 # ferret-lab - lightweight web pentest sandbox for FERRET AI test execution
-# Trimmed from the full Kali image (~10 GB) to web-relevant tools only (~2 GB).
 # The full tool set is preserved in Dockerfile.full for reference.
 FROM kalilinux/kali-rolling
 
