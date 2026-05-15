@@ -108,7 +108,6 @@ async def client(mem_db, tmp_path):
     * ``deps.db_client``                → the in-memory SQLiteClient  (routers read from deps)
     * ``deps.mitm_manager``             → a fully-mocked MitmproxyManager
     * ``deps.TESTS_DIR``                → a temporary directory (empty by default)
-    * ``deps.OPENROUTER_PROVISIONING_KEY`` → "" (prevents real OR key creation in tests)
     * ``main.db_client``                → same in-memory SQLiteClient  (backward compat)
     * ``main.mitm_manager``             → same mock manager            (backward compat)
     * ``main.TESTS_DIR``                → same tmp_path                (backward compat)
@@ -130,7 +129,6 @@ async def client(mem_db, tmp_path):
         patch.object(deps_module, "db_client", mem_db),
         patch.object(deps_module, "mitm_manager", mock_mgr),
         patch.object(deps_module, "TESTS_DIR", tmp_path),
-        patch.object(deps_module, "OPENROUTER_PROVISIONING_KEY", ""),
         patch.object(main_module, "db_client", mem_db),
         patch.object(main_module, "mitm_manager", mock_mgr),
         patch.object(main_module, "TESTS_DIR", tmp_path),
@@ -164,7 +162,6 @@ async def client_with_tests_dir(mem_db, tmp_path):
         patch.object(deps_module, "db_client", mem_db),
         patch.object(deps_module, "mitm_manager", mock_mgr),
         patch.object(deps_module, "TESTS_DIR", tmp_path),
-        patch.object(deps_module, "OPENROUTER_PROVISIONING_KEY", ""),
         patch.object(main_module, "db_client", mem_db),
         patch.object(main_module, "mitm_manager", mock_mgr),
         patch.object(main_module, "TESTS_DIR", tmp_path),

@@ -317,3 +317,23 @@ class KeySpend(BaseModel):
     usage_usd: float
     limit_usd: Optional[float] = None
     remaining_usd: Optional[float] = None  # limit - usage if limit set
+
+
+# ---------------------------------------------------------------------------
+# Setup / First-run wizard
+# ---------------------------------------------------------------------------
+
+class SetupConfig(BaseModel):
+    """Payload submitted by the setup wizard to configure the AI provider."""
+    provider: str = Field(..., description="Provider key: openrouter | openai | anthropic | gemini | deepseek | mistral | ollama | lmstudio")
+    api_key: Optional[str] = Field(None, description="API key for cloud providers")
+    provisioning_key: Optional[str] = Field(None, description="OpenRouter provisioning key (optional — enables per-project sub-key creation)")
+    base_url: Optional[str] = Field(None, description="Base URL for local providers (Ollama, LM Studio)")
+    model: str = Field(..., description="Default model identifier")
+
+
+class SetupStatus(BaseModel):
+    """Returned by GET /api/setup to indicate whether setup has been completed."""
+    setup_complete: bool
+    provider: Optional[str] = None
+    model: Optional[str] = None

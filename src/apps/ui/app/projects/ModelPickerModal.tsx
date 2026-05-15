@@ -14,28 +14,49 @@ function saveFavourites(ids: string[]) {
   try { localStorage.setItem(FERRET_FAVOURITE_MODELS_KEY, JSON.stringify(ids)) } catch { /* ignore */ }
 }
 
+async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
+  const r = await fetch("https://openrouter.ai/api/v1/models")
+  if (!r.ok) throw new Error(`OpenRouter returned ${r.status}`)
+  const d: { data?: OpenRouterModel[] } = await r.json()
+  return d.data ?? []
+}
+
 export function ModelPickerModal({
   currentModel,
   onSelect,
   onClose,
+  getModels,
 }: {
   currentModel: string
   onSelect: (id: string) => void
   onClose: () => void
+  /** Optional model-fetch override. When omitted, fetches from OpenRouter. */
+  getModels?: () => Promise<{ id: string; name: string }[]>
 }) {
   const [models, setModels] = useState<OpenRouterModel[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [favourites, setFavourites] = useState<string[]>(() => loadFavourites())
   const modalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetch("https://openrouter.ai/api/v1/models")
-      .then(r => r.ok ? r.json() : { data: [] })
-      .then((d: { data?: OpenRouterModel[] }) => setModels(d.data ?? []))
-      .catch(() => {})
+    setLoading(true)
+    setFetchError(null)
+
+    const load = getModels
+      ? () => getModels().then(ms => ms.map(m => ({
+          id: m.id,
+          name: m.name,
+          context_length: 0,
+        } as OpenRouterModel)))
+      : fetchOpenRouterModels
+
+    load()
+      .then(ms => setModels(ms))
+      .catch(err => setFetchError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false))
-  }, [])
+  }, [getModels])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
@@ -108,6 +129,11 @@ export function ModelPickerModal({
         <div className="overflow-y-auto flex-1">
           {loading ? (
             <div className="px-4 py-8 text-center text-neutral-500 text-xs">Loading models…</div>
+          ) : fetchError ? (
+            <div className="px-4 py-8 text-center space-y-1">
+              <p className="text-red-400 text-xs font-medium">Failed to load models</p>
+              <p className="text-neutral-500 text-[11px]">{fetchError}</p>
+            </div>
           ) : (
             <>
               {favModels.length > 0 && (
@@ -122,6 +148,9 @@ export function ModelPickerModal({
                   {ms.map((m: OpenRouterModel) => <ModelRow key={m.id} m={m} />)}
                 </div>
               ))}
+              {filtered.length === 0 && (
+                <div className="px-4 py-8 text-center text-neutral-500 text-xs">No models match</div>
+              )}
             </>
           )}
         </div>

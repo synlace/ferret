@@ -1,14 +1,23 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ShieldCheck, Download, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { ShieldCheck, Download, CheckCircle, AlertCircle, Loader2, Cpu } from "lucide-react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export default function SettingsPage() {
   const [certStatus, setCertStatus] = useState<"idle" | "downloading" | "ok" | "error">("idle")
   const [certError, setCertError] = useState<string | null>(null)
+  const [aiConfig, setAiConfig] = useState<{ provider?: string; model?: string } | null>(null)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/setup`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setAiConfig({ provider: d.provider, model: d.model }) })
+      .catch(() => {})
+  }, [])
 
   const downloadCert = async () => {
     setCertStatus("downloading")
@@ -131,6 +140,44 @@ export default function SettingsPage() {
                 Stored at <code className="text-neutral-500">~/.mitmproxy/mitmproxy-ca-cert.pem</code> inside the container.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* AI Provider section */}
+        <div className="border-b border-neutral-800">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900">
+            <Cpu className="w-4 h-4 text-orange-400 flex-shrink-0" />
+            <span className="text-xs font-semibold text-white uppercase tracking-wider">AI Provider</span>
+          </div>
+
+          <div className="px-4 py-3 space-y-3">
+            {aiConfig?.provider ? (
+              <div className="rounded border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 text-xs">
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-neutral-400">Provider</span>
+                  <span className="text-white font-medium capitalize">{aiConfig.provider}</span>
+                </div>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-neutral-400">Default model</span>
+                  <span className="text-white font-medium">{aiConfig.model ?? "—"}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-neutral-500">No AI provider configured.</p>
+            )}
+
+            <p className="text-xs text-neutral-400">
+              Re-run the setup wizard to change your AI provider or API key.
+            </p>
+
+            <Link href="/setup">
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
+              >
+                Re-run setup wizard
+              </Button>
+            </Link>
           </div>
         </div>
 
