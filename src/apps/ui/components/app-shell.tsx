@@ -166,40 +166,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         style={{ width: "var(--sidebar-w, 208px)" }}
         className="flex-shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col overflow-hidden transition-[width] duration-200"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-neutral-800 flex-shrink-0">
-          {collapsed ? (
+        {/* Header — single layout; text fades in after the width transition completes */}
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-neutral-800 flex-shrink-0 overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0">
             <Image
               src="/ferret.png"
               alt="FERRET"
-              width={24}
-              height={24}
+              width={collapsed ? 24 : 28}
+              height={collapsed ? 24 : 28}
               className="rounded flex-shrink-0"
               priority
             />
-          ) : (
-            <div className="flex items-center gap-2 min-w-0">
-              <Image
-                src="/ferret.png"
-                alt="FERRET"
-                width={28}
-                height={28}
-                className="rounded flex-shrink-0"
-                priority
-              />
-              <div className="min-w-0 leading-none">
-                <h1 className="text-orange-500 font-bold text-sm tracking-wider">FERRET <span className="text-orange-400/70 font-normal text-xs">v1.0</span></h1>
-                <a
-                  href="https://synlace.ai"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-neutral-500 hover:text-orange-400 text-[10px] transition-colors mt-0.5 block"
-                >
-                  A Synlace product ↗
-                </a>
-              </div>
+            <div
+              className={`min-w-0 leading-none transition-opacity duration-150 ${
+                collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+              }`}
+            >
+              <h1 className="text-orange-500 font-bold text-sm tracking-wider whitespace-nowrap">FERRET <span className="text-orange-400/70 font-normal text-xs">v1.0</span></h1>
+              <a
+                href="https://synlace.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-neutral-500 hover:text-orange-400 text-[10px] transition-colors mt-0.5 block whitespace-nowrap"
+              >
+                A Synlace product ↗
+              </a>
             </div>
-          )}
+          </div>
           <button
             onClick={toggleCollapse}
             className="text-neutral-400 hover:text-orange-500 p-1 transition-colors ml-auto flex-shrink-0"
@@ -222,7 +215,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors border-b border-neutral-800/60 ${
+                className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors border-b border-neutral-800/60 overflow-hidden ${
                   active
                     ? "bg-orange-500/20 text-orange-400 border-l-2 border-l-orange-500"
                     : "text-neutral-400 hover:text-white hover:bg-neutral-800"
@@ -230,7 +223,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 title={collapsed ? label : undefined}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                {!collapsed && <span className="font-medium truncate">{label}</span>}
+                <span
+                  className={`font-medium whitespace-nowrap transition-opacity duration-150 ${
+                    collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+                  }`}
+                >
+                  {label}
+                </span>
               </Link>
             )
           })}
@@ -240,7 +239,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-neutral-800 flex-shrink-0">
           <button
             onClick={() => setSigintOpen(true)}
-            className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-neutral-800 ${
+            className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-neutral-800 overflow-hidden ${
               unreadCount > 0 ? "text-orange-400" : "text-neutral-400 hover:text-white"
             }`}
             title="Latest News"
@@ -253,16 +252,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
               )}
             </div>
-            {!collapsed && (
-              <span className="font-medium truncate">Latest News</span>
-            )}
+            <span
+              className={`font-medium whitespace-nowrap transition-opacity duration-150 ${
+                collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+              }`}
+            >
+              Latest News
+            </span>
           </button>
         </div>
 
         {/* Proxy status at bottom */}
-        <div className="border-t border-neutral-800 flex-shrink-0">
-          {collapsed ? (
-            <div className="flex justify-center py-2">
+        <div className="border-t border-neutral-800 flex-shrink-0 overflow-hidden">
+          <div className="flex items-center gap-3 px-3 py-2">
+            {/* Icon-sized container so the dot aligns with nav icons above */}
+            <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
               <div
                 className={`w-2 h-2 rounded-full ${
                   proxyStatus?.running ? "bg-green-500 animate-pulse" : "bg-red-500"
@@ -270,24 +274,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 title={proxyStatus?.running ? "Proxy active" : "Proxy stopped"}
               />
             </div>
-          ) : (
-            <div className="px-3 py-2">
-              <div className="flex items-center gap-2 mb-0.5">
-                <div
-                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                    proxyStatus?.running ? "bg-green-500 animate-pulse" : "bg-red-500"
-                  }`}
-                />
-                <span className="text-xs text-white font-medium truncate">
-                  {proxyStatus?.running ? "PROXY ACTIVE" : "PROXY STOPPED"}
-                </span>
-              </div>
-              <div className="text-[10px] text-neutral-500 space-y-0.5">
-                <div className="truncate">ADDR: {proxyStatus?.listen_address ?? "127.0.0.1:1337"}</div>
-                <div>SNARED: {proxyStatus?.intercepted ?? 0}</div>
-              </div>
-            </div>
-          )}
+            <span
+              className={`text-[11px] text-neutral-500 whitespace-nowrap transition-opacity duration-150 ${
+                collapsed ? "opacity-0 pointer-events-none" : "opacity-100 delay-150"
+              }`}
+            >
+              {proxyStatus?.listen_address ?? "127.0.0.1:1337"}
+            </span>
+          </div>
         </div>
       </aside>
 

@@ -140,6 +140,12 @@ All data is bind-mounted to `${FERRET_DATA_DIR:-./data}` — no named Docker vol
 
 ---
 
+## Contributing
+
+"Oh hey, I'm building a business here, want to help? aidan@synlace.ai -- that goes in readme.md
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

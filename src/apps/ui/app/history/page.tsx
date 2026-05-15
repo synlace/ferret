@@ -19,12 +19,16 @@ import {
   Download, Copy, RefreshCw, Loader2, Sparkles, Trash2,
   ChevronUp, ChevronDown, ChevronsUpDown,
   ChevronLeft, ChevronRight, SlidersHorizontal,
+  Eye, Maximize2, MessageSquare, Zap, Terminal, Code2, Link, Filter, Highlighter, X, Clock,
 } from "lucide-react"
 import { useProject } from "../context/project-context"
 import {
   ApiRequest, DetailPanel,
   getStatusColor, getMethodColor, formatTime,
 } from "./DetailPanel"
+import { parseQuery, matchesQuery } from "./parseQuery"
+import { upsertToken, isTokenActive } from "./upsertToken"
+import { useSearchHistory } from "./useSearchHistory"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 const WS_BASE = API_BASE.replace(/^http/, "ws")
@@ -46,23 +50,10 @@ export default function HistoryPage() {
   // TanStack Table state
   const [sorting, setSorting] = useState<SortingState>([{ id: "timestamp", desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [globalFilter, setGlobalFilter] = useState("")
-  const [methodFilters, setMethodFilters] = useState<Set<string>>(new Set())
-  const [statusFilters, setStatusFilters] = useState<Set<string>>(new Set())
-  const [sourceFilters, setSourceFilters] = useState<Set<string>>(new Set())
-  const [filterOpen, setFilterOpen] = useState(false)
-  const filterRef = useRef<HTMLDivElement>(null)
 
-  // Close filter popup on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setFilterOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handler)
-    return () => document.removeEventListener("mousedown", handler)
-  }, [])
+  // ── Single source of truth for all filtering ──────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("")
+  const [filterOpen, setFilterOpen] = useState(false)
 
   // Pagination state
   const [page, setPage] = useState(1)
@@ -93,7 +84,20 @@ export default function HistoryPage() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; req: ApiRequest } | null>(null)
   const [highlightedIds, setHighlightedIds] = useState<Map<string, string>>(new Map())
 
-  // Close context menu on outside click
+  // Search history
+  const { history: searchHistory, push: pushHistory, remove: removeHistory } = useSearchHistory()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const historyPanelRef = useRef<HTMLDivElement>(null)
+
+  // Filtered suggestions: when query is non-empty, show matching history; when empty show all
+  const historySuggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return searchHistory
+    return searchHistory.filter(h => h.toLowerCase().includes(q))
+  }, [searchQuery, searchHistory])
+
+  // Close history dropdown on outside click
   useEffect(() => {
     const close = () => setContextMenu(null)
     document.addEventListener("click", close)
@@ -112,13 +116,21 @@ export default function HistoryPage() {
   }, [activeProjectId])
 
   // ------------------------------------------------------------------
+  // Parsed query (derived from searchQuery)
+  // ------------------------------------------------------------------
+
+  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery])
+
+  // ------------------------------------------------------------------
   // Data fetching
   // ------------------------------------------------------------------
 
   const fetchRequests = useCallback(async () => {
     try {
       const params = new URLSearchParams({ limit: "10000", offset: "0" })
-      if (globalFilter.trim()) params.set("search", globalFilter.trim())
+      // Only pass free-text terms to the backend search param
+      const freeText = parsedQuery.text.join(" ").trim()
+      if (freeText) params.set("search", freeText)
       params.set("project_id", activeProjectId)
 
       const res = await fetch(`${API_BASE}/api/requests?${params}`)
@@ -133,12 +145,12 @@ export default function HistoryPage() {
     } finally {
       setLoading(false)
     }
-  }, [globalFilter, activeProjectId])
+  }, [parsedQuery.text, activeProjectId])
 
   // Reset to page 1 whenever filters or page size change
   useEffect(() => {
     setPage(1)
-  }, [methodFilters, globalFilter, statusFilters, sourceFilters, pageSize, activeProjectId])
+  }, [searchQuery, pageSize, activeProjectId])
 
   // Initial fetch on mount / filter change
   useEffect(() => {
@@ -152,15 +164,11 @@ export default function HistoryPage() {
       try {
         const msg = JSON.parse(event.data) as { type: string; data: ApiRequest }
         if (msg.type === "new_request") {
-          // Only show requests belonging to the active project.
-          // The backend broadcasts all requests; filter client-side.
           setRequests((prev) => {
             const exists = prev.some((r) => r.id === msg.data.id)
             if (exists) {
-              // Update existing row (e.g. response arrived after request was stored)
               return prev.map((r) => r.id === msg.data.id ? msg.data : r)
             }
-            // Prepend new row and keep the page-size cap so the table doesn't grow unbounded
             return [msg.data, ...prev].slice(0, pageSize)
           })
           setTotalCount((c) => c + 1)
@@ -171,7 +179,6 @@ export default function HistoryPage() {
     }
     ws.onerror = () => ws.close()
     return () => ws.close()
-  // Re-connect when the active project or page size changes so the filter stays correct
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId, pageSize])
 
@@ -334,37 +341,21 @@ export default function HistoryPage() {
   ], [annotating, handleAnnotate, hostsWithTests])
 
   // ------------------------------------------------------------------
-  // Client-side status filter
+  // Client-side filtering — driven entirely by parsedQuery
   // ------------------------------------------------------------------
 
-  const statusFilteredData = useMemo(() => {
-    return requests.filter((req) => {
-      if (methodFilters.size > 0 && !methodFilters.has(req.method)) return false
-      if (sourceFilters.size > 0 && !sourceFilters.has(req.source)) return false
-      if (statusFilters.size > 0) {
-        const sc = req.status_code ?? 0
-        const inRange = (
-          (statusFilters.has("2xx") && sc >= 200 && sc < 300) ||
-          (statusFilters.has("3xx") && sc >= 300 && sc < 400) ||
-          (statusFilters.has("4xx") && sc >= 400 && sc < 500) ||
-          (statusFilters.has("5xx") && sc >= 500)
-        )
-        if (!inRange) return false
-      }
-      return true
-    })
-  }, [requests, methodFilters, sourceFilters, statusFilters])
+  const filteredData = useMemo(() => {
+    return requests.filter(req => matchesQuery(req, parsedQuery))
+  }, [requests, parsedQuery])
 
   // ------------------------------------------------------------------
   // Sorting + pagination (fully client-side, against filtered data)
   // ------------------------------------------------------------------
 
-  // Sort the full filtered dataset so pagination is consistent across pages
   const sortedFilteredData = useMemo(() => {
-    if (sorting.length === 0) return statusFilteredData
+    if (sorting.length === 0) return filteredData
     const [{ id, desc }] = sorting
 
-    // Derived value extractors for display columns that have no direct field
     const derivedValue = (req: ApiRequest): unknown => {
       if (id === "annotated") return req.annotation ? 1 : 0
       if (id === "params") {
@@ -375,7 +366,7 @@ export default function HistoryPage() {
       return (req as unknown as Record<string, unknown>)[id]
     }
 
-    return [...statusFilteredData].sort((a, b) => {
+    return [...filteredData].sort((a, b) => {
       const av = derivedValue(a)
       const bv = derivedValue(b)
       if (av == null && bv == null) return 0
@@ -386,14 +377,13 @@ export default function HistoryPage() {
         ? String(bv).localeCompare(String(av))
         : String(av).localeCompare(String(bv))
     })
-  }, [statusFilteredData, sorting, hostsWithTests])
+  }, [filteredData, sorting, hostsWithTests])
 
   const filteredTotal = sortedFilteredData.length
   const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize))
   const canPrev = page > 1
   const canNext = page < totalPages
 
-  // Slice for the current page
   const pagedData = useMemo(() => {
     const start = (page - 1) * pageSize
     return sortedFilteredData.slice(start, start + pageSize)
@@ -402,13 +392,12 @@ export default function HistoryPage() {
   const table = useReactTable({
     data: pagedData,
     columns,
-    state: { sorting, columnFilters, globalFilter },
+    state: { sorting, columnFilters },
     onSortingChange: (updater) => {
       setSorting(updater)
       setPage(1)
     },
     onColumnFiltersChange: setColumnFilters,
-    onGlobalFilterChange: setGlobalFilter,
     enableColumnResizing: false,
     manualSorting: true,
     getCoreRowModel: getCoreRowModel(),
@@ -432,7 +421,22 @@ export default function HistoryPage() {
   const totalDataKB = Math.round(requests.reduce((acc, r) => acc + (r.response_size ?? 0), 0) / 1024)
 
   // ------------------------------------------------------------------
+  // Filter panel helpers
+  // ------------------------------------------------------------------
 
+  /** Toggle a qualifier value in the search bar */
+  const toggleFilter = (qualifier: string, value: string) => {
+    setSearchQuery(q => upsertToken(q, qualifier, value))
+  }
+
+  /** Whether a filter button should appear active */
+  const filterActive = (qualifier: string, value: string) =>
+    isTokenActive(searchQuery, qualifier, value)
+
+  /** Whether any qualifier token is present (for the Filter button indicator) */
+  const hasActiveFilters = /(?:^|\s)-?(?:method|status|mime|ext|source|has|size|time|host|path):/i.test(searchQuery)
+
+  // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
 
@@ -487,11 +491,11 @@ export default function HistoryPage() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-white" onClick={fetchRequests} disabled={loading}>
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-orange-400 hover:bg-transparent" onClick={fetchRequests} disabled={loading}>
             {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
             Refresh
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-white">
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-orange-400 hover:bg-transparent">
             <Download className="w-3 h-3 mr-1" />
             Export
           </Button>
@@ -521,111 +525,364 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Search and Filters */}
-      <div className="flex border-b border-neutral-800 flex-shrink-0 relative" ref={filterRef}>
-        <Input
-          placeholder="Search…"
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="h-8 text-xs bg-neutral-900 border-0 border-r border-neutral-800 text-white flex-1 rounded-none focus-visible:ring-0"
-        />
+      {/* Search bar */}
+      <div className="flex border-b border-neutral-800 flex-shrink-0">
+        <div className="relative flex-1">
+          <Input
+            placeholder='Search… or use qualifiers: method:GET status:4xx host:*api* mime:json -ext:js'
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setHistoryIndex(-1) }}
+            onKeyDown={(e) => {
+              if (historyOpen && historySuggestions.length > 0) {
+                if (e.key === "ArrowDown") { e.preventDefault(); setHistoryIndex(i => Math.min(i + 1, historySuggestions.length - 1)); return }
+                if (e.key === "ArrowUp")   { e.preventDefault(); setHistoryIndex(i => Math.max(i - 1, -1)); return }
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  if (historyIndex >= 0 && historySuggestions[historyIndex]) setSearchQuery(historySuggestions[historyIndex])
+                  else if (searchQuery.trim()) pushHistory(searchQuery)
+                  setHistoryOpen(false); setHistoryIndex(-1); return
+                }
+                if (e.key === "Escape") { setHistoryOpen(false); setHistoryIndex(-1); return }
+              } else if (e.key === "Enter" && searchQuery.trim()) {
+                pushHistory(searchQuery)
+              }
+            }}
+            className="h-8 text-xs bg-neutral-900 border-0 text-white w-full rounded-none focus-visible:ring-0 font-mono placeholder:font-sans placeholder:text-neutral-600 pr-7"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(""); setHistoryOpen(false) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => { setHistoryOpen(v => !v); setHistoryIndex(-1) }}
+          className={`h-8 px-2.5 flex items-center border-l border-neutral-800 transition-colors flex-shrink-0 ${
+            historyOpen ? "bg-orange-500/20 text-orange-400" : "bg-neutral-900 text-neutral-400 hover:text-orange-400"
+          }`}
+          title="Search history"
+        >
+          <Clock className="w-3.5 h-3.5" />
+        </button>
         <button
           onClick={() => setFilterOpen(v => !v)}
-          className={`h-8 px-3 text-xs flex items-center gap-1.5 border-l border-neutral-800 transition-colors ${
-            filterOpen || methodFilters.size > 0 || statusFilters.size > 0 || sourceFilters.size > 0
+          className={`h-8 px-3 text-xs flex items-center gap-1.5 border-l border-neutral-800 transition-colors flex-shrink-0 ${
+            filterOpen || hasActiveFilters
               ? "bg-orange-500/20 text-orange-400"
-              : "bg-neutral-900 text-neutral-400 hover:text-white"
+              : "bg-neutral-900 text-neutral-400 hover:text-orange-400"
           }`}
         >
           <SlidersHorizontal className="w-3 h-3" />
           Filter
-          {(methodFilters.size > 0 || statusFilters.size > 0 || sourceFilters.size > 0) && (
-            <span className="w-1.5 h-1.5 rounded-full bg-orange-400 ml-0.5" />
-          )}
+          <span className={`w-1.5 h-1.5 rounded-full bg-orange-400 ml-0.5 transition-opacity ${hasActiveFilters ? "opacity-100" : "opacity-0"}`} />
         </button>
+      </div>
 
-        {/* Filter popup */}
-        {filterOpen && (
-          <div className="absolute top-full right-0 z-30 bg-neutral-900 border border-neutral-700 shadow-2xl w-[480px]">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800">
-              <span className="text-xs font-semibold text-neutral-300">Filters</span>
-              <button
-                onClick={() => { setMethodFilters(new Set()); setStatusFilters(new Set()); setSourceFilters(new Set()) }}
-                className="text-xs text-neutral-500 hover:text-orange-400"
-              >
-                Reset all
-              </button>
+      {/* Combined history + filter panel — capped at 45vh so table always gets ≥55% */}
+      {(historyOpen || filterOpen) && (
+      <div className="border-b border-neutral-800 bg-neutral-950 flex-shrink-0 overflow-y-auto" style={{ maxHeight: "45vh" }}>
+
+          {/* ── History section ── */}
+          {historyOpen && (
+            <div className={filterOpen ? "border-b border-neutral-800" : ""}>
+              <div className="flex items-center justify-between px-3 pt-2 pb-1">
+                <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Search History</div>
+                {searchHistory.length > 0 && (
+                  <button
+                    onClick={() => { searchHistory.forEach(e => removeHistory(e)); setHistoryOpen(false) }}
+                    className="text-[10px] text-neutral-600 hover:text-orange-400 transition-colors"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              {historySuggestions.length === 0 ? (
+                <div className="px-3 pb-2.5 text-[10px] text-neutral-600 italic">No history yet — press Enter after a search to save it</div>
+              ) : (
+                <div ref={historyPanelRef} className="flex flex-wrap pb-2">
+                  {(() => {
+                    const ROWS = 4
+                    const cols: string[][] = []
+                    for (let i = 0; i < historySuggestions.length; i += ROWS) cols.push(historySuggestions.slice(i, i + ROWS))
+                    return cols.map((col, ci) => (
+                      <div key={ci} className={`px-3 py-0.5 flex-shrink-0 ${ci < cols.length - 1 ? "border-r border-neutral-800" : ""}`}>
+                        {col.map((entry, rowIdx) => {
+                          const globalIdx = ci * ROWS + rowIdx
+                          return (
+                            <div
+                              key={entry}
+                              className={`flex items-center gap-2 py-0.5 cursor-pointer group rounded transition-colors ${globalIdx === historyIndex ? "bg-neutral-700/60" : ""}`}
+                              onClick={() => { setSearchQuery(entry); setHistoryOpen(false); setHistoryIndex(-1) }}
+                            >
+                              <Clock className="w-3 h-3 flex-shrink-0 text-neutral-600" />
+                              <span className="text-[11px] font-mono text-neutral-300 group-hover:text-white transition-colors truncate max-w-[200px]">{entry}</span>
+                              <button
+                                className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-white transition-all ml-auto p-0.5"
+                                title="Remove"
+                                onClick={(e) => { e.stopPropagation(); removeHistory(entry) }}
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ))
+                  })()}
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-3 divide-x divide-neutral-800">
-              {/* Method */}
-              <div className="p-3">
-                <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Method</div>
-                {["GET", "POST", "PUT", "DELETE", "PATCH"].map(m => (
-                  <label key={m} className="flex items-center gap-2 py-0.5 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={methodFilters.has(m)}
-                      onChange={() => setMethodFilters(prev => {
-                        const next = new Set(prev)
-                        next.has(m) ? next.delete(m) : next.add(m)
-                        return next
-                      })}
-                      className="accent-orange-500"
-                    />
-                    <span className={`text-xs ${methodFilters.has(m) ? "text-orange-400" : "text-neutral-300 group-hover:text-white"}`}>{m}</span>
-                  </label>
-                ))}
-              </div>
-              {/* Status */}
-              <div className="p-3">
-                <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Status</div>
-                {[
-                  { value: "2xx", label: "2xx  [success]" },
-                  { value: "3xx", label: "3xx  [redirect]" },
-                  { value: "4xx", label: "4xx  [client error]" },
-                  { value: "5xx", label: "5xx  [server error]" },
-                ].map(s => (
-                  <label key={s.value} className="flex items-center gap-2 py-0.5 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={statusFilters.has(s.value)}
-                      onChange={() => setStatusFilters(prev => {
-                        const next = new Set(prev)
-                        next.has(s.value) ? next.delete(s.value) : next.add(s.value)
-                        return next
-                      })}
-                      className="accent-orange-500"
-                    />
-                    <span className={`text-xs font-mono ${statusFilters.has(s.value) ? "text-orange-400" : "text-neutral-300 group-hover:text-white"}`}>{s.label}</span>
-                  </label>
-                ))}
-              </div>
-              {/* Source */}
-              <div className="p-3">
-                <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Source</div>
-                {[
-                  { value: "proxy", label: "👤 Human" },
-                  { value: "test", label: "🧪 Test" },
-                ].map(s => (
-                  <label key={s.value} className="flex items-center gap-2 py-0.5 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={sourceFilters.has(s.value)}
-                      onChange={() => setSourceFilters(prev => {
-                        const next = new Set(prev)
-                        next.has(s.value) ? next.delete(s.value) : next.add(s.value)
-                        return next
-                      })}
-                      className="accent-orange-500"
-                    />
-                    <span className={`text-xs ${sourceFilters.has(s.value) ? "text-orange-400" : "text-neutral-300 group-hover:text-white"}`}>{s.label}</span>
-                  </label>
-                ))}
-              </div>
+          )}
+
+          {/* ── Filter section ── */}
+          {filterOpen && (
+          <div className="flex overflow-x-auto">
+
+          {/* ── Method col A: GET POST PUT ── */}
+          <div className="px-3 py-2.5 flex-shrink-0">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Method</div>
+            <div className="">
+              {["GET", "POST", "PUT"].map(m => (
+                <button key={m} onClick={() => toggleFilter("method", m)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {m}
+                </button>
+              ))}
             </div>
           </div>
-        )}
+
+          {/* ── Method col B: DELETE PATCH ── */}
+          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
+            <div className="">
+              {["DELETE", "PATCH"].map(m => (
+                <button key={m} onClick={() => toggleFilter("method", m)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Status ── */}
+          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Status</div>
+            <div className="">
+              {[
+                { value: "2xx", label: "2xx success" },
+                { value: "3xx", label: "3xx redirect" },
+                { value: "4xx", label: "4xx client" },
+                { value: "5xx", label: "5xx server" },
+              ].map(s => (
+                <button key={s.value} onClick={() => toggleFilter("status", s.value)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("status", s.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── MIME col A: JSON HTML XML CSS ── */}
+          <div className="px-3 py-2.5 flex-shrink-0">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">MIME</div>
+            <div className="">
+              {[
+                { value: "json", label: "JSON" },
+                { value: "html", label: "HTML" },
+                { value: "xml",  label: "XML" },
+                { value: "css",  label: "CSS" },
+              ].map(m => (
+                <button key={m.value} onClick={() => toggleFilter("mime", m.value)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── MIME col B: JS Image Plain ── */}
+          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
+            <div className="">
+              {[
+                { value: "js",    label: "JS" },
+                { value: "image", label: "Image" },
+                { value: "plain", label: "Plain" },
+              ].map(m => (
+                <button key={m.value} onClick={() => toggleFilter("mime", m.value)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Extension col A: .js .css .html ── */}
+          <div className="px-3 py-2.5 flex-shrink-0">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Ext</div>
+            <div className="">
+              {[
+                { value: "js",   label: ".js" },
+                { value: "css",  label: ".css" },
+                { value: "html", label: ".html" },
+              ].map(e => (
+                <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Extension col B: .json .php .png ── */}
+          <div className="px-3 py-2.5 flex-shrink-0">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
+            <div className="">
+              {[
+                { value: "json", label: ".json" },
+                { value: "php",  label: ".php" },
+                { value: "png",  label: ".png" },
+              ].map(e => (
+                <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Extension col C: .jpg .svg (none) ── */}
+          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
+            <div className="">
+              {[
+                { value: "jpg",  label: ".jpg" },
+                { value: "svg",  label: ".svg" },
+                { value: "none", label: "(none)" },
+              ].map(e => (
+                <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Source ── */}
+          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Source</div>
+            <div className="">
+              {[
+                { value: "proxy", label: "👤 Human" },
+                { value: "test",  label: "🧪 Test" },
+              ].map(s => (
+                <button key={s.value} onClick={() => toggleFilter("source", s.value)}
+                  className={`block w-full text-left text-xs px-2 py-0.5 rounded transition-colors ${filterActive("source", s.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Reset + Query Reference ── */}
+          <div className="flex-1 flex flex-col px-3 py-2.5 min-w-[220px] border-l border-neutral-800">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Query Reference</div>
+              <button
+                onClick={() => setSearchQuery(q => q.replace(/(-?(?:method|status|mime|ext|source|has|size|time|host|path):[^\s]*\s*)/gi, "").trim())}
+                className="text-[10px] text-neutral-600 hover:text-orange-400 transition-colors"
+              >
+                Reset filters
+              </button>
+            </div>
+            {(() => {
+              const rows: [string, string][] = [
+                ["method:GET,POST",  "HTTP method"],
+                ["status:4xx,5xx",   "Status range"],
+                ["host:*api*",       "Host glob"],
+                ["path:/v2/*",       "Path glob"],
+                ["mime:json",        "MIME type"],
+                ["ext:js,css",       "File ext"],
+                ["source:human",     "Traffic source"],
+                ["has:annotation",   "Has AI note"],
+                ["has:body",         "Has body"],
+                ["size:>10kb",       "Response size"],
+                ["time:>500",        "Response ms"],
+                ["-ext:js,css",      "Negate with -"],
+              ]
+              const half = Math.ceil(rows.length / 2)
+              const col1 = rows.slice(0, half)
+              const col2 = rows.slice(half)
+              // Check if all values in an example token are active in the current query
+              const isRefActive = (example: string): boolean => {
+                const stripped = example.startsWith("-") ? example.slice(1) : example
+                const colonIdx = stripped.indexOf(":")
+                if (colonIdx === -1) return searchQuery.includes(stripped)
+                const qualifier = stripped.slice(0, colonIdx)
+                const values = stripped.slice(colonIdx + 1).split(",").map(v => v.trim()).filter(Boolean)
+                return values.every(v => isTokenActive(searchQuery, qualifier, v))
+              }
+
+              const renderCol = (items: [string, string][], onClick: (example: string) => void) => (
+                <div className="flex flex-col gap-0.5">
+                  {items.map(([example, desc]) => {
+                    const active = isRefActive(example)
+                    return (
+                      <button
+                        key={example}
+                        onClick={() => onClick(example)}
+                        className="flex items-baseline gap-0 text-left group"
+                        title={`Toggle: ${example}`}
+                      >
+                        <span className={`font-mono text-[10px] transition-colors whitespace-nowrap w-36 shrink-0 ${active ? "text-orange-400" : "text-orange-400/50 group-hover:text-orange-400"}`}>{example}</span>
+                        <span className={`text-[10px] whitespace-nowrap ${active ? "text-neutral-400" : "text-neutral-600"}`}>{desc}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+              // Click handler: parse "qualifier:value" from the example string and toggle it
+              const handleRefClick = (example: string) => {
+                // Strip leading - for negation detection
+                const negated = example.startsWith("-")
+                const stripped = negated ? example.slice(1) : example
+                const colonIdx = stripped.indexOf(":")
+                if (colonIdx === -1) {
+                  // No qualifier — treat as free text toggle
+                  setSearchQuery(q => {
+                    const term = stripped.trim()
+                    if (q.includes(term)) return q.replace(term, "").replace(/\s{2,}/g, " ").trim()
+                    return q.trim() ? `${q.trim()} ${term}` : term
+                  })
+                  return
+                }
+                const qualifier = stripped.slice(0, colonIdx)
+                const values = stripped.slice(colonIdx + 1).split(",").map(v => v.trim()).filter(Boolean)
+                setSearchQuery(q => {
+                  let next = q
+                  for (const v of values) next = upsertToken(next, qualifier, v, negated)
+                  return next
+                })
+              }
+
+              return (
+                <div className="flex gap-4">
+                  {renderCol(col1, handleRefClick)}
+                  {renderCol(col2, handleRefClick)}
+                </div>
+              )
+            })()}
+          </div>
+
+          </div>
+          )}
+
       </div>
+      )}
 
       {/* Stats + pagination bar */}
       <div className="flex items-center border-b border-neutral-800 text-xs flex-shrink-0 bg-neutral-900">
@@ -804,102 +1061,160 @@ export default function HistoryPage() {
       </div>
 
       {/* Right-click context menu */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl py-1 min-w-[200px] text-sm"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {[
+      {contextMenu && (() => {
+        const req = contextMenu.req
+        const isHighlighted = highlightedIds.has(req.id)
+
+        const buildRawRequest = (r: ApiRequest) => {
+          const hdrs = r.headers ?? {}
+          const headerLines = Object.entries(hdrs)
+            .filter(([k]) => k.toLowerCase() !== "host")
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("\n")
+          return [
+            `${r.method} ${r.path} HTTP/1.1`,
+            `Host: ${r.host}`,
+            ...(headerLines ? [headerLines] : []),
+            "",
+            r.body ?? "",
+          ].join("\n")
+        }
+
+        const sendToGnaw = async (r: ApiRequest) => {
+          const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ raw_request: buildRawRequest(r), label: `${r.method} ${r.host}` }),
+          }).catch(() => null)
+          if (res?.ok) { const tab = await res.json(); router.push(`/gnaw?tab=${tab.id}`) }
+          else router.push("/gnaw")
+        }
+
+        type MenuItem =
+          | { type: "item"; Icon: React.ElementType; label: string; action: () => void; danger?: boolean }
+          | { type: "separator" }
+
+        const groups: MenuItem[][] = [
+          // Group 1 — Inspect
+          [
             {
-              icon: "👁",
+              type: "item",
+              Icon: Eye,
               label: "View Details",
-              action: () => { toggleExpanded(contextMenu.req.id); setContextMenu(null) }
+              action: () => { toggleExpanded(req.id); setContextMenu(null) },
             },
             {
-              icon: "🔁",
+              type: "item",
+              Icon: Maximize2,
+              label: "Open Maximized",
+              action: () => { setMaximizedId(req.id); setContextMenu(null) },
+            },
+          ],
+          // Group 2 — Send / Replay
+          [
+            {
+              type: "item",
+              Icon: RefreshCw,
               label: "Send to Gnaw",
-              action: async () => {
-                const req = contextMenu.req
-                const hdrs = req.headers ?? {}
-                const headerLines = Object.entries(hdrs)
-                  .filter(([k]) => k.toLowerCase() !== "host")
-                  .map(([k, v]) => `${k}: ${v}`)
-                  .join("\n")
-                const rawRequest = [
-                  `${req.method} ${req.path} HTTP/1.1`,
-                  `Host: ${req.host}`,
-                  ...(headerLines ? [headerLines] : []),
-                  "",
-                  req.body ?? "",
-                ].join("\n")
-                const label = `${req.method} ${req.host}`
-                const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ raw_request: rawRequest, label }),
-                }).catch(() => null)
-                if (res?.ok) {
-                  const tab = await res.json()
-                  router.push(`/gnaw?tab=${tab.id}`)
-                } else {
-                  router.push("/gnaw")
-                }
-                setContextMenu(null)
-              }
+              action: async () => { await sendToGnaw(req); setContextMenu(null) },
             },
             {
-              icon: "💬",
+              type: "item",
+              Icon: MessageSquare,
               label: "Send to Chat",
-              action: () => { router.push(`/chat?requestId=${contextMenu.req.id}&method=${contextMenu.req.method}&url=${encodeURIComponent(contextMenu.req.url)}`); setContextMenu(null) }
+              action: () => { router.push(`/chat?requestId=${req.id}&method=${req.method}&url=${encodeURIComponent(req.url)}`); setContextMenu(null) },
             },
             {
-              icon: "📋",
+              type: "item",
+              Icon: Zap,
+              label: "Send to Snare",
+              action: () => { router.push(`/snare?url=${encodeURIComponent(req.url)}&method=${req.method}`); setContextMenu(null) },
+            },
+          ],
+          // Group 3 — Copy
+          [
+            {
+              type: "item",
+              Icon: Link,
+              label: "Copy URL",
+              action: () => { navigator.clipboard.writeText(req.url).catch(() => {}); setContextMenu(null) },
+            },
+            {
+              type: "item",
+              Icon: Terminal,
               label: "Copy as cURL",
               action: () => {
-                const req = contextMenu.req
                 const headers = Object.entries(req.headers ?? {}).map(([k, v]) => `-H '${k}: ${v}'`).join(" ")
                 const body = req.body ? `--data '${req.body}'` : ""
                 navigator.clipboard.writeText(`curl -X ${req.method} '${req.url}' ${headers} ${body}`.trim()).catch(() => {})
                 setContextMenu(null)
-              }
+              },
             },
             {
-              icon: "🐍",
-              label: "Copy as httpx",
+              type: "item",
+              Icon: Code2,
+              label: "Copy as Python (httpx)",
               action: () => {
-                const req = contextMenu.req
                 const headers = JSON.stringify(req.headers ?? {})
                 const body = req.body ? `, content=b'${req.body}'` : ""
                 navigator.clipboard.writeText(`httpx.request('${req.method}', '${req.url}', headers=${headers}${body})`).catch(() => {})
                 setContextMenu(null)
-              }
+              },
+            },
+          ],
+          // Group 4 — Filter / Highlight
+          [
+            {
+              type: "item",
+              Icon: Filter,
+              label: `Filter by Host: ${req.host}`,
+              action: () => { setSearchQuery(q => upsertToken(q, "host", req.host)); setContextMenu(null) },
             },
             {
-              icon: "🎨",
-              label: highlightedIds.has(contextMenu.req.id) ? "Remove Highlight" : "Highlight Row",
+              type: "item",
+              Icon: isHighlighted ? X : Highlighter,
+              label: isHighlighted ? "Remove Highlight" : "Highlight Row",
               action: () => {
                 setHighlightedIds(prev => {
                   const next = new Map(prev)
-                  if (next.has(contextMenu.req.id)) next.delete(contextMenu.req.id)
-                  else next.set(contextMenu.req.id, "bg-yellow-900/30")
+                  if (next.has(req.id)) next.delete(req.id)
+                  else next.set(req.id, "bg-yellow-900/30")
                   return next
                 })
                 setContextMenu(null)
-              }
+              },
             },
-          ].map((item) => (
-            <button
-              key={item.label}
-              onClick={item.action}
-              className="w-full text-left px-4 py-2 hover:bg-neutral-700 flex items-center gap-3 text-neutral-200"
-            >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+          ],
+        ]
+
+        const allItems: MenuItem[] = groups.reduce<MenuItem[]>((acc, group, i) => {
+          if (i > 0) acc.push({ type: "separator" })
+          return acc.concat(group)
+        }, [])
+
+        return (
+          <div
+            className="fixed z-50 bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl py-1 min-w-[220px]"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {allItems.map((item, i) =>
+              item.type === "separator" ? (
+                <div key={`sep-${i}`} className="my-1 border-t border-neutral-700" />
+              ) : (
+                <button
+                  key={item.label}
+                  onClick={item.action}
+                  className="w-full text-left px-3 py-2 flex items-center gap-3 text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors text-sm"
+                >
+                  <item.Icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              )
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
