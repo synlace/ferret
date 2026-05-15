@@ -23,7 +23,7 @@ from typing import List
 _log = logging.getLogger(__name__)
 
 import deps
-from routers import requests, proxy, findings, chats, tests, projects, settings, workspaces
+from routers import requests, proxy, findings, chats, tests, projects, settings, workspaces, setup
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +33,6 @@ from routers import requests, proxy, findings, chats, tests, projects, settings,
 
 db_client              = deps.db_client
 mitm_manager           = deps.mitm_manager
-OPENROUTER_PROVISIONING_KEY = deps.OPENROUTER_PROVISIONING_KEY
 OPENROUTER_MODEL       = deps.OPENROUTER_MODEL
 TESTS_DIR              = deps.TESTS_DIR
 
@@ -79,6 +78,8 @@ async def lifespan(app: FastAPI):
     print("Starting FERRET API...")
     await deps.db_client.initialize()
     await deps.db_client.seed_temp_project()
+    # Load AI provider config from DB (setup wizard) — falls back to env vars
+    await deps.reload_ai_config()
     loop = asyncio.get_running_loop()
     await deps.mitm_manager.start(db_client=deps.db_client, loop=loop, ws_manager=ws_manager)
     print("FERRET API started successfully")
@@ -208,6 +209,7 @@ async def download_ca_cert():
 # Include routers
 # ---------------------------------------------------------------------------
 
+app.include_router(setup.router)
 app.include_router(requests.router)
 app.include_router(proxy.router)
 app.include_router(findings.router)

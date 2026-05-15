@@ -151,7 +151,7 @@ async def test_create_key_success(app_client):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch.object(rp.deps, "OPENROUTER_PROVISIONING_KEY", "master-key-xyz"), \
+    with patch.object(rp.deps, "get_ai_config", return_value={"provisioning_key": "master-key-xyz"}), \
          patch.object(rp.httpx, "AsyncClient", return_value=mock_client):
         resp = await ac.post(
             f"/api/projects/{project_id}/keys",
@@ -205,7 +205,7 @@ async def test_create_key_success_new_or_response_shape(app_client):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch.object(rp.deps, "OPENROUTER_PROVISIONING_KEY", "master-key-xyz"), \
+    with patch.object(rp.deps, "get_ai_config", return_value={"provisioning_key": "master-key-xyz"}), \
          patch.object(rp.httpx, "AsyncClient", return_value=mock_client):
         resp = await ac.post(
             f"/api/projects/{project_id}/keys",
@@ -228,19 +228,19 @@ async def test_create_key_success_new_or_response_shape(app_client):
 
 @pytest.mark.asyncio
 async def test_create_key_missing_master_key(app_client):
-    """Returns 503 when OPENROUTER_PROVISIONING_KEY is not set."""
+    """Returns 503 when no provisioning key is configured."""
     ac, db, project_id = app_client
 
     import routers.projects as rp
 
-    with patch.object(rp.deps, "OPENROUTER_PROVISIONING_KEY", ""):
+    with patch.object(rp.deps, "get_ai_config", return_value={"provisioning_key": ""}):
         resp = await ac.post(
             f"/api/projects/{project_id}/keys",
             json={"name": "Key"},
         )
 
     assert resp.status_code == 503
-    assert "OPENROUTER_PROVISIONING_KEY" in resp.json()["detail"]
+    assert "provisioning key" in resp.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -257,7 +257,7 @@ async def test_create_key_or_api_error(app_client):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch.object(rp.deps, "OPENROUTER_PROVISIONING_KEY", "master-key-xyz"), \
+    with patch.object(rp.deps, "get_ai_config", return_value={"provisioning_key": "master-key-xyz"}), \
          patch.object(rp.httpx, "AsyncClient", return_value=mock_client):
         resp = await ac.post(
             f"/api/projects/{project_id}/keys",
@@ -274,7 +274,7 @@ async def test_create_key_project_not_found(app_client):
 
     import routers.projects as rp
 
-    with patch.object(rp.deps, "OPENROUTER_PROVISIONING_KEY", "master-key-xyz"):
+    with patch.object(rp.deps, "get_ai_config", return_value={"provisioning_key": "master-key-xyz"}):
         resp = await ac.post(
             "/api/projects/nonexistent-project/keys",
             json={"name": "Key"},
@@ -403,7 +403,7 @@ async def test_delete_key_success(app_client):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch.object(rp.deps, "OPENROUTER_PROVISIONING_KEY", "master-key-xyz"), \
+    with patch.object(rp.deps, "get_ai_config", return_value={"provisioning_key": "master-key-xyz"}), \
          patch.object(rp.httpx, "AsyncClient", return_value=mock_client):
         resp = await ac.delete(f"/api/projects/{project_id}/keys/{key_id}")
 

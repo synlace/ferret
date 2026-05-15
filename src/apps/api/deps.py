@@ -30,14 +30,90 @@ mitm_manager = MitmproxyManager()
 
 
 # ---------------------------------------------------------------------------
-# OpenRouter AI config
+# AI config env-var defaults
 # ---------------------------------------------------------------------------
 
-# OPENROUTER_PROVISIONING_KEY is the master account key used *only* to
-# create/delete/inspect provisioned sub-keys via the OR management API.
-# Chat and annotation calls use the per-project provisioned key stored in the DB.
-OPENROUTER_PROVISIONING_KEY = os.getenv("OPENROUTER_PROVISIONING_KEY", "")
-OPENROUTER_MODEL             = os.getenv("OPENROUTER_MODEL", "google/gemini-3-flash-preview")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-3-flash-preview")
+
+
+# ---------------------------------------------------------------------------
+# Dynamic AI config (populated from DB by setup wizard; overrides env vars)
+# ---------------------------------------------------------------------------
+
+# These are module-level mutable values so that reload_ai_config() can update
+# them in-place without restarting the process.  All routers that need the
+# active AI config should call get_ai_config() rather than reading these directly.
+
+_ai_provider:      str = ""   # e.g. "openrouter", "openai", "anthropic", "ollama"
+_ai_api_key:       str = ""   # API key for cloud providers
+_ai_provisioning:  str = ""   # OpenRouter provisioning key (optional)
+_ai_base_url:      str = ""   # Base URL (cloud default or local override)
+_ai_model:         str = ""   # Default model identifier
+_ai_format:        str = ""   # "openai" | "anthropic"
+
+_PROVIDER_BASE_URLS = {
+    "openrouter": "https://openrouter.ai/api/v1",
+    "openai":     "https://api.openai.com/v1",
+    "anthropic":  "https://api.anthropic.com/v1",
+    "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai",
+    "deepseek":   "https://api.deepseek.com/v1",
+    "mistral":    "https://api.mistral.ai/v1",
+    "ollama":     "http://localhost:11434/v1",
+    "lmstudio":   "http://localhost:1234/v1",
+}
+
+_PROVIDER_FORMAT = {
+    "openrouter": "openai",
+    "openai":     "openai",
+    "anthropic":  "anthropic",
+    "gemini":     "openai",
+    "deepseek":   "openai",
+    "mistral":    "openai",
+    "ollama":     "openai",
+    "lmstudio":   "openai",
+}
+
+
+async def reload_ai_config() -> None:
+    """Load AI provider settings from the DB and update module-level state.
+
+    Called once at startup (after DB init) and again whenever the setup wizard
+    saves new configuration so that in-flight requests immediately use the new
+    provider without a container restart.
+    """
+    global _ai_provider, _ai_api_key, _ai_provisioning, _ai_base_url, _ai_model, _ai_format
+
+    provider     = await db_client.get_setting("ai_provider")         or ""
+    api_key      = await db_client.get_setting("ai_api_key")          or ""
+    prov_key     = await db_client.get_setting("ai_provisioning_key") or ""
+    base_url     = await db_client.get_setting("ai_base_url")         or ""
+    model        = await db_client.get_setting("ai_model")            or ""
+
+    if provider and provider not in ("skip", ""):
+        _ai_provider     = provider
+        _ai_api_key      = api_key
+        _ai_provisioning = prov_key
+        _ai_base_url     = base_url or _PROVIDER_BASE_URLS.get(provider, "")
+        _ai_model        = model
+        _ai_format       = _PROVIDER_FORMAT.get(provider, "openai")
+        _log.info("AI config loaded from DB: provider=%s model=%s", provider, model)
+    else:
+        _log.info("AI config: setup not complete — AI features unavailable until wizard is run")
+
+
+def get_ai_config() -> dict:
+    """Return the current active AI configuration as a plain dict.
+
+    Keys: provider, api_key, provisioning_key, base_url, model, format
+    """
+    return {
+        "provider":         _ai_provider,
+        "api_key":          _ai_api_key,
+        "provisioning_key": _ai_provisioning,
+        "base_url":         _ai_base_url,
+        "model":            _ai_model,
+        "format":           _ai_format,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -67,18 +143,23 @@ def openrouter_headers(api_key: str) -> dict:
     }
 
 
-def provisioning_headers() -> dict:
-    """Build Authorization headers using the master provisioning key."""
-    return openrouter_headers(OPENROUTER_PROVISIONING_KEY)
-
-
 async def get_key_for_project(project_id: str) -> Optional[str]:
-    """Return the provisioned key value for a project, or None if none exists.
+    """Return the best available API key for a project.
 
-    All AI calls (chat, annotate, findings) require a provisioned key to be
-    stored in the DB for the project.  There is no global fallback key.
+    Resolution order:
+    1. Provisioned sub-key stored in the DB for this project (OR provisioning flow).
+    2. The global API key saved by the setup wizard (``_ai_api_key``).
+    3. None — caller should raise a 503.
+
+    This means that when a user configures OpenRouter (or any cloud provider)
+    via the setup wizard but hasn't provisioned per-project sub-keys, their
+    main API key is used as a fallback so chat still works.
     """
-    return await db_client.get_active_key_for_project(project_id)
+    provisioned = await db_client.get_active_key_for_project(project_id)
+    if provisioned:
+        return provisioned
+    # Fall back to the global key from the setup wizard (may be "" if not configured)
+    return _ai_api_key or None
 
 
 # ---------------------------------------------------------------------------

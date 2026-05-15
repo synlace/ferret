@@ -512,19 +512,110 @@ _SESSION_CHAT_TOOLS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Provider-aware AI call helpers
+# ---------------------------------------------------------------------------
+
+def _build_ai_request(ai_cfg: dict, model: str, messages: list, tools: list) -> tuple[str, dict, dict]:
+    """Return (url, headers, json_body) for a chat completions call.
+
+    Handles both OpenAI-compatible providers and Anthropic direct.
+    """
+    fmt      = ai_cfg.get("format", "openai")
+    base_url = ai_cfg.get("base_url", "https://openrouter.ai/api/v1").rstrip("/")
+    api_key  = ai_cfg.get("_resolved_key", "")  # injected by caller
+
+    if fmt == "anthropic":
+        url = base_url + "/messages"
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        # Anthropic separates system prompt from messages
+        system_msg = next((m["content"] for m in messages if m["role"] == "system"), None)
+        user_msgs  = [m for m in messages if m["role"] != "system"]
+        body: dict = {
+            "model": model,
+            "max_tokens": 8096,
+            "messages": user_msgs,
+        }
+        if system_msg:
+            body["system"] = system_msg
+        if tools:
+            # Convert OpenAI tool schema to Anthropic tool schema
+            body["tools"] = [
+                {
+                    "name": t["function"]["name"],
+                    "description": t["function"].get("description", ""),
+                    "input_schema": t["function"].get("parameters", {}),
+                }
+                for t in tools
+            ]
+    else:
+        url = base_url + "/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        body = {
+            "model": model,
+            "messages": messages,
+        }
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
+
+    return url, headers, body
+
+
+def _parse_ai_response(ai_cfg: dict, data: dict) -> dict:
+    """Normalise a provider response to an OpenAI-style assistant message dict."""
+    fmt = ai_cfg.get("format", "openai")
+    if fmt == "anthropic":
+        # Anthropic response: {"content": [{"type": "text", "text": "..."}, ...], "stop_reason": ...}
+        text_parts = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
+        tool_uses  = [b for b in data.get("content", []) if b.get("type") == "tool_use"]
+        msg: dict = {"role": "assistant", "content": "\n".join(text_parts)}
+        if tool_uses:
+            msg["tool_calls"] = [
+                {
+                    "id": tu["id"],
+                    "type": "function",
+                    "function": {"name": tu["name"], "arguments": json.dumps(tu.get("input", {}))},
+                }
+                for tu in tool_uses
+            ]
+        return msg
+    else:
+        return data["choices"][0]["message"]
+
+
 async def _resolve_project_and_key(session_id: str, fallback_project_id: str):
-    """Return (project_id, api_key, project_row) for a session, raising 503 if no key."""
+    """Return (project_id, api_key, ai_config, project_row) for a session.
+
+    Key resolution order (see deps.get_key_for_project):
+    1. Provisioned per-project sub-key (OpenRouter provisioning flow).
+    2. Global API key saved by the setup wizard.
+    3. Raises 503 if neither is available.
+
+    The returned ``ai_config`` dict contains the active provider, base_url,
+    format, and model so callers can route to the correct endpoint.
+    """
     _session = await deps.db_client.get_chat_session(session_id)
     project_id = ((_session.get("project_id") if _session else None) or fallback_project_id)
     _log.info("[chat] session=%s resolved project_id=%s", session_id, project_id)
 
     api_key = await deps.get_key_for_project(project_id)
     if not api_key:
-        raise HTTPException(503, f"No provisioned key for project '{project_id}'. Add one via Projects → Keys.")
+        raise HTTPException(
+            503,
+            f"No provisioned key for project '{project_id}'. "
+            "Configure a provider via Setup, or add a provisioned key via Projects → Keys."
+        )
 
-    _log.info("[chat] using key prefix=%s... for project=%s", (api_key[:16] if api_key else "NONE"), project_id)
+    ai_cfg = deps.get_ai_config()
+    _log.info("[chat] using key prefix=%s... for project=%s provider=%s",
+              (api_key[:16] if api_key else "NONE"), project_id, ai_cfg.get("provider"))
     project = await deps.db_client.get_project(project_id)
-    return project_id, api_key, project
+    return project_id, api_key, ai_cfg, project
 
 
 def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> List[Dict[str, Any]]:
@@ -1046,11 +1137,11 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
     The project_id is derived from the session record; the query param is a fallback only.
     """
     try:
-        project_id, _api_key, _project = await _resolve_project_and_key(session_id, project_id)
+        project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
 
-        _project_model = (_project.get("default_model") if _project else None) or deps.OPENROUTER_MODEL
+        _project_model = (_project.get("default_model") if _project else None) or _ai_cfg.get("model") or deps.OPENROUTER_MODEL
         model = body.model or _project_model
-        _log.info("[chat] resolved model=%s", model)
+        _log.info("[chat] resolved model=%s provider=%s", model, _ai_cfg.get("provider"))
 
         history = await deps.db_client.get_chat_history(session_id)
         or_messages = _build_or_messages(history, body.message)
@@ -1058,28 +1149,25 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
         new_messages: List[Dict[str, Any]] = []
         max_iterations = 5
 
+        # Inject the resolved key into the config dict for _build_ai_request
+        _ai_cfg_with_key = {**_ai_cfg, "_resolved_key": _api_key}
+
         for _ in range(max_iterations):
+            _url, _headers, _body = _build_ai_request(
+                _ai_cfg_with_key, model, or_messages + new_messages, _SESSION_CHAT_TOOLS
+            )
             try:
                 async with httpx.AsyncClient(timeout=90.0) as client:
-                    resp = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers=deps.openrouter_headers(_api_key),
-                        json={
-                            "model": model,
-                            "messages": or_messages + new_messages,
-                            "tools": _SESSION_CHAT_TOOLS,
-                            "tool_choice": "auto",
-                        },
-                    )
+                    resp = await client.post(_url, headers=_headers, json=_body)
                     resp.raise_for_status()
                     data = resp.json()
             except httpx.HTTPStatusError as e:
-                _log.error("[chat] OpenRouter error status=%s body=%s", e.response.status_code, e.response.text[:500])
-                raise HTTPException(502, f"OpenRouter {e.response.status_code}: {e.response.text[:200]}")
+                _log.error("[chat] AI provider error status=%s body=%s", e.response.status_code, e.response.text[:500])
+                raise HTTPException(502, f"AI provider {e.response.status_code}: {e.response.text[:200]}")
             except Exception as e:
-                raise HTTPException(502, f"OpenRouter failed: {e}")
+                raise HTTPException(502, f"AI provider request failed: {e}")
 
-            assistant_msg = data["choices"][0]["message"]
+            assistant_msg = _parse_ai_response(_ai_cfg_with_key, data)
             new_messages.append(assistant_msg)
 
             tool_calls = assistant_msg.get("tool_calls") or []
@@ -1139,14 +1227,18 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
       data: {"type": "error", "detail": "..."}     — error
     """
     try:
-        project_id, _api_key, _project = await _resolve_project_and_key(session_id, project_id)
+        project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
     except HTTPException as e:
         # Return a plain JSON error — the frontend checks res.ok and handles it.
         raise
 
-    _project_model = (_project.get("default_model") if _project else None) or deps.OPENROUTER_MODEL
+    _project_model = (_project.get("default_model") if _project else None) or _ai_cfg.get("model") or deps.OPENROUTER_MODEL
     model = body.model or _project_model
-    _log.info("[chat/stream] session=%s model=%s", session_id, model)
+    _log.info("[chat/stream] session=%s model=%s provider=%s", session_id, model, _ai_cfg.get("provider"))
+
+    # Inject the resolved key into the config dict for _build_ai_request
+    _ai_cfg_with_key = {**_ai_cfg, "_resolved_key": _api_key}
+    _is_anthropic = _ai_cfg.get("format") == "anthropic"
 
     async def _generate():
         history = await deps.db_client.get_chat_history(session_id)
@@ -1156,69 +1248,90 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
         max_iterations = max(1, min(50, body.max_tool_calls or 10))
 
         for iteration in range(max_iterations):
-            # Stream the completion
+            # Stream the completion (OpenAI-compat SSE) or fall back to non-streaming (Anthropic)
             accumulated_content = ""
             accumulated_tool_calls: Dict[int, Dict] = {}
 
-            try:
-                async with httpx.AsyncClient(timeout=90.0) as client:
-                    async with client.stream(
-                        "POST",
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers=deps.openrouter_headers(_api_key),
-                        json={
-                            "model": model,
-                            "messages": or_messages + new_messages,
-                            "tools": _SESSION_CHAT_TOOLS,
-                            "tool_choice": "auto",
-                            "stream": True,
-                        },
-                    ) as resp:
+            _url, _headers, _body = _build_ai_request(
+                _ai_cfg_with_key, model, or_messages + new_messages, _SESSION_CHAT_TOOLS
+            )
+
+            if _is_anthropic:
+                # Anthropic uses a different streaming format; use non-streaming and emit
+                # the full response as a single delta so the frontend still works.
+                try:
+                    async with httpx.AsyncClient(timeout=90.0) as client:
+                        resp = await client.post(_url, headers=_headers, json=_body)
                         resp.raise_for_status()
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data: "):
-                                continue
-                            raw = line[6:]
-                            if raw.strip() == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(raw)
-                            except json.JSONDecodeError:
-                                continue
+                        data = resp.json()
+                except httpx.HTTPStatusError as e:
+                    yield f"data: {json.dumps({'type': 'error', 'detail': f'Anthropic {e.response.status_code}: {e.response.text[:200]}'})}\n\n"
+                    return
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+                    return
 
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                assistant_msg = _parse_ai_response(_ai_cfg_with_key, data)
+                text = assistant_msg.get("content") or ""
+                if text:
+                    accumulated_content = text
+                    yield f"data: {json.dumps({'type': 'delta', 'content': text})}\n\n"
+                # Collect tool calls from parsed message
+                for tc in (assistant_msg.get("tool_calls") or []):
+                    idx = len(accumulated_tool_calls)
+                    accumulated_tool_calls[idx] = tc
 
-                            # Text delta
-                            text = delta.get("content") or ""
-                            if text:
-                                accumulated_content += text
-                                yield f"data: {json.dumps({'type': 'delta', 'content': text})}\n\n"
+            else:
+                # OpenAI-compatible SSE streaming
+                _body["stream"] = True
+                try:
+                    async with httpx.AsyncClient(timeout=90.0) as client:
+                        async with client.stream("POST", _url, headers=_headers, json=_body) as resp:
+                            resp.raise_for_status()
+                            async for line in resp.aiter_lines():
+                                if not line.startswith("data: "):
+                                    continue
+                                raw = line[6:]
+                                if raw.strip() == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(raw)
+                                except json.JSONDecodeError:
+                                    continue
 
-                            # Tool call deltas
-                            for tc_delta in (delta.get("tool_calls") or []):
-                                idx = tc_delta.get("index", 0)
-                                if idx not in accumulated_tool_calls:
-                                    accumulated_tool_calls[idx] = {
-                                        "id": tc_delta.get("id", ""),
-                                        "type": "function",
-                                        "function": {"name": "", "arguments": ""},
-                                    }
-                                tc = accumulated_tool_calls[idx]
-                                fn = tc_delta.get("function", {})
-                                if fn.get("name"):
-                                    tc["function"]["name"] += fn["name"]
-                                if fn.get("arguments"):
-                                    tc["function"]["arguments"] += fn["arguments"]
-                                if tc_delta.get("id"):
-                                    tc["id"] = tc_delta["id"]
+                                delta = chunk.get("choices", [{}])[0].get("delta", {})
 
-            except httpx.HTTPStatusError as e:
-                _log.error("[chat/stream] OR error status=%s body=%s", e.response.status_code, e.response.text[:500])
-                yield f"data: {json.dumps({'type': 'error', 'detail': f'OpenRouter {e.response.status_code}: {e.response.text[:200]}'})}\n\n"
-                return
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
-                return
+                                # Text delta
+                                text = delta.get("content") or ""
+                                if text:
+                                    accumulated_content += text
+                                    yield f"data: {json.dumps({'type': 'delta', 'content': text})}\n\n"
+
+                                # Tool call deltas
+                                for tc_delta in (delta.get("tool_calls") or []):
+                                    idx = tc_delta.get("index", 0)
+                                    if idx not in accumulated_tool_calls:
+                                        accumulated_tool_calls[idx] = {
+                                            "id": tc_delta.get("id", ""),
+                                            "type": "function",
+                                            "function": {"name": "", "arguments": ""},
+                                        }
+                                    tc = accumulated_tool_calls[idx]
+                                    fn = tc_delta.get("function", {})
+                                    if fn.get("name"):
+                                        tc["function"]["name"] += fn["name"]
+                                    if fn.get("arguments"):
+                                        tc["function"]["arguments"] += fn["arguments"]
+                                    if tc_delta.get("id"):
+                                        tc["id"] = tc_delta["id"]
+
+                except httpx.HTTPStatusError as e:
+                    _log.error("[chat/stream] AI provider error status=%s body=%s", e.response.status_code, e.response.text[:500])
+                    yield f"data: {json.dumps({'type': 'error', 'detail': f'AI provider {e.response.status_code}: {e.response.text[:200]}'})}\n\n"
+                    return
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+                    return
 
             # Build the assistant message from accumulated data
             assistant_msg: Dict[str, Any] = {"role": "assistant", "content": accumulated_content or None}

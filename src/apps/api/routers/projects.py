@@ -36,8 +36,8 @@ async def list_projects():
 async def create_project(body: ProjectCreate):
     """
     Create a new project.
-    If provision_key=True (default) and OPENROUTER_PROVISIONING_KEY is set,
-    automatically provisions an OpenRouter key for the project.
+    If provision_key=True (default) and a provisioning key is configured via the
+    setup wizard, automatically provisions an OpenRouter key for the project.
     """
     try:
         project = Project(
@@ -53,14 +53,15 @@ async def create_project(body: ProjectCreate):
         )
         await deps.db_client.create_project(project)
 
-        # Auto-provision an OpenRouter key if requested and master key is available
-        if body.provision_key and deps.OPENROUTER_PROVISIONING_KEY:
+        # Auto-provision an OpenRouter key if requested and provisioning key is available
+        _prov_key = deps.get_ai_config().get("provisioning_key", "")
+        if body.provision_key and _prov_key:
             try:
                 or_payload: Dict[str, Any] = {"name": f"{body.name} (auto)"}
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
                         "https://openrouter.ai/api/v1/keys",
-                        headers=deps.provisioning_headers(),
+                        headers=deps.openrouter_headers(_prov_key),
                         json=or_payload,
                     )
                     resp.raise_for_status()
@@ -150,12 +151,13 @@ async def promote_temp_project(body: ProjectCreate):
             await deps.db_client.update_project(new_id, extra)
 
         # Auto-provision an OpenRouter key if requested
-        if body.provision_key and deps.OPENROUTER_PROVISIONING_KEY:
+        _prov_key2 = deps.get_ai_config().get("provisioning_key", "")
+        if body.provision_key and _prov_key2:
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     resp = await client.post(
                         "https://openrouter.ai/api/v1/keys",
-                        headers=deps.provisioning_headers(),
+                        headers=deps.openrouter_headers(_prov_key2),
                         json={"name": f"{body.name} (auto)"},
                     )
                     resp.raise_for_status()
@@ -326,10 +328,11 @@ async def create_project_key(project_id: str, body: ProjectApiKeyCreate):
     full key value ONCE (it will not be retrievable again from this API).
     """
     try:
-        if not deps.OPENROUTER_PROVISIONING_KEY:
+        _prov_key3 = deps.get_ai_config().get("provisioning_key", "")
+        if not _prov_key3:
             raise HTTPException(
                 status_code=503,
-                detail="OPENROUTER_PROVISIONING_KEY is not configured. Cannot provision keys.",
+                detail="No OpenRouter provisioning key configured. Add one via the setup wizard.",
             )
         project = await deps.db_client.get_project(project_id)
         if not project:
@@ -343,7 +346,7 @@ async def create_project_key(project_id: str, body: ProjectApiKeyCreate):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
                     "https://openrouter.ai/api/v1/keys",
-                    headers=deps.provisioning_headers(),
+                    headers=deps.openrouter_headers(_prov_key3),
                     json=or_payload,
                 )
                 resp.raise_for_status()
@@ -441,12 +444,13 @@ async def delete_project_key(project_id: str, key_id: str):
         if not key_row or key_row["project_id"] != project_id:
             raise HTTPException(status_code=404, detail="Key not found")
 
-        if deps.OPENROUTER_PROVISIONING_KEY:
+        _prov_key_del = deps.get_ai_config().get("provisioning_key", "")
+        if _prov_key_del:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.delete(
                         f"https://openrouter.ai/api/v1/keys/{key_row['key_hash']}",
-                        headers=deps.provisioning_headers(),
+                        headers=deps.openrouter_headers(_prov_key_del),
                     )
             except Exception:
                 pass

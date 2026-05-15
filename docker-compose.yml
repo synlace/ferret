@@ -27,7 +27,6 @@ services:
     environment:
       PROXY_HOST: ${PROXY_HOST:-0.0.0.0}
       PROXY_PORT: ${PROXY_PORT:-1337}
-      OPENROUTER_PROVISIONING_KEY: ${OPENROUTER_PROVISIONING_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-3-flash-preview}
       FERRET_TESTS_DIR: /data/tests
       FERRET_WORKSPACES_DIR: /data/workspaces

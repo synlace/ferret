@@ -64,7 +64,7 @@
 ```bash
 git clone https://github.com/synlace/ferret.git
 cd ferret
-cp .env.example .env          # set OPENROUTER_PROVISIONING_KEY at minimum
+cp .env.example .env          # optional — see Configuration below
 just up
 # or: docker compose up --build -d
 ```
@@ -75,18 +75,19 @@ just up
 | API     | http://localhost:8000 |
 | Proxy   | `127.0.0.1:1337` |
 
-Point your browser or tool at `127.0.0.1:1337`. For HTTPS, install the mitmproxy CA cert from the proxy settings page.
+Open `http://localhost:3000` — the setup wizard runs on first visit and walks you through choosing an AI provider (OpenRouter, OpenAI, Anthropic, Gemini, DeepSeek, Mistral, Ollama, or LM Studio) and entering your API key. No `.env` changes are required to get started.
+
+Point your browser or tool at `127.0.0.1:1337`. For HTTPS, install the mitmproxy CA cert from the Settings page.
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env` to pre-configure options. All AI provider settings can also be set through the in-browser setup wizard.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENROUTER_PROVISIONING_KEY` | — | Master OpenRouter key (required for AI) |
-| `OPENROUTER_MODEL` | `google/gemini-3-flash-preview` | Model for chat and annotations |
+| `OPENROUTER_MODEL` | `google/gemini-3-flash-preview` | Default model when using OpenRouter (overridden by wizard selection) |
 | `PROXY_HOST` | `0.0.0.0` | Proxy bind address |
 | `PROXY_PORT` | `1337` | Proxy port |
 | `UI_PORT` | `3000` | UI port |

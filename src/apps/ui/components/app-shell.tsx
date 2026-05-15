@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   Globe,
   Shield,
@@ -50,6 +50,8 @@ const STORAGE_KEY = "ferret:sidebarWidth"
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router   = useRouter()
+
   // State is only used for drag logic / collapsed detection.
   // The visual width is driven by the CSS custom property --sidebar-w which is
   // set synchronously by the blocking script in layout.tsx before first paint,
@@ -70,9 +72,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!isNaN(parsed)) setSidebarWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, parsed)))
   }, [])
 
-  const collapsed = sidebarWidth <= MIN_WIDTH + 8
-
+  // First-run check: redirect to /setup if the wizard has not been completed.
+  // Skipped when already on /setup to avoid redirect loops.
   useEffect(() => {
+    if (pathname === "/setup") return
+    const check = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/setup`)
+        if (!res.ok) return  // API not ready yet — don't block the UI
+        const data = await res.json()
+        if (!data.setup_complete) {
+          router.replace("/setup")
+        }
+      } catch {
+        // Backend unreachable on first load — don't block the UI
+      }
+    }
+    check()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
+
+  // Proxy status polling — must be declared before any early return to satisfy
+  // the Rules of Hooks (hooks must always be called in the same order).
+  useEffect(() => {
+    if (pathname === "/setup") return
     const fetchStatus = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/proxy/status`)
@@ -84,7 +107,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     fetchStatus()
     const id = setInterval(fetchStatus, 5000)
     return () => clearInterval(id)
-  }, [])
+  }, [pathname])
+
+  const collapsed = sidebarWidth <= MIN_WIDTH + 8
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -123,6 +148,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       document.documentElement.style.setProperty("--sidebar-w", `${next}px`)
       return next
     })
+  }
+
+  // If we are on the setup page, render children directly (no sidebar).
+  // This early return must come AFTER all hooks/callbacks to satisfy the Rules of Hooks.
+  if (pathname === "/setup") {
+    return <>{children}</>
   }
 
   return (
