@@ -182,6 +182,34 @@ publish-lab:
         --push \
         src/apps/lab
 
+# Create and push a semver release tag, triggering the GA workflow to publish
+# a versioned ferret-lab image to GHCR.
+# Usage: just tag major | just tag minor | just tag patch
+# With no existing tags, major → v1.0.0, minor → v0.1.0, patch → v0.0.1.
+tag bump:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    LATEST=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+    if [[ -z "$LATEST" ]]; then
+        MAJOR=0; MINOR=0; PATCH=0
+    else
+        IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+    fi
+    case "{{bump}}" in
+      major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+      minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+      patch) PATCH=$((PATCH+1)) ;;
+      *) echo "Usage: just tag major|minor|patch"; exit 1 ;;
+    esac
+    NEW="v${MAJOR}.${MINOR}.${PATCH}"
+    echo "Tagging ${NEW}..."
+    git tag -a "$NEW" -m "Release ${NEW}"
+    git push origin "$NEW"
+    echo ""
+    echo "Tag ${NEW} pushed. GitHub Actions will publish:"
+    echo "  ghcr.io/synlace/ferret-lab:${NEW}"
+    echo "  ghcr.io/synlace/ferret-lab:latest"
+
 # Integration test: verify the docker-socket-proxy allows only permitted operations.
 # Requires a running stack (just up).
 # Tests run inside the api container so no host port exposure is needed.
