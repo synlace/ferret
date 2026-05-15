@@ -160,15 +160,27 @@ restore:
 shell:
     docker exec -it ferret-lab bash
 
-# Build just the lab image
+# Build the lab image locally (for contributors modifying src/apps/lab/).
+# Set FERRET_LAB_IMAGE=ferret-lab:local in .env to use this image instead of GHCR.
 build-lab:
-    docker compose build lab
+    docker buildx build -t ferret-lab:local src/apps/lab
 
-# Rebuild and restart the lab container
+# Rebuild the local lab image and restart the container.
+# Requires FERRET_LAB_IMAGE=ferret-lab:local in .env.
 restart-lab:
     docker compose stop lab
-    docker compose build lab
+    docker buildx build -t ferret-lab:local src/apps/lab
     docker compose start lab
+
+# Push a new ferret-lab image to GHCR (maintainers only).
+# Requires docker login to ghcr.io and write access to the repo packages.
+# CI runs this automatically on push to main when src/apps/lab/** changes.
+publish-lab:
+    docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        -t ghcr.io/synlace/ferret-lab:latest \
+        --push \
+        src/apps/lab
 
 # Integration test: verify the docker-socket-proxy allows only permitted operations.
 # Requires a running stack (just up).
