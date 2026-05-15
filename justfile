@@ -177,7 +177,7 @@ restart-lab:
 # CI runs this automatically on push to main when src/apps/lab/** changes.
 publish-lab:
     docker buildx build \
-        --platform linux/amd64,linux/arm64 \
+        --platform linux/amd64 \
         -t ghcr.io/synlace/ferret-lab:latest \
         --push \
         src/apps/lab
