@@ -68,10 +68,10 @@ services:
       start_period: 30s
 
   lab:
-    build:
-      context: src/apps/lab
-      dockerfile: Dockerfile
-    image: ferret-lab:latest
+    # Pre-built image is published to GHCR by .github/workflows/publish-lab.yml.
+    # To build locally instead (e.g. when modifying the lab image), set:
+    #   FERRET_LAB_IMAGE=ferret-lab:local in .env, then run: just build-lab
+    image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}
     container_name: ferret-lab
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
