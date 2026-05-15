@@ -51,5 +51,5 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ferret-lab:cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ferret-lab:cache,mode=max
