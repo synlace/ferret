@@ -618,6 +618,13 @@ async def _resolve_project_and_key(session_id: str, fallback_project_id: str):
     return project_id, api_key, ai_cfg, project
 
 
+_NO_KEY_NOTICE = (
+    "**No API key configured for this project.**\n\n"
+    "Go to **Projects → Keys → Create Key** to provision one, "
+    "then come back and send your message."
+)
+
+
 def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> List[Dict[str, Any]]:
     system_prompt = (
         "You are a security testing assistant in FERRET (a MITM proxy tool). "
@@ -630,6 +637,10 @@ def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> 
     )
     or_messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     for m in history:
+        # Skip UI-only notice messages — not a valid AI role; sending them to the
+        # provider would cause a 400/422 error.
+        if m.get("role") == "notice":
+            continue
         msg: Dict[str, Any] = {"role": m["role"], "content": m.get("content") or ""}
         if m.get("tool_call_id"):
             msg["tool_call_id"] = m["tool_call_id"]
@@ -1137,7 +1148,20 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
     The project_id is derived from the session record; the query param is a fallback only.
     """
     try:
-        project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
+        try:
+            project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
+        except HTTPException as e:
+            if e.status_code == 503 and "provisioned key" in str(e.detail):
+                _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                await deps.db_client.append_chat_message(
+                    session_id, {"role": "user", "content": body.message, "timestamp": _ts}
+                )
+                await deps.db_client.append_chat_message(
+                    session_id, {"role": "notice", "content": _NO_KEY_NOTICE, "timestamp": _ts}
+                )
+                updated = await deps.db_client.get_chat_history(session_id)
+                return {"messages": updated}
+            raise
 
         _project_model = (_project.get("default_model") if _project else None) or _ai_cfg.get("model") or deps.OPENROUTER_MODEL
         model = body.model or _project_model
@@ -1229,7 +1253,25 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
     try:
         project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
     except HTTPException as e:
-        # Return a plain JSON error — the frontend checks res.ok and handles it.
+        if e.status_code == 503 and "provisioned key" in str(e.detail):
+            # Persist user message + notice so they survive a hard page refresh,
+            # then stream the error event so the frontend renders it immediately.
+            # Capture detail before the except block exits — Python 3.11+ clears
+            # the exception variable 'e' after the except block, so the inner
+            # async generator cannot reference it by closure.
+            _detail = str(e.detail)
+            _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            await deps.db_client.append_chat_message(
+                session_id, {"role": "user", "content": body.message, "timestamp": _ts}
+            )
+            await deps.db_client.append_chat_message(
+                session_id, {"role": "notice", "content": _NO_KEY_NOTICE, "timestamp": _ts}
+            )
+
+            async def _no_key_stream():
+                yield f"data: {json.dumps({'type': 'error', 'detail': _detail})}\n\n"
+
+            return StreamingResponse(_no_key_stream(), media_type="text/event-stream")
         raise
 
     _project_model = (_project.get("default_model") if _project else None) or _ai_cfg.get("model") or deps.OPENROUTER_MODEL

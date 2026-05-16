@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { ArrowLeft, Loader2, Save, Trash2, Play, Square, Terminal, FileCode } from "lucide-react"
+import { ArrowLeft, Loader2, Save, Trash2, Play, Square, Terminal, FileCode, WrapText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useDragResize } from "./tool-views"
 import CodeMirror, { EditorView } from "@uiw/react-codemirror"
@@ -59,6 +59,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
   const [runStatus, setRunStatus] = useState<"idle" | "running" | "passed" | "failed" | "error">("idle")
   const [splitPct, dragHandleProps] = useDragResize(45)
   const [stacked, setStacked] = useState(false)
+  const [wordWrap, setWordWrap] = useState(() => ["tests", "scripts"].includes(filePath.split("/")[0]))
   const outputRef = useRef<HTMLPreElement>(null)
   const runAbortRef = useRef<AbortController | null>(null)
   const fileName = filePath.split("/").pop() ?? filePath
@@ -137,6 +138,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
                 cmOverrides,
                 keymap.of([indentWithTab]),
                 ...langExtensions(filePath),
+                ...(wordWrap ? [EditorView.lineWrapping] : []),
               ]}
               basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true }}
               style={{ height: "100%" }}
@@ -170,6 +172,10 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
         <span className="text-neutral-600">/</span>
         <span className="text-sm font-bold text-white font-mono">{fileName}</span>
         <div className="flex-1" />
+        <button onClick={() => setWordWrap(w => !w)} title={wordWrap ? "Disable word wrap" : "Enable word wrap"}
+          className={`text-xs transition-colors px-2 py-1 border ${wordWrap ? "text-orange-400 border-orange-500/40 hover:border-orange-400" : "text-neutral-500 border-neutral-700 hover:text-neutral-300 hover:border-neutral-600"}`}>
+          <WrapText className="w-3.5 h-3.5" />
+        </button>
         <button onClick={() => setStacked(s => !s)}
           className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors px-2 py-1 border border-neutral-700 hover:border-neutral-600">
           {stacked ? "⬛⬛" : "⬜⬜"}

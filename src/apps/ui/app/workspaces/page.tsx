@@ -134,6 +134,26 @@ function WorkspacesPageInner() {
   const [sessionSpend, setSessionSpend] = useState<number | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const pendingNoticeRef = useRef<ChatMsg | null>(null)
+  // Collapse state for ToolGroup — keyed by persistKey. Stored in a ref so
+  // toggling doesn't cause a full re-render; a separate counter forces a
+  // targeted re-render only when the user actually clicks a toggle.
+  const toolGroupCollapsed = useRef<Map<string, boolean>>(new Map())
+  const [, forceToolGroupRender] = useState(0)
+  const handleToolGroupToggle = (key: string, collapsed: boolean) => {
+    toolGroupCollapsed.current.set(key, collapsed)
+    if (key) { try { localStorage.setItem(`tg:${key}`, collapsed ? "1" : "0") } catch { /**/ } }
+    forceToolGroupRender(n => n + 1)
+  }
+  const getToolGroupCollapsed = (key: string, defaultVal = true): boolean => {
+    if (toolGroupCollapsed.current.has(key)) return toolGroupCollapsed.current.get(key)!
+    try {
+      const stored = localStorage.getItem(`tg:${key}`)
+      const val = stored !== null ? stored !== "0" : defaultVal
+      toolGroupCollapsed.current.set(key, val)
+      return val
+    } catch { return defaultVal }
+  }
   const inputHistoryRef = useRef<string[]>([])
   const historyIdxRef = useRef<number>(-1)
   const inputDraftRef = useRef<string>("")
@@ -290,16 +310,29 @@ function WorkspacesPageInner() {
       shouldAutoScroll.current = true
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
     }
-  }, [activeSessionId, messages])
+  }, [activeSessionId, messages, selectedFilePath])
 
   const loadSession = useCallback(async (sessionId: string) => {
+    // Capture any trailing notice that exists only in client state (e.g. "no API
+    // key" warning) so we can re-append it after the server fetch overwrites state.
+    // We read the ref synchronously — no setState needed.
+    setMessages(prev => {
+      const last = prev[prev.length - 1]
+      pendingNoticeRef.current = (last?.role === "notice") ? last : null
+      return prev
+    })
     setActiveSessionId(sessionId); setSelectedFilePath(null)
     if (activeProjectId) localStorage.setItem(lastSessionKey(activeProjectId), sessionId)
     setLoadingHistory(true)
     try {
       const res = await fetch(`${API_BASE}/api/chats/${sessionId}/messages`)
       const data = await res.json()
-      setMessages(annotateToolArgs(data.messages ?? []))
+      const fetched = annotateToolArgs(data.messages ?? [])
+      // Re-append the notice if it wasn't already persisted in the server response
+      const notice = pendingNoticeRef.current
+      pendingNoticeRef.current = null
+      const alreadyHasNotice = fetched.length > 0 && fetched[fetched.length - 1].role === "notice"
+      setMessages(notice && !alreadyHasNotice ? [...fetched, notice] : fetched)
     } catch { /**/ } finally { setLoadingHistory(false) }
     fetchWorkspaceFiles(sessionId)
   }, [activeProjectId, fetchWorkspaceFiles])
@@ -408,6 +441,24 @@ function WorkspacesPageInner() {
               tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls as ChatMsg["tool_calls"] : undefined,
               timestamp: typeof m.timestamp === "string" ? m.timestamp : undefined,
             }))
+            // Remap live:N collapse states → sessionId:msgIndex so the persisted
+            // ToolGroup instances inherit the expanded/collapsed state the user set
+            // during streaming, surviving the live→persisted DOM transition.
+            if (activeSessionId) {
+              let liveIdx = 0
+              rawMsgs.forEach((m, msgIdx) => {
+                if (m.role === "tool") {
+                  const liveKey = `live:${liveIdx}`
+                  const persistedKey = `${activeSessionId}:${msgIdx}`
+                  if (toolGroupCollapsed.current.has(liveKey)) {
+                    const val = toolGroupCollapsed.current.get(liveKey)!
+                    toolGroupCollapsed.current.set(persistedKey, val)
+                    toolGroupCollapsed.current.delete(liveKey)
+                  }
+                  liveIdx++
+                }
+              })
+            }
             setMessages(annotateToolArgs(rawMsgs)); setStreamingContent(""); setLiveToolCalls([]); setLoading(false)
             fetchWorkspaceFiles(activeSessionId)
             if (activeProjectId) {
@@ -421,7 +472,10 @@ function WorkspacesPageInner() {
             const content = isNoKey
               ? `**No API key configured for this project.**\n\nGo to **Projects → Keys → Create Key** to provision one, then come back and send your message.`
               : `Error: ${detail}`
-            setMessages(prev => [...prev, { role: "assistant", content, timestamp: nowTs() }])
+            // Use "notice" role for no-key errors so the styling matches what is
+            // persisted in the DB and shown on reload. Generic errors use "assistant".
+            const role: ChatMsg["role"] = isNoKey ? "notice" : "assistant"
+            setMessages(prev => [...prev, { role, content, timestamp: nowTs() }])
             setStreamingContent(""); setLiveToolCalls([]); setLoading(false)
           }
         } catch { /**/ }
@@ -730,7 +784,9 @@ function WorkspacesPageInner() {
                   return (
                     <ToolGroup key={i} toolName={toolName} toolArgs={msg.toolArgs ?? ""} toolArgsRaw={msg.toolArgsRaw}
                       result={result} isRunning={isRunning} persistKey={persistKey}
-                      exitCode={msg.exitCode} runtimeMs={msg.runtimeMs} liveChunks={undefined} />
+                      exitCode={msg.exitCode} runtimeMs={msg.runtimeMs} liveChunks={undefined}
+                      collapsedOverride={persistKey ? getToolGroupCollapsed(persistKey) : undefined}
+                      onToggle={handleToolGroupToggle} />
                   )
                 }
                 if (msg.role === "assistant" && !(msg.content ?? "").trim()) return null
@@ -761,14 +817,20 @@ function WorkspacesPageInner() {
               })}
               {loading && liveToolCalls.length > 0 && (
                 <div className="space-y-1">
-                  {liveToolCalls.map((tc, idx) => (
-                    <ToolGroup key={idx} toolName={tc.name}
-                      toolArgs={tc.toolArgsRaw ? formatToolArgs(tc.name, tc.toolArgsRaw) : ""}
-                      toolArgsRaw={tc.toolArgsRaw}
-                      result={tc.result}
-                      isRunning={tc.result === null} exitCode={tc.exitCode} runtimeMs={tc.runtimeMs}
-                      liveChunks={tc.liveChunks} />
-                  ))}
+                  {liveToolCalls.map((tc, idx) => {
+                    const liveKey = `live:${idx}`
+                    return (
+                      <ToolGroup key={idx} toolName={tc.name}
+                        toolArgs={tc.toolArgsRaw ? formatToolArgs(tc.name, tc.toolArgsRaw) : ""}
+                        toolArgsRaw={tc.toolArgsRaw}
+                        result={tc.result}
+                        isRunning={tc.result === null} exitCode={tc.exitCode} runtimeMs={tc.runtimeMs}
+                        liveChunks={tc.liveChunks}
+                        persistKey={liveKey}
+                        collapsedOverride={getToolGroupCollapsed(liveKey)}
+                        onToggle={handleToolGroupToggle} />
+                    )
+                  })}
                 </div>
               )}
               {loading && streamingContent && (

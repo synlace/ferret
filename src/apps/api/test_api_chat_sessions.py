@@ -469,10 +469,11 @@ class TestSendSessionMessageProjectIdFromSession:
         )
 
     @pytest.mark.asyncio
-    async def test_session_under_temp_with_no_key_returns_503(self, client, mem_db):
+    async def test_session_under_temp_with_no_key_persists_notice(self, client, mem_db):
         """
-        A session under 'temp' with no provisioned key returns 503.
-        (Ensures the project-id derivation doesn't accidentally bypass the key check.)
+        A session under 'temp' with no provisioned key now returns 200 and persists
+        both the user message and a notice to the DB, so the UI can display the
+        error after a hard page refresh.
         """
         await mem_db.seed_temp_project()
         create_resp = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
@@ -482,8 +483,13 @@ class TestSendSessionMessageProjectIdFromSession:
             f"/api/chats/{session_id}/messages",
             json={"message": "No key here"},
         )
-        assert resp.status_code == 503
-        assert "provisioned key" in resp.json()["detail"].lower()
+        assert resp.status_code == 200
+        messages = resp.json()["messages"]
+        roles = [m["role"] for m in messages]
+        assert "user" in roles, "user message should be persisted"
+        assert "notice" in roles, "notice message should be persisted"
+        notice = next(m for m in messages if m["role"] == "notice")
+        assert "API key" in notice["content"]
 
 
 # ===========================================================================

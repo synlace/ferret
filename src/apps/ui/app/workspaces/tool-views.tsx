@@ -853,19 +853,29 @@ export interface ToolGroupProps {
   exitCode?: number | null
   runtimeMs?: number | null
   liveChunks?: string[]
+  /** Controlled collapse state — when provided, overrides local state */
+  collapsedOverride?: boolean
+  /** Called when the user toggles; receives the new collapsed value */
+  onToggle?: (key: string, collapsed: boolean) => void
 }
 
-export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, persistKey, forceOpen, exitCode, runtimeMs, liveChunks }: ToolGroupProps) {
-  const [collapsed, setCollapsed] = useState(() => {
+export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, persistKey, forceOpen, exitCode, runtimeMs, liveChunks, collapsedOverride, onToggle }: ToolGroupProps) {
+  const controlled = collapsedOverride !== undefined
+  const [localCollapsed, setLocalCollapsed] = useState(() => {
     if (forceOpen) return false
     if (!persistKey) return true
     try { return localStorage.getItem(`tg:${persistKey}`) !== "0" } catch { return true }
   })
-  const toggle = () => setCollapsed(c => {
-    const next = !c
-    if (persistKey) { try { localStorage.setItem(`tg:${persistKey}`, next ? "1" : "0") } catch { /**/ } }
-    return next
-  })
+  const collapsed = controlled ? collapsedOverride : localCollapsed
+  const toggle = () => {
+    const next = !collapsed
+    if (controlled && persistKey && onToggle) {
+      onToggle(persistKey, next)
+    } else {
+      setLocalCollapsed(next)
+      if (persistKey) { try { localStorage.setItem(`tg:${persistKey}`, next ? "1" : "0") } catch { /**/ } }
+    }
+  }
 
   // Status icon: spinner while running, green tick (exit 0), red X (exit non-0), grey terminal (no exit info)
   const statusIcon = isRunning
