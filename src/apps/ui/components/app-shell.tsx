@@ -181,7 +181,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
               }`}
             >
-              <h1 className="text-orange-500 font-bold text-sm tracking-wider whitespace-nowrap">FERRET <span className="text-orange-400/70 font-normal text-xs">{process.env.NEXT_PUBLIC_APP_VERSION ?? "dev"}</span></h1>
+              <h1 className="text-orange-500 font-bold text-sm tracking-wider whitespace-nowrap">FERRET <span className="text-orange-400/60 font-normal text-[10px]">{process.env.NEXT_PUBLIC_APP_VERSION ?? "dev"}</span></h1>
               <a
                 href="https://synlace.ai"
                 target="_blank"
