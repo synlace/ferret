@@ -187,11 +187,17 @@ def test_file_path(request_id: str, host: str) -> Path:
 
 
 async def run_pytest(test_path: Path) -> str:
-    """Run pytest on *test_path* inside the ferret-lab sandbox container."""
+    """Run pytest on *test_path* inside the ferret-lab sandbox container.
+
+    ``-s`` disables output capture so that ``print()`` calls inside test
+    functions are included in the returned output.  This is critical for the
+    AI agent: without it, diagnostic prints (e.g. cart totals, HTTP status
+    codes) are swallowed by pytest and never reach the model's context window.
+    """
     proc = await asyncio.create_subprocess_exec(
         "docker", "exec", SANDBOX_CONTAINER,
         "python3", "-m", "pytest", str(test_path),
-        "--tb=short", "-v", "--no-header",
+        "--tb=short", "-v", "--no-header", "-s",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )

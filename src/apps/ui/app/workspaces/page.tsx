@@ -243,6 +243,7 @@ function WorkspacesPageInner() {
   const [showScopePicker, setShowScopePicker] = useState(false)
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [wsFilter, setWsFilter] = useState("")
+  const [wsSort, setWsSort] = useState<"newest" | "oldest" | "az" | "za">("newest")
 
   const modelDisplayName = model.includes("/") ? model.split("/").pop()! : model
   const userOverrodeModel = useRef(false)
@@ -671,9 +672,19 @@ function WorkspacesPageInner() {
               placeholder="filter workspaces..."
               className="bg-transparent text-[10px] text-neutral-500 placeholder:text-neutral-700 outline-none flex-1 min-w-0"
             />
+            <select
+              value={wsSort}
+              onChange={e => setWsSort(e.target.value as "newest" | "oldest" | "az" | "za")}
+              className="bg-neutral-900 border border-neutral-800 text-[9px] text-neutral-500 font-sans outline-none cursor-pointer px-1 py-0.5 rounded-sm hover:border-neutral-700 transition-colors flex-shrink-0"
+            >
+              <option value="newest">newest</option>
+              <option value="oldest">oldest</option>
+              <option value="az">a-z</option>
+              <option value="za">z-a</option>
+            </select>
           </div>
 
-          {/* ── Session list (day-grouped) ── */}
+          {/* ── Session list (flat, sorted) ── */}
           <div className="flex-1 overflow-y-auto">
             {(() => {
               const filtered = sessions.filter(s =>
@@ -688,43 +699,14 @@ function WorkspacesPageInner() {
                 )
               }
 
-              // Group sessions by day
-              const now = new Date()
-              const todayStr = now.toDateString()
-              const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
-              const yesterdayStr = yesterday.toDateString()
+              const sorted = [...filtered].sort((a, b) => {
+                if (wsSort === "newest") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                if (wsSort === "oldest") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                if (wsSort === "az") return a.name.localeCompare(b.name)
+                return b.name.localeCompare(a.name)
+              })
 
-              type Group = { label: string; sessions: WorkspaceSession[] }
-              const groups: Group[] = []
-              const groupMap: Record<string, Group> = {}
-
-              for (const session of filtered) {
-                const d = new Date(session.created_at)
-                const ds = d.toDateString()
-                let label: string
-                if (ds === todayStr) label = "Today"
-                else if (ds === yesterdayStr) label = "Yesterday"
-                else label = d.toLocaleDateString()
-
-                if (!groupMap[label]) {
-                  const g: Group = { label, sessions: [] }
-                  groupMap[label] = g
-                  groups.push(g)
-                }
-                groupMap[label].sessions.push(session)
-              }
-
-              return groups.map(group => (
-                <div key={group.label}>
-                  {/* Day group header */}
-                  <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 sticky top-0 bg-neutral-950 z-10">
-                    <span className="text-neutral-700 uppercase text-[9px] font-semibold tracking-widest font-sans flex-shrink-0">
-                      {group.label}
-                    </span>
-                    <div className="flex-1 h-px bg-neutral-800" />
-                  </div>
-
-                  {group.sessions.map(session => {
+              return sorted.map(session => {
                     const isActive = session.id === activeSessionId
                     const counts = sessionFileCounts[session.id]
 
@@ -838,9 +820,7 @@ function WorkspacesPageInner() {
                         )}
                       </div>
                     )
-                  })}
-                </div>
-              ))
+                  })
             })()}
           </div>
 

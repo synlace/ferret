@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import deps
 from models import ChatSession, ChatSessionCreate, ChatSessionUpdate, ChatSendRequest
@@ -359,17 +359,81 @@ _SESSION_CHAT_TOOLS = [
         },
     },
     # -----------------------------------------------------------------------
-    # ffuf directory/file/parameter fuzzer
+    # katana web crawler — preferred for endpoint/directory discovery
+    # -----------------------------------------------------------------------
+    {
+        "type": "function",
+        "function": {
+            "name": "run_katana",
+            "description": (
+                "Crawl a web application to discover endpoints, paths, forms, and linked resources. "
+                "PREFER this over run_ffuf for directory/file/endpoint discovery — katana follows "
+                "real links and parses JavaScript, finding routes that wordlist fuzzing misses. "
+                "Use run_ffuf only for parameter fuzzing, credential brute-forcing, or SQLi fuzzing.\n"
+                "Results are truncated to 16 KB."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Seed URL to start crawling from, e.g. 'https://target.com'.",
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Crawl depth (default 3, max 10).",
+                    },
+                    "js_crawl": {
+                        "type": "boolean",
+                        "description": "Parse JavaScript files for additional endpoints (default true).",
+                    },
+                    "headless": {
+                        "type": "boolean",
+                        "description": (
+                            "Use headless Chrome to render JS-heavy SPAs before crawling "
+                            "(default false — slower but finds dynamically-rendered routes)."
+                        ),
+                    },
+                    "scope": {
+                        "type": "string",
+                        "description": (
+                            "Restrict crawl to URLs matching this regex. "
+                            "Defaults to the seed domain. Use '.*' to crawl out-of-scope links."
+                        ),
+                    },
+                    "proxy": {
+                        "type": "string",
+                        "description": "Proxy URL (default 'http://api:1337' to route through FERRET).",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Total execution timeout in seconds (default 60, max 300).",
+                    },
+                    "extra_args": {
+                        "type": "string",
+                        "description": (
+                            "Additional raw katana flags, e.g. '-form-extraction' or '-known-files all'. "
+                            "Do NOT include -u, -d, -proxy, -js-crawl, -headless (use dedicated params)."
+                        ),
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    # -----------------------------------------------------------------------
+    # ffuf parameter/credential/SQLi fuzzer (NOT for directory discovery)
     # -----------------------------------------------------------------------
     {
         "type": "function",
         "function": {
             "name": "run_ffuf",
             "description": (
-                "Run ffuf (Fuzz Faster U Fool) inside the ferret-lab sandbox for directory/file "
-                "busting, parameter fuzzing, or vhost discovery. "
+                "Run ffuf (Fuzz Faster U Fool) inside the ferret-lab sandbox for parameter fuzzing, "
+                "credential brute-forcing, vhost discovery, or SQLi fuzzing. "
+                "NOT intended for directory/file discovery — use run_katana for that instead. "
                 "Place the FUZZ keyword anywhere in the URL, headers, or POST data. "
-                "Returns a summary of discovered paths with status codes, sizes, and response times. "
+                "Returns a summary of matches with status codes, sizes, and response times. "
                 "Available wordlists inside the sandbox:\n"
                 "  /usr/share/dirb/wordlists/common.txt  (default, ~4600 entries, fast)\n"
                 "  /usr/share/dirb/wordlists/big.txt  (~20000 entries)\n"
@@ -642,8 +706,34 @@ def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> 
     system_prompt = (
         "You are a security testing assistant in FERRET (a MITM proxy tool). "
         "Be concise. Use Markdown: code blocks for code, bullets for findings.\n\n"
+
+        "Grounding rules (CRITICAL — read before every response):\n"
+        "0. NEVER claim success, failure, or any outcome unless the tool output explicitly "
+        "confirms it. If a script prints 'Lab not solved yet', the lab is NOT solved — "
+        "do not write a summary claiming it is.\n"
+        "1. After every run_script or run_test call, read the ACTUAL stdout/stderr output "
+        "before deciding what to do next. Do not assume the outcome.\n"
+        "2. HTTP 200 from a checkout or action endpoint means the page rendered — it does "
+        "NOT mean the action succeeded. Only a 302 redirect or an explicit success string "
+        "in the response body confirms success.\n"
+        "3. The evidence field in create_finding MUST be copied verbatim from tool output. "
+        "Never write evidence that was not returned by a tool in this session.\n"
+        "4. If a verification script returns a negative result (e.g. 'not solved', "
+        "'Insufficient funds', 'error'), acknowledge the failure and retry with a "
+        "corrected approach. Do not repeat the same claim.\n\n"
+
+        "run_script session rules:\n"
+        "5. Each run_script call runs in a FRESH Python process — requests.Session() objects "
+        "do NOT persist between calls. To maintain cookies/auth across multiple scripts, "
+        "use the injected `session` variable (automatically persisted to disk between calls "
+        "within this chat session). Do NOT create a new `session = requests.Session()` — "
+        "the persistent session is already available as `session`.\n\n"
+
         "Tool call rules:\n"
-        "0. Always set the 'rationale' field to one sentence explaining why you are calling the tool.\n\n"
+        "0. Always set the 'rationale' field to one sentence explaining why you are calling the tool.\n"
+        "Discovery rule: Use run_katana to discover endpoints, directories, and files on a target. "
+        "Only use run_ffuf for parameter fuzzing, credential brute-forcing, or SQLi fuzzing — "
+        "never for directory/file discovery.\n\n"
         "pytest rules:\n"
         "1. Always add `verify=False` to every request and `import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)` at the top.\n"
         "2. Proxy address: `proxies={'https': 'http://api:1337', 'http': 'http://api:1337'}`. Never use 127.0.0.1 or localhost.\n"
@@ -673,6 +763,49 @@ def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> 
 # While is_final is False, chunk is a raw output chunk to stream to the client.
 # When is_final is True, final_result is the complete result string (with __META__).
 
+# ---------------------------------------------------------------------------
+# Persistent session preamble injected at the top of every python3 run_script.
+#
+# Problem: each run_script call spawns a fresh Python process, so
+# requests.Session() objects — and their cookies — are lost between calls.
+# This causes multi-step exploits (e.g. overflow cart → checkout) to fail
+# because the second script starts with an empty, unauthenticated session.
+#
+# Solution: inject a preamble that loads a pickled requests.Session from a
+# per-chat-session file in /tmp inside the sandbox container.  The session is
+# saved back to disk via atexit so it persists across run_script calls.
+# The model is instructed (in the system prompt) to use the pre-built `session`
+# variable rather than creating a new one.
+# ---------------------------------------------------------------------------
+
+_PYTHON_SESSION_PREAMBLE_TEMPLATE = """\
+# [FERRET] Persistent session preamble — do not remove
+import os as _ferret_os, pickle as _ferret_pickle, atexit as _ferret_atexit
+import requests as _ferret_requests
+import urllib3 as _ferret_urllib3
+_ferret_urllib3.disable_warnings(_ferret_urllib3.exceptions.InsecureRequestWarning)
+_FERRET_SESSION_FILE = "/tmp/ferret_session_{safe_session_id}.pkl"
+if _ferret_os.path.exists(_FERRET_SESSION_FILE):
+    try:
+        with open(_FERRET_SESSION_FILE, "rb") as _f:
+            session = _ferret_pickle.load(_f)
+    except Exception:
+        session = _ferret_requests.Session()
+        session.verify = False
+else:
+    session = _ferret_requests.Session()
+    session.verify = False
+def _ferret_save_session():
+    try:
+        with open(_FERRET_SESSION_FILE, "wb") as _f:
+            _ferret_pickle.dump(session, _f)
+    except Exception:
+        pass
+_ferret_atexit.register(_ferret_save_session)
+# [FERRET] End preamble — your script follows
+"""
+
+
 async def _stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", session_id: str = ""):
     """Async generator: stream run_script output line-by-line, then yield final result."""
     import asyncio as _asyncio
@@ -691,6 +824,23 @@ async def _stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", 
         return
     timeout_sec = min(int(fn_args.get("timeout") or 30), 120)
     ext = ".sh" if interpreter == "bash" else ".py"
+
+    # For Python scripts running inside a session context, prepend the persistent
+    # session preamble so that cookies/auth survive across multiple run_script calls.
+    if interpreter == "python3" and session_id:
+        import re as _re
+        # Sanitise session_id to a safe filename component (alphanumeric + hyphen only)
+        safe_sid = _re.sub(r"[^a-zA-Z0-9\-]", "_", session_id)[:64]
+        preamble = _PYTHON_SESSION_PREAMBLE_TEMPLATE.format(safe_session_id=safe_sid)
+        # Strip any existing `session = requests.Session()` lines the model wrote
+        # so the preamble's persistent session is not immediately overwritten.
+        script = _re.sub(
+            r"^\s*session\s*=\s*requests\.Session\(\).*$",
+            "# [FERRET] session replaced by persistent preamble session",
+            script,
+            flags=_re.MULTILINE,
+        )
+        script = preamble + script
 
     # Persist the script to the workspace scripts/ subdir so it appears in the
     # file tree.  Only done when called from a session context (session_id set).
@@ -870,8 +1020,114 @@ async def _stream_run_ffuf(fn_args: Dict[str, Any]):
         yield (msg, True, msg)
 
 
-async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", session_id: str = "") -> str:
-    """Execute a single tool call and return the result string."""
+async def _stream_run_katana(fn_args: Dict[str, Any]):
+    """Async generator: stream katana web-crawler output line-by-line, then yield final result."""
+    import asyncio as _asyncio
+    import shlex as _shlex
+    import json as _json
+    import time as _time
+
+    url = fn_args.get("url", "").strip()
+    if not url:
+        msg = "[FERRET] url is required."
+        yield (msg, True, msg); return
+
+    depth = min(int(fn_args.get("depth") or 3), 10)
+    js_crawl = fn_args.get("js_crawl", True)
+    headless = fn_args.get("headless", False)
+    scope = fn_args.get("scope", "").strip()
+    proxy = fn_args.get("proxy", "http://api:1337").strip()
+    timeout_sec = min(int(fn_args.get("timeout") or 60), 300)
+    extra_args = fn_args.get("extra_args", "").strip()
+
+    cmd: List[str] = [
+        "katana",
+        "-u", url,
+        "-depth", str(depth),
+        "-silent",
+        "-no-color",
+    ]
+    if js_crawl:
+        cmd.append("-js-crawl")
+    if headless:
+        cmd.append("-headless")
+    if scope:
+        cmd += ["-field-scope", scope]
+    if proxy:
+        cmd += ["-proxy", proxy]
+    if extra_args:
+        try:
+            cmd += _shlex.split(extra_args)
+        except ValueError:
+            pass
+
+    try:
+        exec_proc = await _asyncio.create_subprocess_exec(
+            "docker", "exec", deps.SANDBOX_CONTAINER, *cmd,
+            stdout=_asyncio.subprocess.PIPE,
+            stderr=_asyncio.subprocess.STDOUT,
+        )
+        _t0 = _time.monotonic()
+        all_chunks: List[str] = []
+        total_bytes = 0
+        MAX_BYTES = 16384
+        timed_out = False
+        try:
+            async def _read_lines():
+                nonlocal total_bytes, timed_out
+                assert exec_proc.stdout is not None
+                while True:
+                    try:
+                        line = await _asyncio.wait_for(exec_proc.stdout.readline(), timeout=timeout_sec)
+                    except _asyncio.TimeoutError:
+                        timed_out = True
+                        exec_proc.kill()
+                        break
+                    if not line:
+                        break
+                    chunk = line.decode("utf-8", errors="replace")
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_BYTES:
+                        all_chunks.append("\r\n... [truncated]\r\n")
+                        exec_proc.kill()
+                        break
+                    all_chunks.append(chunk)
+                    yield chunk
+            async for chunk in _read_lines():
+                yield (chunk, False, None)
+        except Exception:
+            pass
+        await exec_proc.wait()
+        rc = exec_proc.returncode
+        _runtime_ms = round((_time.monotonic() - _t0) * 1000)
+        _ts = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%d %H:%M")
+        if timed_out:
+            timeout_msg = f"\r\n[FERRET] katana timed out after {timeout_sec}s.\r\n"
+            yield (timeout_msg, False, None)
+            all_chunks.append(timeout_msg)
+        full_output = "".join(all_chunks)
+        prefix = f"[exit {rc}]\r\n" if rc not in (0, None) else ""
+        text = prefix + full_output if full_output.strip() else f"[exit {rc}] (no output — no URLs discovered)"
+        final = text + "\n__META__:" + _json.dumps({"exit_code": rc, "runtime_ms": _runtime_ms, "timestamp": _ts})
+        yield ("", True, final)
+    except Exception as exc:
+        msg = f"[FERRET] run_katana error: {exc}"
+        yield (msg, True, msg)
+
+
+async def _execute_tool_call(
+    tc: Dict[str, Any],
+    project_id: str = "temp",
+    session_id: str = "",
+    recent_tool_outputs: Optional[List[str]] = None,
+) -> str:
+    """Execute a single tool call and return the result string.
+
+    ``recent_tool_outputs`` is an optional list of tool result strings from the
+    current agentic loop iteration.  It is used by the ``create_finding`` handler
+    to detect evidence that was not actually produced by any tool in this session
+    (i.e. hallucinated evidence).
+    """
     fn_name = tc["function"]["name"]
     try:
         fn_args = json.loads(tc["function"].get("arguments", "{}"))
@@ -1030,6 +1286,46 @@ async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", sessi
 
     elif fn_name == "create_finding":
         from models import Finding
+
+        # ── Evidence hallucination guard ────────────────────────────────────
+        # Check whether the evidence field contains phrases that look like
+        # confirmed outcomes (e.g. "Lab Solved!", "Checkout status: 302") but
+        # were NOT actually present in any tool output from this session.
+        # If suspicious phrases are found, log a warning and annotate the
+        # finding so reviewers know the evidence may be fabricated.
+        evidence = fn_args.get("evidence") or ""
+        _SUSPICIOUS_OUTCOME_PHRASES = [
+            "Lab Solved",
+            "Congratulations",
+            "Checkout status: 302",
+            "Purchase confirmed",
+            "Successfully purchased",
+            "successfully solving the lab",
+        ]
+        _tool_outputs = recent_tool_outputs or []
+        _hallucinated_phrases = [
+            phrase for phrase in _SUSPICIOUS_OUTCOME_PHRASES
+            if phrase.lower() in evidence.lower()
+            and not any(phrase.lower() in out.lower() for out in _tool_outputs)
+        ]
+        if _hallucinated_phrases:
+            _log.warning(
+                "[chat] create_finding: evidence contains outcome phrase(s) %s "
+                "not found in any tool output — possible hallucination. "
+                "session_id=%s title=%r",
+                _hallucinated_phrases,
+                session_id,
+                fn_args.get("title", ""),
+            )
+            evidence = (
+                evidence
+                + "\n\n[FERRET WARNING] The following phrase(s) in this evidence "
+                "were NOT confirmed by any tool output in this session and may be "
+                f"hallucinated: {_hallucinated_phrases}"
+            )
+            fn_args = {**fn_args, "evidence": evidence}
+        # ── End evidence guard ───────────────────────────────────────────────
+
         try:
             finding = Finding(
                 id=str(uuid.uuid4()),
@@ -1083,6 +1379,17 @@ async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", sessi
         chunks: List[str] = []
         final: str = ""
         async for _chunk, _is_final, _result in _stream_run_script(fn_args, project_id=project_id, session_id=session_id):
+            if _is_final:
+                final = _result or ""
+            else:
+                chunks.append(_chunk)
+        return final if final else "".join(chunks)
+
+    elif fn_name == "run_katana":
+        # Delegate to the streaming generator; collect all output for non-streaming callers
+        chunks: List[str] = []
+        final: str = ""
+        async for _chunk, _is_final, _result in _stream_run_katana(fn_args):
             if _is_final:
                 final = _result or ""
             else:
@@ -1215,9 +1522,19 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
                 break
 
             import time as _time
+            # Collect tool outputs already accumulated in this iteration so that
+            # create_finding can validate evidence against them.
+            _recent_outputs = [
+                m.get("content", "") for m in new_messages if m.get("role") == "tool"
+            ]
             for tc in tool_calls:
                 _t0 = _time.monotonic()
-                tool_result = await _execute_tool_call(tc, project_id=project_id, session_id=session_id)
+                tool_result = await _execute_tool_call(
+                    tc,
+                    project_id=project_id,
+                    session_id=session_id,
+                    recent_tool_outputs=_recent_outputs,
+                )
                 _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                 _ts = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%d %H:%M")
                 _meta_prefix = "\n__META__:"
@@ -1403,7 +1720,7 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             if not tool_calls_list:
                 break
 
-            # Execute tool calls — run_script/run_ffuf stream chunks; others execute atomically
+            # Execute tool calls — run_script/run_katana/run_ffuf stream chunks; others execute atomically
             for tc in tool_calls_list:
                 fn_name = tc["function"]["name"]
                 try:
@@ -1414,6 +1731,8 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
 
                 if fn_name == "run_script":
                     _streamer = _stream_run_script(fn_args_raw, project_id=project_id, session_id=session_id)
+                elif fn_name == "run_katana":
+                    _streamer = _stream_run_katana(fn_args_raw)
                 elif fn_name == "run_ffuf":
                     _streamer = _stream_run_ffuf(fn_args_raw)
                 else:
@@ -1429,7 +1748,17 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                 else:
                     import time as _time
                     _t0 = _time.monotonic()
-                    tool_result = await _execute_tool_call(tc, project_id=project_id, session_id=session_id)
+                    # Collect tool outputs already accumulated in this iteration
+                    # so that create_finding can validate evidence against them.
+                    _recent_outputs = [
+                        m.get("content", "") for m in new_messages if m.get("role") == "tool"
+                    ]
+                    tool_result = await _execute_tool_call(
+                        tc,
+                        project_id=project_id,
+                        session_id=session_id,
+                        recent_tool_outputs=_recent_outputs,
+                    )
                     _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                     _ts = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%d %H:%M")
                     _meta_prefix = "\n__META__:"
