@@ -511,6 +511,19 @@ _SESSION_CHAT_TOOLS = [
     },
 ]
 
+# Inject a required `rationale` field into every tool so the model always
+# explains why it is calling the tool. This appears in the UI as a sub-panel.
+_RATIONALE_PROP = {
+    "type": "string",
+    "description": "One sentence explaining why you are calling this tool right now.",
+}
+for _t in _SESSION_CHAT_TOOLS:
+    _props = _t["function"]["parameters"]["properties"]
+    _props["rationale"] = _RATIONALE_PROP
+    _req: list = _t["function"]["parameters"].setdefault("required", [])
+    if "rationale" not in _req:
+        _req.insert(0, "rationale")
+
 
 # ---------------------------------------------------------------------------
 # Provider-aware AI call helpers
@@ -629,6 +642,8 @@ def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> 
     system_prompt = (
         "You are a security testing assistant in FERRET (a MITM proxy tool). "
         "Be concise. Use Markdown: code blocks for code, bullets for findings.\n\n"
+        "Tool call rules:\n"
+        "0. Always set the 'rationale' field to one sentence explaining why you are calling the tool.\n\n"
         "pytest rules:\n"
         "1. Always add `verify=False` to every request and `import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)` at the top.\n"
         "2. Proxy address: `proxies={'https': 'http://api:1337', 'http': 'http://api:1337'}`. Never use 127.0.0.1 or localhost.\n"
@@ -1116,7 +1131,6 @@ async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", sessi
                     content=body.encode() if body else None,
                 )
 
-            resp_header_lines = "\n".join(f"  {k}: {v}" for k, v in resp.headers.items())
             body_text = resp.text
             body_preview = body_text[:3000]
             if len(body_text) > 3000:
@@ -1124,11 +1138,13 @@ async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", sessi
 
             elapsed_ms = int(resp.elapsed.total_seconds() * 1000) if resp.elapsed else 0
 
-            return (
-                f"Status: {resp.status_code}  ({elapsed_ms}ms)\n\n"
-                f"Response Headers:\n{resp_header_lines}\n\n"
-                f"Response Body:\n{body_preview}"
-            )
+            import json as _json
+            return _json.dumps({
+                "status_code": resp.status_code,
+                "elapsed_ms": elapsed_ms,
+                "response_headers": dict(resp.headers),
+                "response_body": body_preview,
+            })
         except httpx.TimeoutException:
             return f"[FERRET] Request timed out after {timeout}s — possible blind injection if intentional."
         except Exception as exc:

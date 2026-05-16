@@ -270,7 +270,7 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
   const requestText = useMemo(() => buildRawRequest(request), [request])
 
   const responseText = useMemo(() => {
-    if (!request.status_code) return "— waiting for response —"
+    if (request.status_code == null) return "— waiting for response —"
     const statusLine = `HTTP/1.1 ${request.status_code}`
     const headerLines = request.response_headers
       ? Object.entries(request.response_headers).map(([k, v]) => `${k}: ${v}`).join("\r\n")
@@ -351,6 +351,24 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
         {/* Content area */}
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
+          {/* Annotation sub-panel — shown above req/resp when annotation exists or is loading */}
+          {showAnnotationPanel && (
+            <div className="flex-shrink-0 border-b border-neutral-700 bg-neutral-950 px-4 py-2">
+              {annotating === request.id ? (
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Annotating…</span>
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                  <Sparkles className="w-3 h-3 text-yellow-400 inline mr-1.5 flex-shrink-0 align-middle" />
+                  <span className="text-[10px] font-semibold text-yellow-400 uppercase tracking-wider mr-1.5">AI Annotation:</span>
+                  {request.annotation}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Request / Response split */}
           <div ref={containerRef} className="flex flex-1 min-h-0">
             {/* Request pane */}
@@ -395,25 +413,6 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
             </div>
           </div>
 
-          {/* Annotation sub-panel — shown below req/resp when annotation exists or is loading */}
-          {showAnnotationPanel && (
-            <div className="flex-shrink-0 border-t border-neutral-700 bg-neutral-950">
-              <div className="px-4 h-7 flex items-center gap-2 border-b border-neutral-800">
-                <Sparkles className="w-3 h-3 text-yellow-400 flex-shrink-0" />
-                <span className="text-xs font-semibold text-yellow-400 uppercase tracking-wider">AI Annotation</span>
-              </div>
-              <div className="px-4 py-2 max-h-32 overflow-y-auto">
-                {annotating === request.id ? (
-                  <div className="flex items-center gap-2 text-xs text-neutral-400">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Annotating…</span>
-                  </div>
-                ) : (
-                  <p className="text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap">{request.annotation}</p>
-                )}
-              </div>
-            </div>
-          )}
         </div>{/* end content area */}
       </div>{/* end main row */}
 

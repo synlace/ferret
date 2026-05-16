@@ -44,6 +44,7 @@ interface ChatMsg {
   timestamp?: string
   exitCode?: number | null
   runtimeMs?: number | null
+  rationale?: string
 }
 interface LiveToolCall {
   name: string
@@ -53,6 +54,7 @@ interface LiveToolCall {
   runtimeMs?: number | null
   startedAt: number
   liveChunks?: string[]
+  rationale?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -66,16 +68,27 @@ function formatToolArgs(toolName: string, argsJson: string): string {
     if (toolName === "run_sqlmap") return `sqlmap ${args.url ?? ""}`
     if (toolName === "run_pytest") return args.test_file ?? argsJson
     if (toolName === "http_request") return `${args.method ?? "GET"} ${args.url ?? ""}`
-    return Object.values(args).slice(0, 2).join(", ") || argsJson
+    // Exclude rationale from the summary line — it has its own sub-panel
+    const { rationale: _r, ...rest } = args
+    return Object.values(rest).slice(0, 2).join(", ") || argsJson
   } catch { return argsJson }
 }
 
+/** Extract the rationale string from a tool call arguments JSON string. */
+function extractRationale(argsJson: string | undefined): string | undefined {
+  if (!argsJson) return undefined
+  try { const r = JSON.parse(argsJson).rationale; return typeof r === "string" && r.trim() ? r.trim() : undefined } catch { return undefined }
+}
+
 function annotateToolArgs(msgs: ChatMsg[]): ChatMsg[] {
-  const map: Record<string, { name: string; arguments: string }> = {}
-  for (const m of msgs) if (m.tool_calls) for (const tc of m.tool_calls) map[tc.id] = tc.function
+  // Build map: tool_call_id → function definition
+  const fnMap: Record<string, { name: string; arguments: string }> = {}
+  for (const m of msgs) {
+    if (m.tool_calls) for (const tc of m.tool_calls) fnMap[tc.id] = tc.function
+  }
   return msgs.map(msg => {
     if (msg.role === "tool" && msg.name) {
-      const fn = (msg.tool_call_id && map[msg.tool_call_id]) || Object.values(map).find(f => f.name === msg.name)
+      const fn = (msg.tool_call_id && fnMap[msg.tool_call_id]) || Object.values(fnMap).find(f => f.name === msg.name)
       if (fn) {
         const { meta } = parseMeta(msg.content)
         return {
@@ -85,6 +98,8 @@ function annotateToolArgs(msgs: ChatMsg[]): ChatMsg[] {
           exitCode: meta.exit_code ?? null,
           runtimeMs: meta.runtime_ms ?? null,
           timestamp: (meta.timestamp ?? msg.timestamp) as string | undefined,
+          // Rationale is embedded in the tool call arguments by the model
+          rationale: extractRationale(fn.arguments),
         }
       }
     }
@@ -142,11 +157,19 @@ function WorkspacesPageInner() {
   const [, forceToolGroupRender] = useState(0)
   const handleToolGroupToggle = (key: string, collapsed: boolean) => {
     toolGroupCollapsed.current.set(key, collapsed)
-    if (key) { try { localStorage.setItem(`tg:${key}`, collapsed ? "1" : "0") } catch { /**/ } }
+    // live:N keys are ephemeral — never write to localStorage to avoid stale auto-open on next session
+    if (key && !key.startsWith("live:")) {
+      try { localStorage.setItem(`tg:${key}`, collapsed ? "1" : "0") } catch { /**/ }
+    }
     forceToolGroupRender(n => n + 1)
   }
   const getToolGroupCollapsed = (key: string, defaultVal = true): boolean => {
     if (toolGroupCollapsed.current.has(key)) return toolGroupCollapsed.current.get(key)!
+    // live:N keys are ephemeral — always use defaultVal, never read stale localStorage
+    if (key.startsWith("live:")) {
+      toolGroupCollapsed.current.set(key, defaultVal)
+      return defaultVal
+    }
     try {
       const stored = localStorage.getItem(`tg:${key}`)
       const val = stored !== null ? stored !== "0" : defaultVal
@@ -157,6 +180,8 @@ function WorkspacesPageInner() {
   const inputHistoryRef = useRef<string[]>([])
   const historyIdxRef = useRef<number>(-1)
   const inputDraftRef = useRef<string>("")
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
+  const focusChatInputRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef<Map<string, number>>(new Map())
@@ -346,6 +371,14 @@ function WorkspacesPageInner() {
     })
   }, [activeProjectId, fetchSessions, loadSession, fetchAllFileCounts])
 
+  // Focus the chat input whenever a new workspace is created (flag set by onCreated)
+  useEffect(() => {
+    if (focusChatInputRef.current && activeSessionId) {
+      focusChatInputRef.current = false
+      chatInputRef.current?.focus()
+    }
+  }, [activeSessionId])
+
   useEffect(() => {
     if (!activeProjectId) { setContextRequests([]); return }
     setContextReqLoading(true)
@@ -408,6 +441,8 @@ function WorkspacesPageInner() {
               name: evt.name, toolArgsRaw: evt.args as string | undefined,
               result: null, startedAt: Date.now(),
               liveChunks: isStreaming ? [] : undefined,
+              // Rationale is embedded in the tool call args by the model
+              rationale: extractRationale(evt.args as string | undefined),
             }])
           } else if (evt.type === "tool_output_chunk") {
             setLiveToolCalls(prev => {
@@ -444,9 +479,13 @@ function WorkspacesPageInner() {
             // Remap live:N collapse states → sessionId:msgIndex so the persisted
             // ToolGroup instances inherit the expanded/collapsed state the user set
             // during streaming, surviving the live→persisted DOM transition.
+            // Only count tool messages from the last user message onwards so that
+            // liveIdx correctly maps to live:0, live:1, … for the current turn.
             if (activeSessionId) {
+              const lastUserIdx = rawMsgs.reduce((acc, m, i) => m.role === "user" ? i : acc, -1)
               let liveIdx = 0
               rawMsgs.forEach((m, msgIdx) => {
+                if (msgIdx <= lastUserIdx) return
                 if (m.role === "tool") {
                   const liveKey = `live:${liveIdx}`
                   const persistedKey = `${activeSessionId}:${msgIdx}`
@@ -786,7 +825,8 @@ function WorkspacesPageInner() {
                       result={result} isRunning={isRunning} persistKey={persistKey}
                       exitCode={msg.exitCode} runtimeMs={msg.runtimeMs} liveChunks={undefined}
                       collapsedOverride={persistKey ? getToolGroupCollapsed(persistKey) : undefined}
-                      onToggle={handleToolGroupToggle} />
+                      onToggle={handleToolGroupToggle}
+                      rationale={msg.rationale} />
                   )
                 }
                 if (msg.role === "assistant" && !(msg.content ?? "").trim()) return null
@@ -828,7 +868,8 @@ function WorkspacesPageInner() {
                         liveChunks={tc.liveChunks}
                         persistKey={liveKey}
                         collapsedOverride={getToolGroupCollapsed(liveKey)}
-                        onToggle={handleToolGroupToggle} />
+                        onToggle={handleToolGroupToggle}
+                        rationale={tc.rationale} />
                     )
                   })}
                 </div>
@@ -859,7 +900,7 @@ function WorkspacesPageInner() {
             {/* Input bar */}
             <div className="border-t border-neutral-800 px-3 py-2 bg-neutral-900 flex-shrink-0">
               <div className="flex items-end gap-2">
-                <Textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
+                <Textarea ref={chatInputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
                   placeholder={activeSessionId ? "Message… (Enter to send, Shift+Enter for newline)" : "Select a workspace first"}
                   disabled={!activeSessionId || loading}
                   className="flex-1 text-sm bg-neutral-800 border-neutral-700 text-white resize-none min-h-[40px] max-h-40 placeholder:text-neutral-600 focus-visible:ring-orange-500/50" rows={2} />
@@ -973,6 +1014,7 @@ function WorkspacesPageInner() {
           onCreated={session => {
             setSessions(prev => [{ ...session, workspace_dir: (session as WorkspaceSession).workspace_dir ?? null } as WorkspaceSession, ...prev])
             setShowNewModal(false)
+            focusChatInputRef.current = true
             loadSession(session.id)
           }}
           initialScope={initialScope ?? "all"} initialSelectedIds={initialSelectedIds} initialName={initialName} />
