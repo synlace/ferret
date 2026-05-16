@@ -4,14 +4,23 @@
 help:
     @just --list
 
-# Build and start all services (detached)
+# Build and start all services (detached).
+# Pulls the latest ferret-lab image from GHCR unless FERRET_LAB_IMAGE is set
+# to a local build (e.g. ferret-lab:local via just build-lab).
 up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    LAB_IMG="${FERRET_LAB_IMAGE:-}"
+    if [[ -z "$LAB_IMG" || "$LAB_IMG" == ghcr.io/* ]]; then
+        echo "Pulling latest ferret-lab image from GHCR..."
+        docker compose pull lab
+    fi
     docker compose up --build -d
-    @echo ""
-    @echo "FERRET is running:"
-    @echo "  UI    → http://localhost:3000"
-    @echo "  API   → http://localhost:8000"
-    @echo "  Proxy → 127.0.0.1:1337"
+    echo ""
+    echo "FERRET is running:"
+    echo "  UI    → http://localhost:3000"
+    echo "  API   → http://localhost:8000"
+    echo "  Proxy → 127.0.0.1:1337"
 
 # Dev mode: API + lab in Docker, UI runs on host with hot reload.
 # Requires Node.js on the host. UI available at http://localhost:3000.
@@ -19,6 +28,11 @@ up:
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
+    LAB_IMG="${FERRET_LAB_IMAGE:-}"
+    if [[ -z "$LAB_IMG" || "$LAB_IMG" == ghcr.io/* ]]; then
+        echo "Pulling latest ferret-lab image from GHCR..."
+        docker compose pull lab
+    fi
     echo "Starting API and lab containers..."
     docker compose up --build -d api lab
     echo ""
