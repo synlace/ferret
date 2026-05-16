@@ -757,12 +757,12 @@ class TestStreamSessionMessage:
         assert "messages" in done_events[0]
 
     @pytest.mark.asyncio
-    async def test_stream_returns_503_when_no_key_provisioned(self, client, mem_db):
+    async def test_stream_persists_notice_when_no_key_provisioned(self, client, mem_db):
         """
         When the project has no provisioned OpenRouter key, the streaming
-        endpoint must return HTTP 503 with a JSON body whose 'detail' field
-        mentions 'provisioned key' — so the frontend can detect it and show
-        the helper notice instead of silently doing nothing.
+        endpoint now returns HTTP 200 with an SSE error event (so the frontend
+        can render it immediately) and persists both the user message and a
+        notice to the DB (so the message survives a hard page refresh).
         """
         # Ensure the temp project exists but has NO key seeded
         await mem_db.seed_temp_project()
@@ -775,11 +775,16 @@ class TestStreamSessionMessage:
             json={"message": "Hello"},
         )
 
-        assert resp.status_code == 503, (
-            f"Expected 503 when no key is provisioned, got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 200, (
+            f"Expected 200 SSE response when no key is provisioned, got {resp.status_code}: {resp.text}"
         )
-        body = resp.json()
-        assert "detail" in body, f"Expected 'detail' in response body, got: {body}"
-        assert "provisioned key" in body["detail"], (
-            f"Expected 'provisioned key' in detail, got: {body['detail']!r}"
+        # The SSE body should contain an error event with 'provisioned key' in the detail
+        assert "provisioned key" in resp.text, (
+            f"Expected 'provisioned key' in SSE body, got: {resp.text!r}"
         )
+        # Both user message and notice should be persisted in the DB
+        msgs_resp = await client.get(f"/api/chats/{session_id}/messages")
+        messages = msgs_resp.json()["messages"]
+        roles = [m["role"] for m in messages]
+        assert "user" in roles, "user message should be persisted"
+        assert "notice" in roles, "notice message should be persisted"

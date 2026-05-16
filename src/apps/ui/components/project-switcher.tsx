@@ -28,16 +28,22 @@ export default function ProjectSwitcher({ collapsed, onOpen }: ProjectSwitcherPr
   return (
     <button
       onClick={onOpen}
-      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-neutral-800 transition-colors text-left border-b border-neutral-800 flex-shrink-0"
+      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-neutral-800 transition-colors text-left border-b border-neutral-800 flex-shrink-0 overflow-hidden"
       title={collapsed ? displayName : undefined}
     >
       <span className="text-base leading-none flex-shrink-0">{displayEmoji}</span>
-      {!collapsed && (
-        <>
-          <span className="flex-1 text-xs text-white truncate font-medium">{displayName}</span>
-          <ChevronDown className="w-3 h-3 text-neutral-400 flex-shrink-0" />
-        </>
-      )}
+      <span
+        className={`flex-1 text-xs text-white font-medium whitespace-nowrap transition-opacity duration-150 ${
+          collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+        }`}
+      >
+        {displayName}
+      </span>
+      <ChevronDown
+        className={`w-3 h-3 text-neutral-400 flex-shrink-0 transition-opacity duration-150 ${
+          collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+        }`}
+      />
     </button>
   )
 }

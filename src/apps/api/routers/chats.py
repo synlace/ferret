@@ -511,6 +511,19 @@ _SESSION_CHAT_TOOLS = [
     },
 ]
 
+# Inject a required `rationale` field into every tool so the model always
+# explains why it is calling the tool. This appears in the UI as a sub-panel.
+_RATIONALE_PROP = {
+    "type": "string",
+    "description": "One sentence explaining why you are calling this tool right now.",
+}
+for _t in _SESSION_CHAT_TOOLS:
+    _props = _t["function"]["parameters"]["properties"]
+    _props["rationale"] = _RATIONALE_PROP
+    _req: list = _t["function"]["parameters"].setdefault("required", [])
+    if "rationale" not in _req:
+        _req.insert(0, "rationale")
+
 
 # ---------------------------------------------------------------------------
 # Provider-aware AI call helpers
@@ -618,10 +631,19 @@ async def _resolve_project_and_key(session_id: str, fallback_project_id: str):
     return project_id, api_key, ai_cfg, project
 
 
+_NO_KEY_NOTICE = (
+    "**No API key configured for this project.**\n\n"
+    "Go to **Projects → Keys → Create Key** to provision one, "
+    "then come back and send your message."
+)
+
+
 def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> List[Dict[str, Any]]:
     system_prompt = (
         "You are a security testing assistant in FERRET (a MITM proxy tool). "
         "Be concise. Use Markdown: code blocks for code, bullets for findings.\n\n"
+        "Tool call rules:\n"
+        "0. Always set the 'rationale' field to one sentence explaining why you are calling the tool.\n\n"
         "pytest rules:\n"
         "1. Always add `verify=False` to every request and `import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)` at the top.\n"
         "2. Proxy address: `proxies={'https': 'http://api:1337', 'http': 'http://api:1337'}`. Never use 127.0.0.1 or localhost.\n"
@@ -630,6 +652,10 @@ def _build_or_messages(history: List[Dict[str, Any]], new_user_message: str) -> 
     )
     or_messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     for m in history:
+        # Skip UI-only notice messages — not a valid AI role; sending them to the
+        # provider would cause a 400/422 error.
+        if m.get("role") == "notice":
+            continue
         msg: Dict[str, Any] = {"role": m["role"], "content": m.get("content") or ""}
         if m.get("tool_call_id"):
             msg["tool_call_id"] = m["tool_call_id"]
@@ -1105,7 +1131,6 @@ async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", sessi
                     content=body.encode() if body else None,
                 )
 
-            resp_header_lines = "\n".join(f"  {k}: {v}" for k, v in resp.headers.items())
             body_text = resp.text
             body_preview = body_text[:3000]
             if len(body_text) > 3000:
@@ -1113,11 +1138,13 @@ async def _execute_tool_call(tc: Dict[str, Any], project_id: str = "temp", sessi
 
             elapsed_ms = int(resp.elapsed.total_seconds() * 1000) if resp.elapsed else 0
 
-            return (
-                f"Status: {resp.status_code}  ({elapsed_ms}ms)\n\n"
-                f"Response Headers:\n{resp_header_lines}\n\n"
-                f"Response Body:\n{body_preview}"
-            )
+            import json as _json
+            return _json.dumps({
+                "status_code": resp.status_code,
+                "elapsed_ms": elapsed_ms,
+                "response_headers": dict(resp.headers),
+                "response_body": body_preview,
+            })
         except httpx.TimeoutException:
             return f"[FERRET] Request timed out after {timeout}s — possible blind injection if intentional."
         except Exception as exc:
@@ -1137,7 +1164,20 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
     The project_id is derived from the session record; the query param is a fallback only.
     """
     try:
-        project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
+        try:
+            project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
+        except HTTPException as e:
+            if e.status_code == 503 and "provisioned key" in str(e.detail):
+                _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                await deps.db_client.append_chat_message(
+                    session_id, {"role": "user", "content": body.message, "timestamp": _ts}
+                )
+                await deps.db_client.append_chat_message(
+                    session_id, {"role": "notice", "content": _NO_KEY_NOTICE, "timestamp": _ts}
+                )
+                updated = await deps.db_client.get_chat_history(session_id)
+                return {"messages": updated}
+            raise
 
         _project_model = (_project.get("default_model") if _project else None) or _ai_cfg.get("model") or deps.OPENROUTER_MODEL
         model = body.model or _project_model
@@ -1229,7 +1269,25 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
     try:
         project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(session_id, project_id)
     except HTTPException as e:
-        # Return a plain JSON error — the frontend checks res.ok and handles it.
+        if e.status_code == 503 and "provisioned key" in str(e.detail):
+            # Persist user message + notice so they survive a hard page refresh,
+            # then stream the error event so the frontend renders it immediately.
+            # Capture detail before the except block exits — Python 3.11+ clears
+            # the exception variable 'e' after the except block, so the inner
+            # async generator cannot reference it by closure.
+            _detail = str(e.detail)
+            _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            await deps.db_client.append_chat_message(
+                session_id, {"role": "user", "content": body.message, "timestamp": _ts}
+            )
+            await deps.db_client.append_chat_message(
+                session_id, {"role": "notice", "content": _NO_KEY_NOTICE, "timestamp": _ts}
+            )
+
+            async def _no_key_stream():
+                yield f"data: {json.dumps({'type': 'error', 'detail': _detail})}\n\n"
+
+            return StreamingResponse(_no_key_stream(), media_type="text/event-stream")
         raise
 
     _project_model = (_project.get("default_model") if _project else None) or _ai_cfg.get("model") or deps.OPENROUTER_MODEL

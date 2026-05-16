@@ -4,8 +4,9 @@ import React, { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
   Terminal, Download, Copy, Check, ExternalLink, Columns2,
-  Loader2, XCircle, CheckCircle,
+  Loader2, XCircle, CheckCircle, Sparkles,
 } from "lucide-react"
+import { DetailPanel, ApiRequest } from "@/app/history/DetailPanel"
 import CodeMirror, { EditorView } from "@uiw/react-codemirror"
 import { atomoneInit } from "@uiw/codemirror-theme-atomone"
 import { StreamLanguage } from "@codemirror/language"
@@ -379,107 +380,63 @@ export function RunFfufView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?:
 }
 
 // ─── RequestDetailView ────────────────────────────────────────────────────────
-interface ReqDetail {
-  id?: string; method?: string; url?: string; host?: string; status_code?: number | null
-  headers?: Record<string, string>; body?: string | null
-  response_headers?: Record<string, string>; response_body?: string | null
-}
 export function RequestDetailView({ toolArgsRaw, result }: { toolArgsRaw?: string; result: string | null }) {
   const router = useRouter()
   const { output } = parseMeta(result)
   // Try structured JSON suffix first (appended by API), fall back to legacy JSON parse
-  const req: ReqDetail = parseJsonSuffix<ReqDetail>(output) ?? (() => {
-    try { return JSON.parse(output) as ReqDetail } catch { return {} }
+  const raw = parseJsonSuffix<Record<string, unknown>>(output) ?? (() => {
+    try { return JSON.parse(output) as Record<string, unknown> } catch { return {} }
   })()
-  const rawText = stripJsonSuffix(output)
-  const method = String(req.method ?? "")
-  const url = String(req.url ?? "")
-  const headers = (req.headers ?? {}) as Record<string, string>
-  const body = req.body ? String(req.body) : null
-  const curlStr = buildCurl({ method, url, headers, body })
-  const respHeaders = (req.response_headers ?? {}) as Record<string, string>
-  const respBody = req.response_body ?? null
-  const statusCode = req.status_code ?? null
-  const host = req.host ?? ""
-  const respContentType = Object.entries(respHeaders).find(([k]) => k.toLowerCase() === "content-type")?.[1]
 
-  // Build HTTP wire-format request block
-  const urlObj = (() => { try { return new URL(url) } catch { return null } })()
-  const requestPath = urlObj ? urlObj.pathname + urlObj.search : url
-  const httpVersion = "HTTP/1.1"
-  const reqWire = [
-    `${method} ${requestPath} ${httpVersion}`,
-    host ? `Host: ${host}` : null,
-    ...Object.entries(headers).map(([k, v]) => `${k}: ${v}`),
-    body ? `\n${body}` : null,
-  ].filter(Boolean).join("\n")
+  const urlObj = (() => { try { return new URL(String(raw.url ?? "")) } catch { return null } })()
 
-  // Build HTTP wire-format response block
-  const respWire = [
-    statusCode !== null ? `${httpVersion} ${statusCode}` : null,
-    ...Object.entries(respHeaders).map(([k, v]) => `${k}: ${v}`),
-    respBody ? `\n${String(respBody)}` : null,
-  ].filter(Boolean).join("\n")
+  const req: ApiRequest = {
+    seq: null,
+    id: String(raw.id ?? ""),
+    timestamp: "",
+    method: String(raw.method ?? "GET"),
+    url: String(raw.url ?? ""),
+    host: String(raw.host ?? urlObj?.host ?? ""),
+    path: urlObj ? urlObj.pathname + urlObj.search : String(raw.url ?? ""),
+    status_code: raw.status_code != null ? Number(raw.status_code) : null,
+    response_time: null,
+    response_size: null,
+    headers: (raw.headers ?? null) as Record<string, string> | null,
+    body: raw.body != null ? String(raw.body) : null,
+    response_headers: (raw.response_headers ?? null) as Record<string, string> | null,
+    response_body: raw.response_body != null ? String(raw.response_body) : null,
+    annotation: null,
+    source: "tool",
+  }
 
   const sendToGnaw = async () => {
-    const hdrs = (req.headers ?? {}) as Record<string, string>
+    const hdrs = (raw.headers ?? {}) as Record<string, string>
     const headerLines = Object.entries(hdrs)
       .filter(([k]) => k.toLowerCase() !== "host")
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n")
     let reqPath = "/"
-    try { const p = new URL(req.url ?? ""); reqPath = p.pathname + p.search } catch { reqPath = "/" }
+    try { const p = new URL(String(raw.url ?? "")); reqPath = p.pathname + p.search } catch { reqPath = "/" }
     const rawRequest = [
-      `${req.method ?? "GET"} ${reqPath} HTTP/1.1`,
-      `Host: ${req.host ?? ""}`,
+      `${req.method} ${reqPath} HTTP/1.1`,
+      `Host: ${req.host}`,
       ...(headerLines ? [headerLines] : []),
       "",
       req.body ?? "",
     ].join("\n")
-    const label = `${req.method ?? "GET"} ${req.host ?? ""}`
+    const label = `${req.method} ${req.host}`
     const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_request: rawRequest, label }),
     }).catch(() => null)
-    if (res?.ok) {
-      const tab = await res.json()
-      router.push(`/gnaw?tab=${tab.id}`)
-    } else {
-      router.push("/gnaw")
-    }
+    router.push(res?.ok ? `/gnaw?tab=${(await res.json()).id}` : "/gnaw")
   }
 
-  const left = (stackToggle: React.ReactNode) => (
-    <div className="flex flex-col h-full min-w-0">
-      <PaneHeader label="Request">
-        <CopyButton text={curlStr} label="cURL" />
-        <button
-          onClick={sendToGnaw}
-          className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-blue-400 transition-colors p-0.5 rounded"
-          title="Send to Gnaw"
-        >
-          <ExternalLink className="w-3 h-3" /><span>Gnaw</span>
-        </button>
-        {stackToggle}
-      </PaneHeader>
-      <CmPane value={reqWire || rawText} placeholder="No request data" />
+  return (
+    <div className="h-72">
+      <DetailPanel request={req} onAnnotate={() => {}} annotating={null} maximized={true} onSendToGnaw={sendToGnaw} />
     </div>
   )
-
-  const right = (
-    <div className="flex flex-col h-full min-w-0">
-      <PaneHeader label="Response">
-        {statusCode !== null && (
-          <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${Number(statusCode) < 300 ? "text-green-400 bg-green-400/10" : Number(statusCode) < 500 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10"}`}>
-            {String(statusCode)}
-          </span>
-        )}
-        <CopyButton text={respWire || rawText} />
-      </PaneHeader>
-      <CmPane value={respWire || rawText} placeholder="No response data" lang={langExtFromContentType(respContentType)} />
-    </div>
-  )
-  return <SplitPane left={left} right={right} height="h-72" />
 }
 
 // ─── HttpRequestView ──────────────────────────────────────────────────────────
@@ -487,95 +444,79 @@ export function HttpRequestView({ toolArgsRaw, result }: { toolArgsRaw?: string;
   const router = useRouter()
   const { output } = parseMeta(result)
   let reqArgs: Record<string, unknown> = {}
-  let respData: Record<string, unknown> = {}
+  let respData: Record<string, unknown> | null = null
   try { reqArgs = JSON.parse(toolArgsRaw ?? "{}") } catch { /**/ }
   try { respData = JSON.parse(output) } catch { /**/ }
 
+  // Fallback: result is in-flight (null), a plain-text error string from the backend
+  // (e.g. "[FERRET] HTTP request failed: …"), or an old pre-JSON-format record.
+  // In all these cases JSON.parse fails and respData stays null — render raw text
+  // instead of passing a structurally-incomplete ApiRequest to DetailPanel.
+  if (!respData || respData.status_code == null) {
+    return (
+      <div className="border-t border-neutral-700/60 px-3 py-2">
+        <pre className="text-neutral-300 whitespace-pre-wrap break-all font-mono text-[11px] max-h-64 overflow-y-auto">
+          {output || "— waiting for response —"}
+        </pre>
+      </div>
+    )
+  }
+
   const method = String(reqArgs.method ?? "GET")
   const url = String(reqArgs.url ?? "")
-  const reqHeaders = (reqArgs.headers ?? {}) as Record<string, string>
-  const reqBody = reqArgs.body ? String(reqArgs.body) : null
-  const curlStr = buildCurl({ method, url, headers: reqHeaders, body: reqBody })
+  const urlObj = (() => { try { return new URL(url) } catch { return null } })()
+  const host = urlObj?.host ?? ""
+  const path = urlObj ? urlObj.pathname + urlObj.search : url
 
   const statusCode = respData.status_code ?? respData.status ?? null
   const respHeaders = (respData.headers ?? respData.response_headers ?? {}) as Record<string, string>
   const respBody = respData.body ?? respData.response_body ?? null
-  const respContentType = Object.entries(respHeaders).find(([k]) => k.toLowerCase() === "content-type")?.[1]
 
-  // Build HTTP wire-format request block
-  const urlObj = (() => { try { return new URL(url) } catch { return null } })()
-  const host = urlObj?.host ?? ""
-  const requestPath = urlObj ? urlObj.pathname + urlObj.search : url
-  const reqWire = [
-    `${method} ${requestPath} HTTP/1.1`,
-    host ? `Host: ${host}` : null,
-    ...Object.entries(reqHeaders).map(([k, v]) => `${k}: ${v}`),
-    reqBody ? `\n${reqBody}` : null,
-  ].filter(Boolean).join("\n")
-
-  // Build HTTP wire-format response block
-  const respWire = [
-    statusCode !== null ? `HTTP/1.1 ${statusCode}` : null,
-    ...Object.entries(respHeaders).map(([k, v]) => `${k}: ${v}`),
-    respBody ? `\n${String(respBody)}` : null,
-  ].filter(Boolean).join("\n")
+  const req: ApiRequest = {
+    seq: null,
+    id: "",
+    timestamp: "",
+    method,
+    url,
+    host,
+    path,
+    status_code: statusCode != null ? Number(statusCode) : null,
+    response_time: respData.elapsed_ms != null ? Number(respData.elapsed_ms) : null,
+    response_size: null,
+    headers: (reqArgs.headers ?? null) as Record<string, string> | null,
+    body: reqArgs.body != null ? String(reqArgs.body) : null,
+    response_headers: Object.keys(respHeaders).length ? respHeaders : null,
+    response_body: respBody != null ? String(respBody) : null,
+    annotation: null,
+    source: "tool",
+  }
 
   const sendToGnaw = async () => {
-    const headerLines = Object.entries(reqHeaders)
+    const hdrs = (reqArgs.headers ?? {}) as Record<string, string>
+    const headerLines = Object.entries(hdrs)
       .filter(([k]) => k.toLowerCase() !== "host")
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n")
     const rawRequest = [
-      `${method} ${requestPath} HTTP/1.1`,
+      `${method} ${path} HTTP/1.1`,
       ...(host ? [`Host: ${host}`] : []),
       ...(headerLines ? [headerLines] : []),
       "",
-      reqBody ?? "",
+      req.body ?? "",
     ].join("\n")
     const label = `${method} ${host || url}`
     const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_request: rawRequest, label }),
     }).catch(() => null)
-    if (res?.ok) {
-      const tab = await res.json()
-      router.push(`/gnaw?tab=${tab.id}`)
-    } else {
-      router.push("/gnaw")
-    }
+    router.push(res?.ok ? `/gnaw?tab=${(await res.json()).id}` : "/gnaw")
   }
 
-  const left = (stackToggle: React.ReactNode) => (
-    <div className="flex flex-col h-full min-w-0">
-      <PaneHeader label="Request">
-        <CopyButton text={curlStr} label="cURL" />
-        <button
-          onClick={sendToGnaw}
-          className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-blue-400 transition-colors p-0.5 rounded"
-          title="Send to Gnaw"
-        >
-          <ExternalLink className="w-3 h-3" /><span>Gnaw</span>
-        </button>
-        {stackToggle}
-      </PaneHeader>
-      <CmPane value={reqWire} placeholder="No request data" />
+  return (
+    <div className="h-72">
+      <DetailPanel request={req} onAnnotate={() => {}} annotating={null} maximized={true} onSendToGnaw={sendToGnaw} />
     </div>
   )
-
-  const right = (
-    <div className="flex flex-col h-full min-w-0">
-      <PaneHeader label="Response">
-        {statusCode !== null && (
-          <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${Number(statusCode) < 300 ? "text-green-400 bg-green-400/10" : Number(statusCode) < 500 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10"}`}>
-            {String(statusCode)}
-          </span>
-        )}
-        <CopyButton text={respWire || output} />
-      </PaneHeader>
-      <CmPane value={respWire || output} placeholder="No response data" lang={langExtFromContentType(respContentType)} />
-    </div>
-  )
-  return <SplitPane left={left} right={right} height="h-72" />
 }
 
 // ─── WriteTestView ────────────────────────────────────────────────────────────
@@ -608,7 +549,9 @@ export function WriteTestView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw
       <PaneHeader label="Output">
         {output && <CopyButton text={output} />}
       </PaneHeader>
-      <XTermView initialContent={output || undefined} liveChunks={liveChunks} />
+      <pre className="flex-1 overflow-y-auto p-3 text-xs font-mono text-neutral-300 bg-neutral-950 whitespace-pre-wrap leading-relaxed">
+        {output || <span className="text-neutral-600 italic">No output yet</span>}
+      </pre>
     </div>
   )
 
@@ -616,8 +559,8 @@ export function WriteTestView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw
 }
 
 // ─── RunTestView ──────────────────────────────────────────────────────────────
-// Left: filename + command summary. Right: xterm.js terminal output.
-export function RunTestView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?: string; result: string | null; liveChunks?: string[] }) {
+// Left: filename + command summary. Right: plain pre with word-wrap.
+export function RunTestView({ toolArgsRaw, result, liveChunks: _liveChunks }: { toolArgsRaw?: string; result: string | null; liveChunks?: string[] }) {
   const { output } = parseMeta(result)
   let filename = ""
   try { filename = JSON.parse(toolArgsRaw ?? "{}").filename ?? "" } catch { /**/ }
@@ -640,7 +583,9 @@ export function RunTestView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?:
       <PaneHeader label="Output">
         {output && <CopyButton text={output} />}
       </PaneHeader>
-      <XTermView initialContent={output || undefined} liveChunks={liveChunks} />
+      <pre className="flex-1 overflow-y-auto p-3 text-xs font-mono text-neutral-300 bg-neutral-950 whitespace-pre-wrap leading-relaxed">
+        {output || <span className="text-neutral-600 italic">No output yet</span>}
+      </pre>
     </div>
   )
 
@@ -853,19 +798,31 @@ export interface ToolGroupProps {
   exitCode?: number | null
   runtimeMs?: number | null
   liveChunks?: string[]
+  /** Controlled collapse state — when provided, overrides local state */
+  collapsedOverride?: boolean
+  /** Called when the user toggles; receives the new collapsed value */
+  onToggle?: (key: string, collapsed: boolean) => void
+  /** AI rationale — the text the model emitted before calling this tool */
+  rationale?: string
 }
 
-export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, persistKey, forceOpen, exitCode, runtimeMs, liveChunks }: ToolGroupProps) {
-  const [collapsed, setCollapsed] = useState(() => {
+export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, persistKey, forceOpen, exitCode, runtimeMs, liveChunks, collapsedOverride, onToggle, rationale }: ToolGroupProps) {
+  const controlled = collapsedOverride !== undefined
+  const [localCollapsed, setLocalCollapsed] = useState(() => {
     if (forceOpen) return false
     if (!persistKey) return true
     try { return localStorage.getItem(`tg:${persistKey}`) !== "0" } catch { return true }
   })
-  const toggle = () => setCollapsed(c => {
-    const next = !c
-    if (persistKey) { try { localStorage.setItem(`tg:${persistKey}`, next ? "1" : "0") } catch { /**/ } }
-    return next
-  })
+  const collapsed = controlled ? collapsedOverride : localCollapsed
+  const toggle = () => {
+    const next = !collapsed
+    if (controlled && persistKey && onToggle) {
+      onToggle(persistKey, next)
+    } else {
+      setLocalCollapsed(next)
+      if (persistKey) { try { localStorage.setItem(`tg:${persistKey}`, next ? "1" : "0") } catch { /**/ } }
+    }
+  }
 
   // Status icon: spinner while running, green tick (exit 0), red X (exit non-0), grey terminal (no exit info)
   const statusIcon = isRunning
@@ -896,7 +853,20 @@ export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, 
           ? <ChevronRight className="w-3 h-3 text-neutral-600 flex-shrink-0" />
           : <ChevronDown className="w-3 h-3 text-neutral-600 flex-shrink-0" />}
       </button>
-      {!collapsed && renderBody(toolName, toolArgsRaw, result, isRunning, liveChunks)}
+      {!collapsed && (
+        <>
+          {rationale && (
+            <div className="border-t border-neutral-700/60 bg-neutral-950 px-3 py-2">
+              <p className="text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap">
+                <Sparkles className="w-3 h-3 text-yellow-400 inline mr-1.5 flex-shrink-0 align-middle" />
+                <span className="text-[10px] font-semibold text-yellow-400 uppercase tracking-wider mr-1.5">Rationale:</span>
+                {rationale}
+              </p>
+            </div>
+          )}
+          {renderBody(toolName, toolArgsRaw, result, isRunning, liveChunks)}
+        </>
+      )}
     </div>
   )
 }
