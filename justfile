@@ -28,7 +28,8 @@ dev:
     echo ""
     echo "Press Ctrl+C to stop the UI. Run 'just down' to stop API containers."
     echo ""
-    cd src/apps/ui && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+    APP_VERSION=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "dev")
+    cd src/apps/ui && NEXT_PUBLIC_API_URL=http://localhost:8000 NEXT_PUBLIC_APP_VERSION="$APP_VERSION" npm run dev
 
 # Stop and remove all services
 down:
@@ -184,7 +185,8 @@ publish-lab:
         src/apps/lab
 
 # Create and push a semver release tag, triggering the GA workflow to publish
-# a versioned ferret-lab image to GHCR.
+# a versioned ferret-lab image to GHCR, and rebuilds the UI image with the
+# new version baked in via NEXT_PUBLIC_APP_VERSION.
 # Usage: just tag major | just tag minor | just tag patch
 # With no existing tags, major → v1.0.0, minor → v0.1.0, patch → v0.0.1.
 tag bump:
@@ -210,6 +212,10 @@ tag bump:
     echo "Tag ${NEW} pushed. GitHub Actions will publish:"
     echo "  ghcr.io/synlace/ferret-lab:${NEW}"
     echo "  ghcr.io/synlace/ferret-lab:latest"
+    echo ""
+    echo "Rebuilding UI image with NEXT_PUBLIC_APP_VERSION=${NEW}..."
+    NEXT_PUBLIC_APP_VERSION="${NEW}" docker compose build ui
+    echo "UI image rebuilt. Run 'just up' or 'docker compose up -d ui' to deploy."
 
 # Integration test: verify the docker-socket-proxy allows only permitted operations.
 # Requires a running stack (just up).
