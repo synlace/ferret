@@ -775,7 +775,7 @@ function GnawPageInner() {
             onClick={handleSend} disabled={sending || !url.trim()}
             title="Send (Ctrl+Enter or Ctrl+Space)">
             {sending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
-            {sending ? "Sending…" : "Send"}
+            {sending ? "Sending..." : "Send"}
           </Button>
         </div>
       </div>
@@ -976,7 +976,7 @@ function GnawPageInner() {
                 {sending ? (
                   <span className="flex items-center gap-2 text-neutral-500">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    Sending…
+                    Sending...
                   </span>
                 ) : (
                   "No response yet — Ctrl+Enter or Ctrl+Space to send"

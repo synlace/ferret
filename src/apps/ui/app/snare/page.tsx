@@ -719,7 +719,7 @@ export default function SnarePage() {
                         </span>
                       ) : isWaiting ? (
                         <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-neutral-800 text-neutral-500 border border-neutral-700 animate-pulse">
-                          …
+                          ...
                         </span>
                       ) : (
                         <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-blue-900/40 text-blue-400 border border-blue-800/60">
@@ -858,7 +858,7 @@ export default function SnarePage() {
               {editorMode === "request" ? (
                 <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">Request</span>
               ) : pendingResponseId && !response ? (
-                <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider animate-pulse">Waiting…</span>
+                <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider animate-pulse">Waiting...</span>
               ) : (
                 <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Response</span>
               )}
@@ -932,12 +932,12 @@ export default function SnarePage() {
             ) : editorMode === "response" && pendingResponseId && !response ? (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-neutral-600 text-xs font-mono bg-neutral-950 gap-2">
                 <div className="w-4 h-4 border-2 border-neutral-700 border-t-orange-500 rounded-full animate-spin" />
-                <span>Waiting for server response…</span>
+                <span>Waiting for server response...</span>
               </div>
             ) : (
               <div className="flex-1 h-full flex items-center justify-center text-neutral-600 text-xs font-mono bg-neutral-950">
                 {snaring
-                  ? "Waiting for intercepted requests…"
+                  ? "Waiting for intercepted requests..."
                   : "Start snare and configure rules to intercept requests"}
               </div>
             )}
@@ -1012,7 +1012,7 @@ export default function SnarePage() {
                 onClick={handleAddRule}
                 disabled={addingRule || !newRuleName.trim()}
               >
-                {addingRule ? "Adding…" : "Add Rule"}
+                {addingRule ? "Adding..." : "Add Rule"}
               </Button>
             </div>
           </div>
@@ -1021,7 +1021,7 @@ export default function SnarePage() {
         {/* Rules list */}
         <div className="overflow-y-auto" style={{ maxHeight: "140px" }}>
           {rulesLoading ? (
-            <div className="px-3 py-3 text-xs text-neutral-600">Loading…</div>
+            <div className="px-3 py-3 text-xs text-neutral-600">Loading...</div>
           ) : rules.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-5 text-neutral-600">
               <p className="text-xs">No snare rules — all requests will be intercepted when snare is on</p>

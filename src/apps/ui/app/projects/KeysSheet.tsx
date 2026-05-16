@@ -136,7 +136,7 @@ function CreateKeyModal({
                 disabled={loading || !name.trim()}
                 className="flex-1 py-2 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {loading ? "Creating…" : "Create Key"}
+                {loading ? "Creating..." : "Create Key"}
               </button>
               <button
                 type="button"
@@ -303,7 +303,7 @@ export function KeysSheet({ open, projectId, projectName, initialKeys, initialSp
         {/* Body */}
         <div className="flex-1 overflow-y-auto min-h-0">
           {loading ? (
-            <div className="px-4 py-6 text-xs text-neutral-600">Loading keys…</div>
+            <div className="px-4 py-6 text-xs text-neutral-600">Loading keys...</div>
           ) : keys.length === 0 ? (
             <div className="px-4 py-8 text-center text-neutral-600 text-xs">
               <p className="font-medium text-neutral-500 mb-1">No API keys yet</p>

@@ -116,7 +116,7 @@ function CreateKeyModal({
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={loading || !name.trim()}
                 className="flex-1 bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50">
-                {loading ? "Creating…" : "Create Key"}
+                {loading ? "Creating..." : "Create Key"}
               </Button>
               <Button type="button" variant="outline" onClick={onClose}
                 className="border-neutral-600 text-neutral-300 hover:bg-neutral-800">Cancel</Button>
@@ -181,7 +181,7 @@ export function KeysPanel({ projectId }: { projectId: string }) {
     } catch { /* ignore */ }
   }
 
-  if (loading) return <div className="px-4 py-3 text-xs text-neutral-500">Loading keys…</div>
+  if (loading) return <div className="px-4 py-3 text-xs text-neutral-500">Loading keys...</div>
 
   return (
     <div className="border-t border-neutral-800 bg-neutral-900/50">

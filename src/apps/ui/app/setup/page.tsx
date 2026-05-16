@@ -474,7 +474,7 @@ export default function SetupPage() {
                       disabled={testing}
                       className="rounded-md border border-neutral-600 px-4 py-2 text-xs font-medium text-neutral-300 hover:border-neutral-400 hover:text-white disabled:opacity-40 transition-colors"
                     >
-                      {testing ? "Testing connection…" : "Test connection"}
+                      {testing ? "Testing connection..." : "Test connection"}
                     </button>
                     <p className="h-4 text-xs font-medium">
                       {testResult && (
@@ -547,7 +547,7 @@ export default function SetupPage() {
                     disabled={testing || (!apiKey && !provisioningKey)}
                     className="rounded-md border border-neutral-600 px-4 py-2 text-xs font-medium text-neutral-300 hover:border-neutral-400 hover:text-white disabled:opacity-40 transition-colors"
                   >
-                    {testing ? "Testing connection…" : "Test connection"}
+                    {testing ? "Testing connection..." : "Test connection"}
                   </button>
                   {/* Per-key results (OpenRouter with both keys) */}
                   {testResult?.key_results ? (
@@ -601,7 +601,7 @@ export default function SetupPage() {
                   className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-left flex items-center justify-between hover:border-neutral-500 focus:border-orange-500 focus:outline-none transition-colors"
                 >
                   <span className={model ? "text-white" : "text-neutral-500"}>
-                    {model || "Select a model…"}
+                    {model || "Select a model..."}
                   </span>
                   <span className="text-neutral-500 text-xs">▾</span>
                 </button>
@@ -654,7 +654,7 @@ export default function SetupPage() {
                   disabled={saving || !model}
                   className="rounded-md bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40 transition-colors"
                 >
-                  {saving ? "Saving…" : "Finish setup →"}
+                  {saving ? "Saving..." : "Finish setup →"}
                 </button>
               </div>
             </div>

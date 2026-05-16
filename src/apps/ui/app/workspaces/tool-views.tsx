@@ -449,7 +449,7 @@ export function HttpRequestView({ toolArgsRaw, result }: { toolArgsRaw?: string;
   try { respData = JSON.parse(output) } catch { /**/ }
 
   // Fallback: result is in-flight (null), a plain-text error string from the backend
-  // (e.g. "[FERRET] HTTP request failed: …"), or an old pre-JSON-format record.
+  // (e.g. "[FERRET] HTTP request failed: ..."), or an old pre-JSON-format record.
   // In all these cases JSON.parse fails and respData stays null — render raw text
   // instead of passing a structurally-incomplete ApiRequest to DetailPanel.
   if (!respData || respData.status_code == null) {
@@ -930,7 +930,7 @@ function renderBody(toolName: string, toolArgsRaw: string | undefined, result: s
           <pre className="text-neutral-300 whitespace-pre-wrap break-all font-mono text-[11px] max-h-64 overflow-y-auto">{output}</pre>
         </div>
       )}
-      {isRunning && !output && <div className="text-neutral-500 italic">Running…</div>}
+      {isRunning && !output && <div className="text-neutral-500 italic">Running...</div>}
     </div>
   )
 }

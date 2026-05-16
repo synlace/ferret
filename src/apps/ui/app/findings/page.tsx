@@ -231,7 +231,7 @@ export default function FindingsPage() {
         {/* Search + Filter bar */}
         <div className="flex border-b border-neutral-800 flex-shrink-0 relative" ref={filterRef}>
           <Input
-            placeholder="Search findings…"
+            placeholder="Search findings..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="h-8 text-xs bg-neutral-900 border-0 border-r border-neutral-800 text-white flex-1 rounded-none focus-visible:ring-0"
@@ -440,7 +440,7 @@ export default function FindingsPage() {
                             <div className="flex gap-4 text-xs text-neutral-400">
                               <span>Source: <span className="text-white">{finding.source}</span></span>
                               {finding.request_id && (
-                                <span>Request: <span className="text-orange-400 font-mono">{finding.request_id.slice(0, 8)}…</span></span>
+                                <span>Request: <span className="text-orange-400 font-mono">{finding.request_id.slice(0, 8)}...</span></span>
                               )}
                               <span>Created: <span className="text-white font-mono">{new Date(finding.created_at).toLocaleString()}</span></span>
                             </div>
