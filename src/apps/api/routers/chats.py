@@ -215,6 +215,12 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
         history = await deps.db_client.get_chat_history(session_id)
         or_messages = _build_or_messages(history, body.message)
 
+        # Persist the user message immediately so it survives a client abort.
+        _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        await deps.db_client.append_chat_message(
+            session_id, {"role": "user", "content": body.message, "timestamp": _ts}
+        )
+
         new_messages: List[Dict[str, Any]] = []
         max_iterations = max(1, min(50, body.max_tool_calls or 10))
 
@@ -316,6 +322,10 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             if not tool_calls_list:
                 break
 
+            # Persist the assistant message (with tool_calls) once per iteration,
+            # before executing the tool calls, so it survives a client abort.
+            await deps.db_client.append_chat_message(session_id, assistant_msg)
+
             # Execute tool calls — run_script/run_katana/run_ffuf stream chunks; others execute atomically
             for tc in tool_calls_list:
                 fn_name = tc["function"]["name"]
@@ -357,18 +367,23 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                     _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                     tool_result = _attach_meta(tool_result, _runtime_ms)
 
-                yield f"data: {json.dumps({'type': 'tool_result', 'name': fn_name, 'content': tool_result})}\n\n"
-                new_messages.append({
+                tool_msg = {
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "name": fn_name,
                     "content": tool_result,
-                })
+                }
+                yield f"data: {json.dumps({'type': 'tool_result', 'name': fn_name, 'content': tool_result})}\n\n"
+                new_messages.append(tool_msg)
+                # Persist each tool result immediately so it survives a client abort.
+                await deps.db_client.append_chat_message(session_id, tool_msg)
 
-        # Persist all new messages
-        await deps.db_client.append_chat_message(session_id, {"role": "user", "content": body.message})
-        for msg in new_messages:
-            await deps.db_client.append_chat_message(session_id, msg)
+        # Persist the final assistant message (no tool calls — loop ended naturally).
+        # assistant_msg is only persisted inside the loop when it has tool_calls;
+        # the terminal assistant message (role=assistant, no tool_calls) is not yet
+        # in the DB, so we persist it here.
+        if new_messages and new_messages[-1].get("role") == "assistant" and not new_messages[-1].get("tool_calls"):
+            await deps.db_client.append_chat_message(session_id, new_messages[-1])
 
         updated = await deps.db_client.get_chat_history(session_id)
         yield f"data: {json.dumps({'type': 'done', 'messages': updated})}\n\n"
