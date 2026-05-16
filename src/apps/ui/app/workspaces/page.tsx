@@ -115,7 +115,17 @@ function MarkdownContent({ content }: { content: string }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       code({ className, children, ...props }: any) {
         const match = /language-(\w+)/.exec(className || "")
-        if (match) return <pre className="bg-neutral-900 border border-neutral-700 p-3 overflow-x-auto my-2"><code className={className} {...props}>{children}</code></pre>
+        if (match) {
+          const text = typeof children === "string" ? children : String(children ?? "")
+          return (
+            <div className="relative group my-2">
+              <pre className="bg-neutral-900 border border-neutral-700 p-3 overflow-x-auto whitespace-pre-wrap break-all pr-10"><code className={className} {...props}>{children}</code></pre>
+              <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <CopyButton text={text} />
+              </span>
+            </div>
+          )
+        }
         return <code className="bg-neutral-800 px-1 text-orange-300 text-xs" {...props}>{children}</code>
       },
       blockquote({ children }: MdProps) { return <blockquote className="border-l-2 border-orange-500 pl-3 my-2 text-neutral-400 italic">{children}</blockquote> },
