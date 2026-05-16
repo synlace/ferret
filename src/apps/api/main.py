@@ -9,7 +9,16 @@ All route handlers live in ``routers/``.
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path as _Path
+
+# Add the routers/ directory to sys.path so that the split chats_* modules
+# (chats_crud, chats_tools, chats_ai, chats_runners, chats_execute) can be
+# imported by chats.py using bare module names.
+_ROUTERS_DIR = _Path(__file__).parent / "routers"
+if str(_ROUTERS_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROUTERS_DIR))
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request

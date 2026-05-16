@@ -32,6 +32,13 @@ API_DIR = Path(__file__).parent
 if str(API_DIR) not in sys.path:
     sys.path.insert(0, str(API_DIR))
 
+# Also add the routers sub-directory so that the split chats_* modules
+# (chats_crud, chats_tools, chats_ai, chats_runners, chats_execute) can be
+# imported by chats.py when tests load the app.
+ROUTERS_DIR = API_DIR / "routers"
+if str(ROUTERS_DIR) not in sys.path:
+    sys.path.insert(0, str(ROUTERS_DIR))
+
 from sqlite_client import SQLiteClient  # noqa: E402  (after sys.path tweak)
 
 
