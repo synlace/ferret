@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Zap,
   RefreshCw,
-  Settings,
   FolderOpen,
   SlidersHorizontal,
   ChevronRight,
@@ -35,13 +34,12 @@ interface ProxyStatus {
 }
 
 const navItems = [
-  { href: "/proxy",      icon: Settings,          label: "Proxy" },
   { href: "/history",    icon: Globe,             label: "History" },
   { href: "/snare",      icon: Zap,               label: "Snare" },
   { href: "/gnaw",       icon: RefreshCw,         label: "Gnaw" },
   { href: "/pounce",     icon: Target,            label: "Pounce" },
-  { href: "/findings",   icon: Shield,            label: "Findings" },
   { href: "/workspaces", icon: LayoutDashboard,   label: "Workspaces" },
+  { href: "/findings",   icon: Shield,            label: "Findings" },
   { href: "/projects",   icon: FolderOpen,        label: "Projects" },
   { href: "/settings",   icon: SlidersHorizontal, label: "Settings" },
 ]
