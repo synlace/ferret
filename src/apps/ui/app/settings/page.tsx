@@ -184,7 +184,7 @@ export default function SettingsPage() {
                   className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
                 >
                   {certStatus === "downloading" ? (
-                    <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Downloading…</>
+                    <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Downloading...</>
                   ) : certStatus === "ok" ? (
                     <><CheckCircle className="w-3 h-3 mr-1.5" /> Downloaded</>
                   ) : (

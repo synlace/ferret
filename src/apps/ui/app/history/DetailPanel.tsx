@@ -357,7 +357,7 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
               {annotating === request.id ? (
                 <div className="flex items-center gap-2 text-xs text-neutral-400">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Annotating…</span>
+                  <span>Annotating...</span>
                 </div>
               ) : (
                 <p className="text-xs text-neutral-300 leading-relaxed whitespace-pre-wrap">

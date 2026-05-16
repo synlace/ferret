@@ -116,7 +116,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === "Escape" && setQuery("")}
-              placeholder="Filter projects…"
+              placeholder="Filter projects..."
               className="w-full bg-neutral-800 border border-neutral-700 text-xs text-white placeholder-neutral-500 pl-7 pr-3 py-1.5 focus:outline-none focus:border-orange-500 transition-colors"
             />
           </div>
@@ -151,7 +151,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
                       isActive ? "text-orange-400/70" : "text-neutral-500"
                     }`}>
                       {spendLoading && spend === undefined
-                        ? "…"
+                        ? "..."
                         : spend !== undefined
                           ? formatSpend(spend)
                           : ""}

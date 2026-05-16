@@ -124,11 +124,11 @@ export function ModelPickerModal({
         </div>
         <div className="px-4 py-2 border-b border-neutral-700">
           <Input value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-            placeholder="Search models…" className="bg-neutral-800 border-neutral-600 text-white text-xs h-8" autoFocus />
+            placeholder="Search models..." className="bg-neutral-800 border-neutral-600 text-white text-xs h-8" autoFocus />
         </div>
         <div className="overflow-y-auto flex-1">
           {loading ? (
-            <div className="px-4 py-8 text-center text-neutral-500 text-xs">Loading models…</div>
+            <div className="px-4 py-8 text-center text-neutral-500 text-xs">Loading models...</div>
           ) : fetchError ? (
             <div className="px-4 py-8 text-center space-y-1">
               <p className="text-red-400 text-xs font-medium">Failed to load models</p>

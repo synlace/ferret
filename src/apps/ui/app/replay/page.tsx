@@ -316,7 +316,7 @@ export default function ReplayPage() {
             </Button>
           </div>
           <Input
-            placeholder="Search URL or host…"
+            placeholder="Search URL or host..."
             value={searchFilter}
             onChange={e => setSearchFilter(e.target.value)}
             className="h-7 text-xs bg-neutral-800 border-neutral-600 text-white mb-2"
@@ -503,7 +503,7 @@ export default function ReplayPage() {
                   {replaying && (
                     <div className="flex items-center justify-center flex-1 gap-2 text-neutral-500">
                       <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
-                      <span className="text-sm">Sending request…</span>
+                      <span className="text-sm">Sending request...</span>
                     </div>
                   )}
                   {replayError && !replaying && (
@@ -638,7 +638,7 @@ export default function ReplayPage() {
               onKeyDown={e => {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat() }
               }}
-              placeholder="Ask about this request…"
+              placeholder="Ask about this request..."
               className="flex-1 text-xs bg-neutral-800 border-neutral-600 text-white resize-none min-h-0 h-16"
             />
             <Button

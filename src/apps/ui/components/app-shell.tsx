@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Target,
   Radio,
+  ExternalLink,
 } from "lucide-react"
 import ProjectSwitcher from "@/components/project-switcher"
 import ProjectSheet from "@/components/project-sheet"
@@ -185,9 +186,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 href="https://synlace.ai"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-neutral-500 hover:text-orange-400 text-[10px] transition-colors mt-0.5 block whitespace-nowrap"
+                className="text-neutral-500 hover:text-orange-400 text-[10px] transition-colors mt-0.5 flex items-center gap-1 whitespace-nowrap"
               >
-                A Synlace product ↗
+                A Synlace product
+                <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
               </a>
             </div>
           </div>

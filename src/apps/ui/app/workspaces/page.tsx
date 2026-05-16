@@ -16,7 +16,7 @@ import {
   Terminal, FileCode, FileText,
 } from "lucide-react"
 import { useProject } from "../context/project-context"
-import { NewChatModal, SCOPE_LABELS, SCOPE_ICONS } from "../chat/NewChatModal"
+import { NewChatModal, SCOPE_LABELS } from "../chat/NewChatModal"
 import { ModelPickerModal } from "../projects/ModelPickerModal"
 import { ScopePickerModal } from "../chat/ScopePickerModal"
 import {
@@ -242,6 +242,7 @@ function WorkspacesPageInner() {
   const [showNewModal, setShowNewModal] = useState(false)
   const [showScopePicker, setShowScopePicker] = useState(false)
   const [showModelPicker, setShowModelPicker] = useState(false)
+  const [wsFilter, setWsFilter] = useState("")
 
   const modelDisplayName = model.includes("/") ? model.split("/").pop()! : model
   const userOverrodeModel = useRef(false)
@@ -490,7 +491,7 @@ function WorkspacesPageInner() {
             // ToolGroup instances inherit the expanded/collapsed state the user set
             // during streaming, surviving the live→persisted DOM transition.
             // Only count tool messages from the last user message onwards so that
-            // liveIdx correctly maps to live:0, live:1, … for the current turn.
+            // liveIdx correctly maps to live:0, live:1, ... for the current turn.
             if (activeSessionId) {
               const lastUserIdx = rawMsgs.reduce((acc, m, i) => m.role === "user" ? i : acc, -1)
               let liveIdx = 0
@@ -646,6 +647,7 @@ function WorkspacesPageInner() {
       >
         {/* Sidebar inner — fixed width so content doesn't reflow during animation */}
         <div className="flex flex-col h-full" style={{ width: `${leftWidth}px` }}>
+          {/* ── Sidebar header ── */}
           <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
             <span className="text-xs font-semibold text-white">Workspaces</span>
             <div className="flex items-center gap-1">
@@ -655,104 +657,202 @@ function WorkspacesPageInner() {
               </button>
             </div>
           </div>
+
+          {/* ── Search / filter bar ── */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-neutral-800/60 bg-neutral-950 flex-shrink-0">
+            <svg className="w-2.5 h-2.5 text-neutral-700 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="6.5" cy="6.5" r="4"/>
+              <line x1="10" y1="10" x2="14" y2="14"/>
+            </svg>
+            <input
+              type="text"
+              value={wsFilter}
+              onChange={e => setWsFilter(e.target.value)}
+              placeholder="filter workspaces..."
+              className="bg-transparent text-[10px] text-neutral-500 placeholder:text-neutral-700 outline-none flex-1 min-w-0"
+            />
+          </div>
+
+          {/* ── Session list (day-grouped) ── */}
           <div className="flex-1 overflow-y-auto">
-            {sessions.map(session => {
-              const isActive = session.id === activeSessionId
-              const counts = sessionFileCounts[session.id]
-              // Relative time label
-              const createdMs = new Date(session.created_at).getTime()
-              const diffMin = Math.floor((Date.now() - createdMs) / 60000)
-              const relTime = diffMin < 1 ? "just now"
-                : diffMin < 60 ? `${diffMin}m ago`
-                : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago`
-                : diffMin < 2880 ? "yesterday"
-                : new Date(session.created_at).toLocaleDateString()
+            {(() => {
+              const filtered = sessions.filter(s =>
+                s.name.toLowerCase().includes(wsFilter.toLowerCase())
+              )
 
-              return (
-                <div key={session.id} className="flex flex-col">
-                  {/* ── Main item row ── */}
-                  <div
-                    onClick={() => {
-                      // Clicking the already-active session while a file is open → close file view
-                      if (session.id === activeSessionId && selectedFilePath) {
-                        setSelectedFilePath(null)
-                        return
-                      }
-                      loadSession(session.id)
-                    }}
-                    className={`group flex flex-col px-2 py-1.5 cursor-pointer border-b border-neutral-800/50 gap-0.5 transition-colors ${
-                      isActive
-                        ? "bg-neutral-800 border-l-2 border-l-orange-500 px-[6px]"
-                        : "hover:bg-neutral-900"
-                    }`}
-                  >
-                    {/* Row 1: name + delete (WS badge removed — redundant in Workspaces sidebar) */}
-                    <div className="flex items-center gap-1 min-w-0">
-                      <span className={`flex-1 text-[10px] font-mono truncate min-w-0 ${
-                        isActive ? "text-orange-300" : "text-neutral-300"
-                      }`} title={session.name}>
-                        {session.name}
-                      </span>
-                      <button
-                        onClick={e => deleteSession(session.id, e)}
-                        className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all flex-shrink-0"
-                        title="Delete workspace"
-                      >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
+              if (filtered.length === 0) {
+                return (
+                  <p className="text-[10px] text-neutral-700 px-3 py-4 text-center leading-relaxed">
+                    {sessions.length === 0 ? <>No workspaces yet.<br />Click + to start one.</> : "No matches."}
+                  </p>
+                )
+              }
 
-                    {/* Row 2: file counts (only when counts are known and non-zero total) */}
-                    {counts && (counts.scripts + counts.tests + counts.notes) > 0 && (
-                      <div className="flex items-center gap-2 pl-px">
-                        {counts.scripts > 0 && (
-                          <span className={`flex items-center gap-0.5 text-[9px] font-mono ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                            <Terminal className="w-2 h-2 flex-shrink-0" />
-                            {counts.scripts}
-                          </span>
-                        )}
-                        {counts.tests > 0 && (
-                          <span className={`flex items-center gap-0.5 text-[9px] font-mono ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                            <FileCode className="w-2 h-2 flex-shrink-0" />
-                            {counts.tests}
-                          </span>
-                        )}
-                        {counts.notes > 0 && (
-                          <span className={`flex items-center gap-0.5 text-[9px] font-mono ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                            <FileText className="w-2 h-2 flex-shrink-0" />
-                            {counts.notes}
-                          </span>
-                        )}
-                      </div>
-                    )}
+              // Group sessions by day
+              const now = new Date()
+              const todayStr = now.toDateString()
+              const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
+              const yesterdayStr = yesterday.toDateString()
 
-                    {/* Row 3: timestamp + scope icon */}
-                    <div className="flex items-center gap-1 pl-px">
-                      <span className={`text-[9px] font-mono ${isActive ? "text-neutral-600" : "text-neutral-700"}`}>
-                        {relTime}
-                      </span>
-                      <span className="ml-auto text-[10px] leading-none flex-shrink-0" title={session.scope}>
-                        {SCOPE_ICONS[session.scope] ?? "💬"}
-                      </span>
-                    </div>
+              type Group = { label: string; sessions: WorkspaceSession[] }
+              const groups: Group[] = []
+              const groupMap: Record<string, Group> = {}
+
+              for (const session of filtered) {
+                const d = new Date(session.created_at)
+                const ds = d.toDateString()
+                let label: string
+                if (ds === todayStr) label = "Today"
+                else if (ds === yesterdayStr) label = "Yesterday"
+                else label = d.toLocaleDateString()
+
+                if (!groupMap[label]) {
+                  const g: Group = { label, sessions: [] }
+                  groupMap[label] = g
+                  groups.push(g)
+                }
+                groupMap[label].sessions.push(session)
+              }
+
+              return groups.map(group => (
+                <div key={group.label}>
+                  {/* Day group header */}
+                  <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 sticky top-0 bg-neutral-950 z-10">
+                    <span className="text-neutral-700 uppercase text-[9px] font-semibold tracking-widest font-sans flex-shrink-0">
+                      {group.label}
+                    </span>
+                    <div className="flex-1 h-px bg-neutral-800" />
                   </div>
 
-                  {/* Inline file tree for active session — flush with the row above,
-                      scrollable so long file lists don't get clipped */}
-                  {isActive && (
-                    <div className="border-b border-neutral-800/60 overflow-y-auto" style={{ maxHeight: "calc(100vh - 280px)" }}>
-                      <FileTree files={workspaceFiles} selectedPath={selectedFilePath}
-                        onSelectFile={path => setSelectedFilePath(path)}
-                        onRefresh={() => fetchWorkspaceFiles(session.id)}
-                        onNewFile={() => setShowNewFileModal(true)} />
-                    </div>
-                  )}
+                  {group.sessions.map(session => {
+                    const isActive = session.id === activeSessionId
+                    const counts = sessionFileCounts[session.id]
+
+                    // Relative time label
+                    const createdMs = new Date(session.created_at).getTime()
+                    const diffMin = Math.floor((Date.now() - createdMs) / 60000)
+                    const relTime = diffMin < 1 ? "just now"
+                      : diffMin < 60 ? `${diffMin}m ago`
+                      : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago`
+                      : diffMin < 2880 ? "yesterday"
+                      : new Date(session.created_at).toLocaleDateString()
+
+                    // Active item: flat file list (up to 4)
+                    const activeFiles = isActive ? workspaceFiles.slice(0, 4) : []
+                    const extraFileCount = isActive ? Math.max(0, workspaceFiles.length - 4) : 0
+
+                    return (
+                      <div
+                        key={session.id}
+                        onClick={() => {
+                          if (session.id === activeSessionId && selectedFilePath) {
+                            setSelectedFilePath(null)
+                            return
+                          }
+                          loadSession(session.id)
+                        }}
+                        className={`group flex flex-col px-2.5 py-1.5 cursor-pointer border-b border-neutral-800/40 gap-0.5 transition-colors ${
+                          isActive
+                            ? "bg-neutral-900 border-l-2 border-l-neutral-600 pl-[8px]"
+                            : "hover:bg-neutral-900/50"
+                        }`}
+                      >
+                        {/* Row 1: name + delete */}
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span
+                            className={`flex-1 text-[10px] font-mono truncate min-w-0 ${
+                              isActive ? "text-orange-300" : "text-neutral-300"
+                            }`}
+                            title={session.name}
+                          >
+                            {session.name}
+                          </span>
+                          <button
+                            onClick={e => deleteSession(session.id, e)}
+                            className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all flex-shrink-0"
+                            title="Delete workspace"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+
+                        {/* Row 2: timestamp (left) + file count chips (right) */}
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9px] font-sans flex-shrink-0 ${isActive ? "text-neutral-600" : "text-neutral-700"}`}>
+                            {relTime}
+                          </span>
+                          {counts && (counts.scripts + counts.tests + counts.notes) > 0 && (
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              {counts.scripts > 0 && (
+                                <span className={`flex items-center gap-0.5 text-[9px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
+                                  <Terminal className="w-2 h-2 flex-shrink-0" />
+                                  {counts.scripts}
+                                </span>
+                              )}
+                              {counts.tests > 0 && (
+                                <span className={`flex items-center gap-0.5 text-[9px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
+                                  <FileCode className="w-2 h-2 flex-shrink-0" />
+                                  {counts.tests}
+                                </span>
+                              )}
+                              {counts.notes > 0 && (
+                                <span className={`flex items-center gap-0.5 text-[9px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
+                                  <FileText className="w-2 h-2 flex-shrink-0" />
+                                  {counts.notes}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Row 3 (active only): inline flat file list */}
+                        {isActive && workspaceFiles.length > 0 && (
+                          <div className="flex flex-col gap-px pt-1 mt-0.5 border-t border-neutral-700/40">
+                            {activeFiles.map(file => {
+                              const isScript = file.subdir === "scripts"
+                              const isTest = file.subdir === "tests"
+                              const isNote = file.subdir === "notes"
+                              const Icon = isScript ? Terminal : isTest ? FileCode : FileText
+                              const iconClass = isScript
+                                ? "text-blue-400/40 group-hover:text-blue-400"
+                                : isTest
+                                ? "text-green-400/40 group-hover:text-green-400"
+                                : "text-yellow-400/40 group-hover:text-yellow-400"
+                              return (
+                                <div
+                                  key={file.path}
+                                  onClick={e => { e.stopPropagation(); setSelectedFilePath(file.path) }}
+                                  className="group flex items-center gap-1 py-0.5 text-[9px] text-neutral-600 hover:text-neutral-400 cursor-pointer transition-colors"
+                                >
+                                  <Icon className={`w-2 h-2 flex-shrink-0 transition-colors ${iconClass}`} />
+                                  <span className="truncate font-mono">{file.path}</span>
+                                </div>
+                              )
+                            })}
+                            {extraFileCount > 0 && (
+                              <span className="text-[9px] text-neutral-700 font-sans py-0.5">
+                                +{extraFileCount} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
-            {sessions.length === 0 && (
-              <p className="text-[10px] text-neutral-700 px-3 py-4 text-center leading-relaxed">No workspaces yet.<br />Click + to start one.</p>
-            )}
+              ))
+            })()}
+          </div>
+
+          {/* ── Footer CTA: New workspace ── */}
+          <div className="border-t border-neutral-800/60 px-2.5 py-2 flex-shrink-0">
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="w-full border border-dashed border-neutral-800 hover:border-orange-500/30 text-neutral-600 hover:text-orange-400 text-[10px] font-sans flex items-center gap-1.5 px-2 py-1.5 transition-colors"
+            >
+              <Plus className="w-2.5 h-2.5 flex-shrink-0" />
+              New workspace
+            </button>
           </div>
         </div>
       </div>
@@ -788,7 +888,6 @@ function WorkspacesPageInner() {
               <div className="flex-1 min-w-0">
                 {activeSession ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-sm leading-none">{SCOPE_ICONS[activeSession.scope] ?? "💬"}</span>
                     <span className="text-xs font-semibold text-white truncate">{activeSession.name}</span>
                     <span className="text-[10px] text-neutral-500 flex-shrink-0 font-mono">{SCOPE_LABELS[activeSession.scope] ?? activeSession.scope}</span>
                   </div>
@@ -909,17 +1008,17 @@ function WorkspacesPageInner() {
 
             {/* Input bar */}
             <div className="border-t border-neutral-800 px-3 py-2 bg-neutral-900 flex-shrink-0">
-              <div className="flex items-end gap-2">
+              <div className="flex items-stretch gap-2">
                 <Textarea ref={chatInputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  placeholder={activeSessionId ? "Message… (Enter to send, Shift+Enter for newline)" : "Select a workspace first"}
+                  placeholder={activeSessionId ? "Message... (Enter to send, Shift+Enter for newline)" : "Select a workspace first"}
                   disabled={!activeSessionId || loading}
                   className="flex-1 text-sm bg-neutral-800 border-neutral-700 text-white resize-none min-h-[40px] max-h-40 placeholder:text-neutral-600 focus-visible:ring-orange-500/50" rows={2} />
                 {loading
-                  ? <button onClick={stopStream} className="bg-neutral-700 hover:bg-red-900/60 border border-neutral-600 hover:border-red-500/50 text-neutral-300 hover:text-red-400 h-10 w-10 flex items-center justify-center flex-shrink-0 transition-colors">
+                  ? <button onClick={stopStream} className="bg-neutral-700 hover:bg-red-900/60 border border-neutral-600 hover:border-red-500/50 text-neutral-300 hover:text-red-400 w-10 flex items-center justify-center flex-shrink-0 transition-colors">
                       <Square className="w-4 h-4" />
                     </button>
                   : <button onClick={sendMessage} disabled={!activeSessionId || !input.trim()}
-                      className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white h-10 w-10 flex items-center justify-center flex-shrink-0 transition-colors">
+                      className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white w-10 flex items-center justify-center flex-shrink-0 transition-colors">
                       <Send className="w-4 h-4" />
                     </button>}
               </div>
@@ -970,7 +1069,6 @@ function WorkspacesPageInner() {
               <div className="px-3 py-2">
                 <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1.5">Scope</p>
                 <div className="flex items-center gap-2 bg-neutral-800 border border-neutral-700 px-2 py-1.5">
-                  <span className="text-base leading-none">{SCOPE_ICONS[activeSession.scope] ?? "💬"}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-neutral-200 truncate">{SCOPE_LABELS[activeSession.scope] ?? activeSession.scope}</div>
                   </div>
@@ -1054,7 +1152,7 @@ export default function WorkspacesPage() {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center h-full text-neutral-500">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />Loading…
+        <Loader2 className="w-5 h-5 animate-spin mr-2" />Loading...
       </div>
     }>
       <WorkspacesPageInner />

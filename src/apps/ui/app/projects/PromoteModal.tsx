@@ -48,12 +48,12 @@ export function PromoteModal({ onClose, onPromote }: PromoteModalProps) {
           Copy the temporary workspace into a new permanent project. The temp workspace stays intact.
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Project name…"
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Project name..."
             className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-orange-500" autoFocus />
           <div className="flex gap-2">
             <Button type="submit" disabled={loading || !name.trim()}
               className="flex-1 bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50">
-              {loading ? "Copying…" : "Copy to Project"}
+              {loading ? "Copying..." : "Copy to Project"}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}
               className="border-neutral-600 text-neutral-300 hover:bg-neutral-800">Cancel</Button>

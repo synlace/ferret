@@ -81,26 +81,26 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
           <div className="p-4 space-y-4">
 
             {/* Name + emoji */}
-            <div className="flex items-end gap-3">
-              <div className="flex-1">
-                <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">Name *</label>
+            <div>
+              <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">Name *</label>
+              <div className="flex items-center gap-2">
+                <div ref={emojiAnchorRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(v => !v)}
+                    className="w-8 h-8 rounded bg-neutral-800 border border-neutral-700 flex items-center justify-center text-lg hover:border-orange-500 transition-colors flex-shrink-0"
+                    title="Choose emoji"
+                  >
+                    {emoji || "📁"}
+                  </button>
+                </div>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="My Project"
                   autoFocus
-                  className="w-full h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                  className="flex-1 h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
                 />
-              </div>
-              <div ref={emojiAnchorRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker(true)}
-                  className="w-8 h-8 rounded bg-neutral-800 border border-neutral-700 flex items-center justify-center text-lg hover:border-orange-500 transition-colors"
-                  title="Choose emoji"
-                >
-                  {emoji || "📁"}
-                </button>
               </div>
             </div>
             {showEmojiPicker && (
@@ -118,7 +118,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional description…"
+                placeholder="Optional description..."
                 rows={2}
                 className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 resize-none"
               />
@@ -151,7 +151,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
                   value={labelInput}
                   onChange={(e) => setLabelInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLabel() } }}
-                  placeholder="Add label…"
+                  placeholder="Add label..."
                   className="flex-1 h-7 px-2 bg-neutral-800 border border-neutral-700 rounded text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
                 />
                 <button
@@ -207,7 +207,7 @@ export function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
               disabled={loading || !name.trim()}
               className="h-7 px-4 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {loading ? "Creating…" : "Create Project"}
+              {loading ? "Creating..." : "Create Project"}
             </button>
           </div>
         </form>

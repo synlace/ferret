@@ -21,7 +21,7 @@ export function ColorPicker({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
   useEffect(() => {
     if (anchorRef.current) {
@@ -37,6 +37,8 @@ export function ColorPicker({
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [onClose])
+
+  if (!pos) return null
 
   return (
     <div
@@ -73,23 +75,31 @@ export function EmojiInput({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
   useEffect(() => {
     if (anchorRef.current) {
       const r = anchorRef.current.getBoundingClientRect()
-      // Try to position it so it doesn't go off-screen
       const pickerWidth = 350
       const pickerHeight = 435
-      let left = r.left
-      let top = r.bottom + 4
 
+      // Default: open to the right of the anchor button so it stays visible
+      let left = r.right + 4
+      let top = r.top
+
+      // If it overflows the right edge, flip to open left of the anchor
       if (left + pickerWidth > window.innerWidth) {
-        left = window.innerWidth - pickerWidth - 10
+        left = r.left - pickerWidth - 4
       }
+      // If it still overflows left, clamp to 8px from left edge
+      if (left < 8) left = 8
+
+      // If it overflows the bottom, shift up
       if (top + pickerHeight > window.innerHeight) {
-        top = r.top - pickerHeight - 4
+        top = window.innerHeight - pickerHeight - 8
       }
+      // Clamp so the picker never goes above the viewport
+      if (top < 8) top = 8
 
       setPos({ top, left })
     }
@@ -97,13 +107,17 @@ export function EmojiInput({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose()
-      }
+      // Ignore clicks on the picker itself or on the anchor button that opened it
+      if (ref.current && ref.current.contains(e.target as Node)) return
+      if (anchorRef.current && anchorRef.current.contains(e.target as Node)) return
+      onClose()
     }
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
-  }, [onClose])
+  }, [onClose, anchorRef])
+
+  // Don't render until position is calculated — prevents flash to top-left
+  if (!pos) return null
 
   return (
     <div

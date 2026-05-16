@@ -1,11 +1,12 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist_Mono as GeistMono } from "next/font/google"
+import { JetBrains_Mono as JetBrainsMono, Geist_Mono as GeistMono } from "next/font/google"
 import "./globals.css"
 import { ProjectProvider } from "./context/project-context"
 import AppShell from "@/components/app-shell"
 
-const geistMono = GeistMono({ subsets: ["latin"] })
+const jetbrainsMono = JetBrainsMono({ subsets: ["latin"], variable: "--font-jetbrains-mono" })
+const geistMono = GeistMono({ subsets: ["latin"], variable: "--font-geist-mono" })
 
 export const metadata: Metadata = {
   title: "FERRET by Synlace — Forensic Analysis & Request Tracker",
@@ -33,7 +34,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${geistMono.className} bg-neutral-950 text-white antialiased`}>
+      <body className={`${jetbrainsMono.variable} ${geistMono.variable} font-mono bg-neutral-950 text-white antialiased`}>
         <ProjectProvider>
           <AppShell>{children}</AppShell>
         </ProjectProvider>

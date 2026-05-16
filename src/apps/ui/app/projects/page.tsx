@@ -253,7 +253,7 @@ export default function ProjectsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter…"
+              placeholder="Filter..."
               className="pl-6 pr-6 h-7 text-xs bg-neutral-800 border border-neutral-700 rounded text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 w-40"
             />
             {searchQuery && (

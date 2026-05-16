@@ -529,7 +529,7 @@ export default function HistoryPage() {
       <div className="flex border-b border-neutral-800 flex-shrink-0">
         <div className="relative flex-1">
           <Input
-            placeholder='Search… or use qualifiers: method:GET status:4xx host:*api* mime:json -ext:js'
+            placeholder='Search... or use qualifiers: method:GET status:4xx host:*api* mime:json -ext:js'
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setHistoryIndex(-1) }}
             onKeyDown={(e) => {
@@ -933,7 +933,7 @@ export default function HistoryPage() {
           {loading && requests.length === 0 ? (
             <div className="flex items-center justify-center py-16 text-neutral-500">
               <Loader2 className="w-6 h-6 animate-spin mr-2" />
-              Loading requests…
+              Loading requests...
             </div>
           ) : table.getRowModel().rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-neutral-500 space-y-4">
