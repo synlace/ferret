@@ -188,7 +188,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 rel="noopener noreferrer"
                 className="text-neutral-500 hover:text-orange-400 text-[10px] transition-colors mt-0.5 flex items-center gap-1 whitespace-nowrap"
               >
-                A Synlace product
+                by Synlace
                 <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
               </a>
             </div>

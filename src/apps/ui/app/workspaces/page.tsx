@@ -159,6 +159,10 @@ function WorkspacesPageInner() {
   const [sessionSpend, setSessionSpend] = useState<number | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  // Refs that mirror liveToolCalls / streamingContent so the catch block can
+  // read the current values synchronously without stale-closure issues.
+  const liveToolCallsRef = useRef<LiveToolCall[]>([])
+  const streamingContentRef = useRef("")
   const pendingNoticeRef = useRef<ChatMsg | null>(null)
   // Collapse state for ToolGroup — keyed by persistKey. Stored in a ref so
   // toggling doesn't cause a full re-render; a separate counter forces a
@@ -418,7 +422,9 @@ function WorkspacesPageInner() {
     }
     historyIdxRef.current = -1; inputDraftRef.current = ""
     setMessages(prev => [...prev, userMsg]); setInput(""); setLoading(true)
-    setStreamingContent(""); setLiveToolCalls([]); shouldAutoScroll.current = true
+    setStreamingContent(""); streamingContentRef.current = ""
+    setLiveToolCalls([]); liveToolCallsRef.current = []
+    shouldAutoScroll.current = true
     requestAnimationFrame(() => { messagesEndRef.current?.scrollIntoView({ behavior: "instant" }) })
 
     const abort = new AbortController(); abortControllerRef.current = abort
@@ -449,35 +455,39 @@ function WorkspacesPageInner() {
           const evt = JSON.parse(payload)
           if (evt.type === "tool_start") {
             const isStreaming = evt.name === "run_script" || evt.name === "run_ffuf"
-            setLiveToolCalls(prev => [...prev, {
+            const newEntry: LiveToolCall = {
               name: evt.name, toolArgsRaw: evt.args as string | undefined,
               result: null, startedAt: Date.now(),
               liveChunks: isStreaming ? [] : undefined,
-              // Rationale is embedded in the tool call args by the model
               rationale: extractRationale(evt.args as string | undefined),
-            }])
+            }
+            liveToolCallsRef.current = [...liveToolCallsRef.current, newEntry]
+            setLiveToolCalls(liveToolCallsRef.current)
           } else if (evt.type === "tool_output_chunk") {
-            setLiveToolCalls(prev => {
-              const idx = [...prev].reverse().findIndex(e => e.name === evt.name && e.result === null)
-              if (idx === -1) return prev
+            const prev = liveToolCallsRef.current
+            const idx = [...prev].reverse().findIndex(e => e.name === evt.name && e.result === null)
+            if (idx !== -1) {
               const realIdx = prev.length - 1 - idx
               const tc = prev[realIdx]
               const newChunks = [...(tc.liveChunks ?? []), evt.chunk as string]
-              return prev.map((e, i) => i === realIdx ? { ...e, liveChunks: newChunks } : e)
-            })
+              liveToolCallsRef.current = prev.map((e, i) => i === realIdx ? { ...e, liveChunks: newChunks } : e)
+              setLiveToolCalls(liveToolCallsRef.current)
+            }
           } else if (evt.type === "tool_result") {
-            setLiveToolCalls(prev => {
-              const idx = [...prev].reverse().findIndex(e => e.name === evt.name && e.result === null)
-              if (idx === -1) return prev
+            const prev = liveToolCallsRef.current
+            const idx = [...prev].reverse().findIndex(e => e.name === evt.name && e.result === null)
+            if (idx !== -1) {
               const realIdx = prev.length - 1 - idx
               const content: string = evt.content ?? ""
               const { meta } = parseMeta(content)
               const exitCode: number | null = meta.exit_code ?? null
               const runtimeMs: number | null = meta.runtime_ms ?? null
-              return prev.map((e, i) => i === realIdx ? { ...e, result: content, exitCode, runtimeMs } : e)
-            })
+              liveToolCallsRef.current = prev.map((e, i) => i === realIdx ? { ...e, result: content, exitCode, runtimeMs } : e)
+              setLiveToolCalls(liveToolCallsRef.current)
+            }
           } else if (evt.type === "delta") {
-            setStreamingContent(prev => prev + (evt.content ?? ""))
+            streamingContentRef.current += evt.content ?? ""
+            setStreamingContent(streamingContentRef.current)
           } else if (evt.type === "done") {
             streamDoneReceived.current = true
             const rawMsgs: ChatMsg[] = (evt.messages ?? []).map((m: Record<string, unknown>) => ({
@@ -510,7 +520,10 @@ function WorkspacesPageInner() {
                 }
               })
             }
-            setMessages(annotateToolArgs(rawMsgs)); setStreamingContent(""); setLiveToolCalls([]); setLoading(false)
+            setMessages(annotateToolArgs(rawMsgs))
+            setStreamingContent(""); streamingContentRef.current = ""
+            setLiveToolCalls([]); liveToolCallsRef.current = []
+            setLoading(false)
             fetchWorkspaceFiles(activeSessionId)
             if (activeProjectId) {
               fetch(`${API_BASE}/api/projects/${activeProjectId}/spend`).then(r => r.ok ? r.json() : null)
@@ -527,7 +540,9 @@ function WorkspacesPageInner() {
             // persisted in the DB and shown on reload. Generic errors use "assistant".
             const role: ChatMsg["role"] = isNoKey ? "notice" : "assistant"
             setMessages(prev => [...prev, { role, content, timestamp: nowTs() }])
-            setStreamingContent(""); setLiveToolCalls([]); setLoading(false)
+            setStreamingContent(""); streamingContentRef.current = ""
+            setLiveToolCalls([]); liveToolCallsRef.current = []
+            setLoading(false)
           }
         } catch { /**/ }
       }
@@ -539,8 +554,38 @@ function WorkspacesPageInner() {
         for (const line of lines) processLine(line)
       }
       if (buffer) processLine(buffer)
-      if (!streamDoneReceived.current) { setStreamingContent(""); setLiveToolCalls([]); setLoading(false) }
-    } catch { setLoading(false); setStreamingContent(""); setLiveToolCalls([]) }
+      if (!streamDoneReceived.current) {
+        setStreamingContent(""); streamingContentRef.current = ""
+        setLiveToolCalls([]); liveToolCallsRef.current = []
+        setLoading(false)
+      }
+    } catch {
+      // The server only persists messages at the very end of the agentic loop
+      // (after the `done` event), so aborting mid-stream means nothing has been
+      // written to the DB yet.  Instead, promote whatever the client already
+      // has — the user message (already in `messages`) plus any live tool calls
+      // that completed — into proper ChatMsg rows so they remain visible.
+      // liveToolCallsRef / streamingContentRef are kept in sync with state
+      // throughout streaming, so they always hold the current values here.
+      const snapshot = liveToolCallsRef.current
+      const partialText = streamingContentRef.current.trim()
+      const promotedMsgs: ChatMsg[] = snapshot.map(tc => ({
+        role: "tool" as const,
+        content: tc.result ?? "",
+        name: tc.name,
+        toolArgs: tc.toolArgsRaw ? formatToolArgs(tc.name, tc.toolArgsRaw) : "",
+        toolArgsRaw: tc.toolArgsRaw,
+        exitCode: tc.exitCode,
+        runtimeMs: tc.runtimeMs,
+        rationale: tc.rationale,
+        timestamp: nowTs(),
+      }))
+      if (partialText) promotedMsgs.push({ role: "assistant" as const, content: partialText, timestamp: nowTs() })
+      if (promotedMsgs.length > 0) setMessages(prev => [...prev, ...promotedMsgs])
+      setLiveToolCalls([]); liveToolCallsRef.current = []
+      setStreamingContent(""); streamingContentRef.current = ""
+      setLoading(false)
+    }
     finally { abortControllerRef.current = null }
   }
 
