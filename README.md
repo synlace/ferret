@@ -81,12 +81,48 @@ Point your browser or tool at `127.0.0.1:1337`. For HTTPS, install the mitmproxy
 
 ---
 
+## Authentication
+
+Ferret requires a password on every install. The password is set during the **first-run setup wizard** and stored as a bcrypt hash in the local SQLite database.
+
+### Browser login
+
+1. On first visit, the setup wizard prompts you to set a password (min. 8 characters) before choosing an AI provider.
+2. After setup completes, you are redirected to `/login`.
+3. Enter your password — a 24-hour `HttpOnly SameSite=Strict` session cookie is issued.
+4. The sidebar shows a **Sign out** button that clears the session.
+
+### Programmatic / CI access (Bearer token)
+
+Set `FERRET_API_KEY` in `.env` to any random secret, then pass it as a header:
+
+```bash
+curl -H "Authorization: Bearer <your-key>" http://localhost:8000/api/requests
+```
+
+The Bearer token is checked independently of the session cookie — both can be active simultaneously.
+
+### Resetting the password
+
+```bash
+just reset   # wipes the database, including credentials — re-runs the setup wizard
+```
+
+Or via the API (requires a valid session):
+
+```bash
+curl -X DELETE -H "Authorization: Bearer <key>" http://localhost:8000/api/setup
+```
+
+---
+
 ## Configuration
 
 Copy `.env.example` to `.env` to pre-configure options. All AI provider settings can also be set through the in-browser setup wizard.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `FERRET_API_KEY` | — | Static Bearer token for programmatic API access (optional) |
 | `OPENROUTER_MODEL` | `google/gemini-3-flash-preview` | Default model when using OpenRouter (overridden by wizard selection) |
 | `PROXY_HOST` | `0.0.0.0` | Proxy bind address |
 | `PROXY_PORT` | `1337` | Proxy port |

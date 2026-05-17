@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { Key, Plus, Trash2, X, RefreshCw } from "lucide-react"
 import { ApiKey, SpendData, API_BASE, fetchKeys, fetchSpend } from "./types"
@@ -219,7 +221,7 @@ export function KeysSheet({ open, projectId, projectName, initialKeys, initialSp
 
   const handleCreate = async (name: string, limitUsd: number | null) => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${projectId}/keys`, {
+      const res = await apiFetch(`${API_BASE}/api/projects/${projectId}/keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, limit_usd: limitUsd }),
@@ -240,7 +242,7 @@ export function KeysSheet({ open, projectId, projectName, initialKeys, initialSp
   const handleDelete = async (keyId: string, keyName: string) => {
     if (!window.confirm(`Delete key "${keyName}"? This cannot be undone.`)) return
     try {
-      await fetch(`${API_BASE}/api/projects/${projectId}/keys/${keyId}`, { method: "DELETE" })
+      await apiFetch(`${API_BASE}/api/projects/${projectId}/keys/${keyId}`, { method: "DELETE" })
       await handleRefresh()
     } catch { /* ignore */ }
   }

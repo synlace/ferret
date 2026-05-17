@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useRef } from "react"
 import { ArrowLeft, Loader2, Save, Trash2, Play, Square, Terminal, FileCode, WrapText } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -68,7 +70,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
 
   useEffect(() => {
     setLoading(true)
-    fetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}`)
+    apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}`)
       .then(r => r.json()).then(d => { setContent(d.content ?? ""); setOriginalContent(d.content ?? "") })
       .catch(() => setContent("")).finally(() => setLoading(false))
   }, [sessionId, filePath])
@@ -78,7 +80,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
   const handleSave = async () => {
     setSaving(true)
     try {
-      await fetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}`, {
+      await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }),
       })
       setOriginalContent(content)
@@ -90,7 +92,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
     setRunning(true); setRunOutput([]); setRunStatus("running")
     runAbortRef.current = new AbortController()
     try {
-      const res = await fetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}/run`, { method: "POST", signal: runAbortRef.current.signal })
+      const res = await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}/run`, { method: "POST", signal: runAbortRef.current.signal })
       const reader = res.body?.getReader()
       if (!reader) throw new Error("No stream")
       const decoder = new TextDecoder(); let buf = ""
@@ -114,7 +116,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
 
   const handleDelete = async () => {
     if (!confirm(`Delete ${filePath}?`)) return
-    await fetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}`, { method: "DELETE" })
+    await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files/${filePath}`, { method: "DELETE" })
     onDeleted()
   }
 

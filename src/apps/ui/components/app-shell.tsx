@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
@@ -8,6 +10,7 @@ import {
   Globe,
   Shield,
   LayoutDashboard,
+  LogOut,
   Zap,
   RefreshCw,
   FolderOpen,
@@ -21,6 +24,7 @@ import {
 import ProjectSwitcher from "@/components/project-switcher"
 import ProjectSheet from "@/components/project-sheet"
 import SigintPanel, { useSigint } from "@/components/sigint-panel"
+import { useAuth } from "@/app/context/auth-context"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -52,6 +56,7 @@ const STORAGE_KEY = "ferret:sidebarWidth"
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
+  const { logout } = useAuth()
 
   // State is only used for drag logic / collapsed detection.
   // The visual width is driven by the CSS custom property --sidebar-w which is
@@ -74,12 +79,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   // First-run check: redirect to /setup if the wizard has not been completed.
-  // Skipped when already on /setup to avoid redirect loops.
+  // Skipped on /, /setup, and /login — the root page handles its own check,
+  // and /setup + /login must never be redirected away from.
   useEffect(() => {
-    if (pathname === "/setup") return
+    if (pathname === "/" || pathname === "/setup" || pathname === "/login") return
     const check = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/setup`)
+        const res = await apiFetch(`${API_BASE}/api/setup`)
         if (!res.ok) return  // API not ready yet — don't block the UI
         const data = await res.json()
         if (!data.setup_complete) {
@@ -93,13 +99,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 
+  // Auth check: redirect to /login if the session is invalid or expired.
+  // Skipped on /, /setup, and /login to avoid redirect loops.
+  useEffect(() => {
+    if (pathname === "/" || pathname === "/setup" || pathname === "/login") return
+    const checkAuth = async () => {
+      try {
+        const res = await apiFetch(`${API_BASE}/api/auth/me`, {})
+        if (res.status === 401) {
+          router.replace("/login")
+        }
+      } catch {
+        // Backend unreachable — don't block the UI
+      }
+    }
+    checkAuth()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
+
   // Proxy status polling — must be declared before any early return to satisfy
   // the Rules of Hooks (hooks must always be called in the same order).
   useEffect(() => {
-    if (pathname === "/setup") return
+    if (pathname === "/" || pathname === "/setup" || pathname === "/login") return
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/proxy/status`)
+        const res = await apiFetch(`${API_BASE}/api/proxy/status`)
         if (res.ok) setProxyStatus(await res.json())
       } catch {
         // silently ignore — sidebar is non-critical
@@ -151,9 +175,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     })
   }
 
-  // If we are on the setup page, render children directly (no sidebar).
+  // On /, /setup, and /login render children directly (no sidebar).
+  // / renders null while its own async redirect check runs, so we must not
+  // wrap it in the sidebar shell or the user will see a flash of the sidebar.
   // This early return must come AFTER all hooks/callbacks to satisfy the Rules of Hooks.
-  if (pathname === "/setup") {
+  if (pathname === "/" || pathname === "/setup" || pathname === "/login") {
     return <>{children}</>
   }
 
@@ -260,6 +286,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               }`}
             >
               Latest News
+            </span>
+          </button>
+        </div>
+
+        {/* Logout button */}
+        <div className="border-t border-neutral-800 flex-shrink-0">
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors
+                       text-neutral-500 hover:text-red-400 hover:bg-neutral-800 overflow-hidden"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            <span
+              className={`font-medium whitespace-nowrap transition-opacity duration-150 ${
+                collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+              }`}
+            >
+              Sign out
             </span>
           </button>
         </div>

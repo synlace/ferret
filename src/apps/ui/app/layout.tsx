@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { JetBrains_Mono as JetBrainsMono, Geist_Mono as GeistMono } from "next/font/google"
 import "./globals.css"
 import { ProjectProvider } from "./context/project-context"
+import { AuthProvider } from "./context/auth-context"
 import AppShell from "@/components/app-shell"
 
 const jetbrainsMono = JetBrainsMono({ subsets: ["latin"], variable: "--font-jetbrains-mono" })
@@ -35,9 +36,11 @@ export default function RootLayout({
         />
       </head>
       <body className={`${jetbrainsMono.variable} ${geistMono.variable} font-mono bg-neutral-950 text-white antialiased`}>
-        <ProjectProvider>
-          <AppShell>{children}</AppShell>
-        </ProjectProvider>
+        <AuthProvider>
+          <ProjectProvider>
+            <AppShell>{children}</AppShell>
+          </ProjectProvider>
+        </AuthProvider>
       </body>
     </html>
   )

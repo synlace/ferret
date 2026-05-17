@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useCallback } from "react"
 import { Plus, Pencil, Trash2, Copy, Loader2, X } from "lucide-react"
 import { useProject } from "../context/project-context"
@@ -64,7 +66,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
       const body = { project_id: projectId, name: name.trim(), description, tool, prompt, max_tool_calls: maxToolCalls }
       const url = plan ? `${API_BASE}/api/plans/${plan.id}` : `${API_BASE}/api/plans`
       const method = plan ? "PUT" : "POST"
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      const res = await apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.detail ?? "Save failed"); return }
       onSaved()
     } catch { setError("Network error") } finally { setSaving(false) }
@@ -235,7 +237,7 @@ export default function PlansPage() {
     if (!activeProjectId) return
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/plans?project_id=${activeProjectId}`)
+      const res = await apiFetch(`${API_BASE}/api/plans?project_id=${activeProjectId}`)
       if (res.ok) setPlans(await res.json())
     } catch { /* ignore */ } finally { setLoading(false) }
   }, [activeProjectId])
@@ -246,7 +248,7 @@ export default function PlansPage() {
     if (!window.confirm(`Delete plan "${plan.name}"? This cannot be undone.`)) return
     setActionLoading(plan.id)
     try {
-      await fetch(`${API_BASE}/api/plans/${plan.id}?project_id=${activeProjectId}`, { method: "DELETE" })
+      await apiFetch(`${API_BASE}/api/plans/${plan.id}?project_id=${activeProjectId}`, { method: "DELETE" })
       await fetchPlans()
     } catch { /* ignore */ } finally { setActionLoading(null) }
   }
@@ -254,7 +256,7 @@ export default function PlansPage() {
   const handleClone = async (plan: Plan) => {
     setActionLoading(plan.id)
     try {
-      await fetch(`${API_BASE}/api/plans/${plan.id}/clone?project_id=${activeProjectId}`, { method: "POST" })
+      await apiFetch(`${API_BASE}/api/plans/${plan.id}/clone?project_id=${activeProjectId}`, { method: "POST" })
       await fetchPlans()
     } catch { /* ignore */ } finally { setActionLoading(null) }
   }

@@ -1,8 +1,11 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { apiFetch } from "@/lib/api-fetch"
+
+import { useState, useCallback, useRef, useEffect } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+import { Eye, EyeOff } from "lucide-react"
 import { ModelPickerModal } from "../projects/ModelPickerModal"
 
 // ---------------------------------------------------------------------------
@@ -137,7 +140,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 export default function SetupPage() {
   const router = useRouter()
 
-  const [step, setStep]               = useState<1 | 2 | 3 | 4>(1)
+  // Step 0 = password, 1 = provider, 2 = configure, 3 = model, 4 = done
+  const [step, setStep]               = useState<0 | 1 | 2 | 3 | 4>(0)
+  const [password, setPassword]       = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPw, setShowPw]           = useState(false)
+  const [showConfirmPw, setShowConfirmPw] = useState(false)
+  const [pwError, setPwError]         = useState("")
   const [provider, setProvider]       = useState<Provider>(PROVIDERS[0])
   const [apiKey, setApiKey]           = useState("")
   const [provisioningKey, setProvisioningKey] = useState("")
@@ -152,6 +161,22 @@ export default function SetupPage() {
   const [saving, setSaving]           = useState(false)
   const [saveError, setSaveError]     = useState("")
   const [showModelPicker, setShowModelPicker] = useState(false)
+
+  const passwordRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { passwordRef.current?.focus() }, [])
+
+  function advanceFromPassword() {
+    setPwError("")
+    if (password.length < 8) {
+      setPwError("Password must be at least 8 characters.")
+      return
+    }
+    if (password !== confirmPassword) {
+      setPwError("Passwords do not match.")
+      return
+    }
+    setStep(1)
+  }
 
   // -------------------------------------------------------------------------
   // Helpers
@@ -175,7 +200,7 @@ export default function SetupPage() {
 
     // OpenRouter: public endpoint, no key needed
     if (provider.key === "openrouter") {
-      const r = await fetch("https://openrouter.ai/api/v1/models")
+      const r = await apiFetch("https://openrouter.ai/api/v1/models")
       if (!r.ok) throw new Error(`OpenRouter returned ${r.status}`)
       const d = await r.json()
       return (d.data ?? []).map((m: { id: string; name: string }) => ({ id: m.id, name: m.name }))
@@ -184,7 +209,7 @@ export default function SetupPage() {
     // Ollama: GET {base}/api/tags (no key)
     if (provider.key === "ollama") {
       const tagsUrl = resolvedBase.replace(/\/v1\/?$/, "") + "/api/tags"
-      const r = await fetch(tagsUrl)
+      const r = await apiFetch(tagsUrl)
       if (!r.ok) throw new Error(`Ollama returned ${r.status}`)
       const d = await r.json()
       return (d.models ?? []).map((m: { name: string }) => ({ id: m.name, name: m.name }))
@@ -192,7 +217,7 @@ export default function SetupPage() {
 
     // LM Studio: GET {base}/models (no key)
     if (provider.key === "lmstudio") {
-      const r = await fetch(`${resolvedBase}/models`)
+      const r = await apiFetch(`${resolvedBase}/models`)
       if (!r.ok) throw new Error(`LM Studio returned ${r.status}`)
       const d = await r.json()
       return (d.data ?? []).map((m: { id: string }) => ({ id: m.id, name: m.id }))
@@ -200,7 +225,7 @@ export default function SetupPage() {
 
     // Anthropic: uses x-api-key header and returns display_name
     if (provider.key === "anthropic") {
-      const r = await fetch("https://api.anthropic.com/v1/models", {
+      const r = await apiFetch("https://api.anthropic.com/v1/models", {
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       })
       if (!r.ok) throw new Error(`Anthropic returned ${r.status}`)
@@ -212,7 +237,7 @@ export default function SetupPage() {
     }
 
     // All other OpenAI-compatible cloud providers (openai, gemini, deepseek, mistral)
-    const r = await fetch(`${resolvedBase}/models`, {
+    const r = await apiFetch(`${resolvedBase}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     })
     if (!r.ok) throw new Error(`${provider.name} returned ${r.status}`)
@@ -220,22 +245,11 @@ export default function SetupPage() {
     return (d.data ?? []).map((m: { id: string }) => ({ id: m.id, name: m.id }))
   }, [provider, apiKey, baseUrl])
 
-  async function skipSetup() {
-    try {
-      await fetch(`${API_BASE}/api/setup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: "skip", model: "none" }),
-      })
-    } catch { /* ignore */ }
-    router.push("/")
-  }
-
   async function testConnection() {
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await fetch(`${API_BASE}/api/setup/test`, {
+      const res = await apiFetch(`${API_BASE}/api/setup/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -259,10 +273,11 @@ export default function SetupPage() {
     setSaving(true)
     setSaveError("")
     try {
-      const res = await fetch(`${API_BASE}/api/setup`, {
+      const res = await apiFetch(`${API_BASE}/api/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          password,
           provider: provider.key,
           api_key: apiKey || undefined,
           provisioning_key: provisioningKey || undefined,
@@ -289,7 +304,7 @@ export default function SetupPage() {
 
   const cloudProviders = PROVIDERS.filter(p => !p.local)
   const localProviders = PROVIDERS.filter(p => p.local)
-  const steps = ["Provider", "Configure", "Model", "Done"]
+  const steps = ["Password", "Provider", "Configure", "Model", "Done"]
 
   // -------------------------------------------------------------------------
   // Layout
@@ -316,9 +331,8 @@ export default function SetupPage() {
         {/* Step indicator — always at the same Y position */}
         <div className="mb-6 flex items-center">
           {steps.map((label, i) => {
-            const n = i + 1
-            const active = step === n
-            const done   = step > n
+            const active = step === i
+            const done   = step > i
             return (
               <div key={label} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center gap-1">
@@ -327,14 +341,14 @@ export default function SetupPage() {
                     : active ? "border-2 border-orange-500 text-orange-400"
                     :          "border border-neutral-700 text-neutral-600"}`}
                   >
-                    {done ? "✓" : n}
+                    {done ? "✓" : i + 1}
                   </div>
                   <span className={`text-[10px] ${active ? "text-orange-400" : done ? "text-neutral-400" : "text-neutral-600"}`}>
                     {label}
                   </span>
                 </div>
                 {i < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-2 mb-4 ${step > n ? "bg-orange-500" : "bg-neutral-700"}`} />
+                  <div className={`flex-1 h-px mx-2 mb-4 ${step > i ? "bg-orange-500" : "bg-neutral-700"}`} />
                 )}
               </div>
             )
@@ -347,18 +361,88 @@ export default function SetupPage() {
           {/* Fixed-height card header — 2 lines reserved so content never shifts */}
           <div className="mb-5 h-[52px] flex flex-col justify-center">
             <h2 className="text-base font-semibold text-white leading-tight">
+              {step === 0 && "Set a Password"}
               {step === 1 && "Choose an AI Provider"}
               {step === 2 && `Configure ${provider.name}`}
               {step === 3 && "Choose a Default Model"}
               {step === 4 && "Setup complete"}
             </h2>
             <p className="mt-0.5 text-xs text-neutral-500 leading-tight">
+              {step === 0 && "Protect your Ferret instance with a password. Minimum 8 characters."}
               {step === 1 && "Select how FERRET calls the AI for chat, annotations, and findings."}
               {step === 2 && (provider.local ? "No API key required — FERRET connects directly to your local server." : "Enter your API key to authenticate with the provider.")}
               {step === 3 && "Used for all AI features. You can change it per-project later."}
               {step === 4 && "\u00a0"}
             </p>
           </div>
+
+          {/* ----------------------------------------------------------------
+              Step 0 — Set password
+          ---------------------------------------------------------------- */}
+          {step === 0 && (
+            <div className="space-y-4">
+              {/* Password */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-neutral-300">Password</label>
+                <div className="relative">
+                  <input
+                    ref={passwordRef}
+                    type={showPw ? "text" : "password"}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && advanceFromPassword()}
+                    placeholder="Min. 8 characters"
+                    autoComplete="new-password"
+                    className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
+                               text-neutral-100 text-sm placeholder-neutral-600
+                               focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                  />
+                  <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300">
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm password */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-neutral-300">Confirm password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPw ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && advanceFromPassword()}
+                    placeholder="Re-enter password"
+                    autoComplete="new-password"
+                    className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
+                               text-neutral-100 text-sm placeholder-neutral-600
+                               focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                  />
+                  <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300">
+                    {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {pwError && (
+                <p className="text-red-400 text-xs bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
+                  {pwError}
+                </p>
+              )}
+
+              <div className="flex justify-end pt-1">
+                <button
+                  onClick={advanceFromPassword}
+                  disabled={!password || !confirmPassword}
+                  className="rounded-md bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40 transition-colors"
+                >
+                  Continue →
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ----------------------------------------------------------------
               Step 1 — Choose provider
@@ -421,10 +505,10 @@ export default function SetupPage() {
 
               <div className="flex justify-between pt-1">
                 <button
-                  onClick={skipSetup}
-                  className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+                  onClick={() => setStep(0)}
+                  className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  Skip for now
+                  ← Back
                 </button>
                 <button
                   onClick={() => setStep(2)}
@@ -689,10 +773,10 @@ export default function SetupPage() {
                 You can change these settings at any time from the Settings page.
               </p>
               <button
-                onClick={() => router.push("/")}
+                onClick={() => router.replace("/login")}
                 className="rounded-md bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 transition-colors"
               >
-                Open FERRET →
+                Sign in to FERRET →
               </button>
             </div>
           )}

@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -410,7 +412,7 @@ export function RequestDetailView({ toolArgsRaw, result }: { toolArgsRaw?: strin
       req.body ?? "",
     ].join("\n")
     const label = `${req.method} ${req.host}`
-    const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+    const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_request: rawRequest, label }),
     }).catch(() => null)
@@ -490,7 +492,7 @@ export function HttpRequestView({ toolArgsRaw, result }: { toolArgsRaw?: string;
       req.body ?? "",
     ].join("\n")
     const label = `${method} ${host || url}`
-    const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+    const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_request: rawRequest, label }),
     }).catch(() => null)
@@ -614,7 +616,7 @@ export function SearchRequestsView({ result }: { result: string | null }) {
       "",
     ].join("\n")
     const label = `${row.method ?? "GET"} ${row.host ?? ""}`
-    const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+    const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_request: rawRequest, label }),
     }).catch(() => null)

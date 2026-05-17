@@ -37,9 +37,14 @@ class TestGetSetupInitial:
 # POST /api/setup — valid configs
 # ---------------------------------------------------------------------------
 
+# Password used in all POST /api/setup test payloads.
+_PW = "test-password-123"
+
+
 class TestPostSetupValid:
     async def test_openrouter_saves_and_marks_complete(self, client):
         payload = {
+            "password": _PW,
             "provider": "openrouter",
             "api_key": "sk-or-test-key",
             "model": "google/gemini-2.5-flash-preview",
@@ -52,6 +57,7 @@ class TestPostSetupValid:
 
     async def test_get_after_post_returns_complete(self, client):
         await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openai",
             "api_key": "sk-test",
             "model": "gpt-4o",
@@ -66,6 +72,7 @@ class TestPostSetupValid:
     async def test_openrouter_with_provisioning_key_only(self, client):
         """A provisioning key alone is sufficient for OpenRouter — no api_key needed."""
         payload = {
+            "password": _PW,
             "provider": "openrouter",
             "provisioning_key": "sk-or-prov-only",
             "model": "google/gemini-2.5-flash-preview",
@@ -76,6 +83,7 @@ class TestPostSetupValid:
     async def test_openrouter_with_both_keys(self, client):
         """Both api_key and provisioning_key together is also valid for OpenRouter."""
         payload = {
+            "password": _PW,
             "provider": "openrouter",
             "api_key": "sk-or-main",
             "provisioning_key": "sk-or-prov",
@@ -88,6 +96,7 @@ class TestPostSetupValid:
         """When both api_key and provisioning_key are supplied for OR, setup
         must be marked complete and the provider/model reflected in GET."""
         await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openrouter",
             "api_key": "sk-or-v1-regular",
             "provisioning_key": "sk-or-v1-provisioning",
@@ -102,6 +111,7 @@ class TestPostSetupValid:
 
     async def test_ollama_local_no_api_key_required(self, client):
         payload = {
+            "password": _PW,
             "provider": "ollama",
             "model": "llama3.3",
         }
@@ -110,6 +120,7 @@ class TestPostSetupValid:
 
     async def test_lmstudio_with_custom_base_url(self, client):
         payload = {
+            "password": _PW,
             "provider": "lmstudio",
             "base_url": "http://192.168.1.10:1234/v1",
             "model": "local-model",
@@ -117,24 +128,20 @@ class TestPostSetupValid:
         r = await client.post("/api/setup", json=payload)
         assert r.status_code == 201
 
-    async def test_skip_sentinel_accepted(self, client):
+    async def test_skip_sentinel_rejected(self, client):
+        """'skip' provider is no longer supported — password is mandatory."""
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "skip",
             "model": "none",
         })
-        assert r.status_code == 201
-        data = r.json()
-        assert data["provider"] == "skip"
-
-    async def test_skip_marks_setup_complete(self, client):
-        await client.post("/api/setup", json={"provider": "skip", "model": "none"})
-        r = await client.get("/api/setup")
-        assert r.json()["setup_complete"] is True
+        assert r.status_code == 422
 
     async def test_all_cloud_providers_accepted(self, client):
         """Each cloud provider key should be accepted when an api_key is supplied."""
         for provider in ("openrouter", "openai", "anthropic", "gemini", "deepseek", "mistral"):
             r = await client.post("/api/setup", json={
+                "password": _PW,
                 "provider": provider,
                 "api_key": "sk-test-key",
                 "model": "some-model",
@@ -147,6 +154,7 @@ class TestPostSetupValid:
         """Local providers should be accepted without an api_key."""
         for provider in ("ollama", "lmstudio"):
             r = await client.post("/api/setup", json={
+                "password": _PW,
                 "provider": provider,
                 "model": "local-model",
             })
@@ -159,8 +167,28 @@ class TestPostSetupValid:
 # ---------------------------------------------------------------------------
 
 class TestPostSetupInvalid:
+    async def test_missing_password_returns_422(self, client):
+        """POST /api/setup without a password must return 422."""
+        r = await client.post("/api/setup", json={
+            "provider": "openai",
+            "api_key": "sk-test",
+            "model": "gpt-4o",
+        })
+        assert r.status_code == 422
+
+    async def test_short_password_returns_422(self, client):
+        """Password shorter than 8 characters must return 422."""
+        r = await client.post("/api/setup", json={
+            "password": "short",
+            "provider": "openai",
+            "api_key": "sk-test",
+            "model": "gpt-4o",
+        })
+        assert r.status_code == 422
+
     async def test_unknown_provider_returns_422(self, client):
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "notareal",
             "api_key": "sk-x",
             "model": "some-model",
@@ -169,6 +197,7 @@ class TestPostSetupInvalid:
 
     async def test_cloud_provider_without_api_key_returns_422(self, client):
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openai",
             "model": "gpt-4o",
         })
@@ -176,6 +205,7 @@ class TestPostSetupInvalid:
 
     async def test_anthropic_without_api_key_returns_422(self, client):
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "anthropic",
             "model": "claude-sonnet-4-5",
         })
@@ -183,6 +213,7 @@ class TestPostSetupInvalid:
 
     async def test_gemini_without_api_key_returns_422(self, client):
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "gemini",
             "model": "gemini-2.5-flash",
         })
@@ -191,11 +222,13 @@ class TestPostSetupInvalid:
     async def test_openrouter_without_any_key_returns_422(self, client):
         """OpenRouter requires at least one of api_key or provisioning_key."""
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openrouter",
             "model": "google/gemini-2.5-flash-preview",
         })
         assert r.status_code == 422
-        assert "provisioning_key" in r.json()["detail"] or "api_key" in r.json()["detail"]
+        detail = r.json()["detail"]
+        assert "provisioning_key" in detail or "api_key" in detail
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +239,7 @@ class TestDeleteSetup:
     async def test_delete_resets_setup_complete(self, client):
         # First complete setup
         await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openai",
             "api_key": "sk-test",
             "model": "gpt-4o",
@@ -525,6 +559,7 @@ class TestGetKeyForProject:
         """When no provisioned sub-key exists, the setup wizard api_key is returned."""
         # POST setup so the router calls reload_ai_config() and sets _ai_api_key
         r = await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openrouter",
             "api_key": "sk-fallback-key",
             "model": "google/gemini-2.5-flash-preview",
@@ -556,6 +591,7 @@ class TestGetKeyForProject:
 
         # Set a global key via setup
         await client.post("/api/setup", json={
+            "password": _PW,
             "provider": "openrouter",
             "api_key": "sk-global",
             "model": "google/gemini-2.5-flash-preview",

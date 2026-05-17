@@ -10,9 +10,12 @@ DELETE /api/setup      → resets setup (for re-configuration)
 import logging
 import httpx
 from fastapi import APIRouter, HTTPException
+from passlib.context import CryptContext
 
 import deps
 from models import SetupConfig, SetupStatus
+
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 _log = logging.getLogger(__name__)
 
@@ -127,16 +130,21 @@ async def complete_setup(body: SetupConfig):
     (defaults to the well-known localhost address).
     """
     try:
+        # Password is required for POST /api/setup (not for /test).
+        if not body.password or len(body.password) < 8:
+            raise HTTPException(
+                status_code=422,
+                detail="password is required and must be at least 8 characters",
+            )
+
         provider = body.provider.lower()
 
-        # "skip" is a special sentinel written when the user clicks "Skip for now".
-        # We store it so the wizard doesn't re-appear, but no AI calls are made.
+        # "skip" is no longer supported — password is mandatory.
         if provider == "skip":
-            await deps.db_client.set_setting(_KEY_SETUP_COMPLETE, "1")
-            await deps.db_client.set_setting(_KEY_AI_PROVIDER, "skip")
-            await deps.db_client.set_setting(_KEY_AI_MODEL, "none")
-            _log.info("Setup skipped by user")
-            return {"status": "ok", "provider": "skip", "model": "none"}
+            raise HTTPException(
+                status_code=422,
+                detail="'skip' provider is no longer supported — a password and provider are required",
+            )
 
         if provider not in _CLOUD_PROVIDERS and provider not in _LOCAL_PROVIDERS:
             raise HTTPException(status_code=422, detail=f"Unknown provider: {provider!r}")
@@ -160,6 +168,10 @@ async def complete_setup(body: SetupConfig):
         # Validate and resolve base URL
         _validate_base_url(body.base_url or "", provider)
         base_url = body.base_url or _PROVIDER_BASE_URLS.get(provider, "")
+
+        # Hash and store the instance password before marking setup complete.
+        password_hash = _pwd_ctx.hash(body.password)
+        await deps.db_client.set_password_hash(password_hash)
 
         await deps.db_client.set_setting(_KEY_AI_PROVIDER, provider)
         await deps.db_client.set_setting(_KEY_AI_MODEL,    body.model)
@@ -345,9 +357,11 @@ async def _test_anthropic(api_key: str, base_url: str) -> dict:
 
 @router.delete("/api/setup", status_code=204)
 async def reset_setup():
-    """Clear the setup flag so the wizard is shown again on next load."""
+    """Clear the setup flag, credentials, and all sessions so the wizard is shown again."""
     try:
         await deps.db_client.set_setting(_KEY_SETUP_COMPLETE, "0")
-        _log.info("Setup reset")
+        await deps.db_client.delete_credentials()
+        await deps.db_client.delete_all_sessions()
+        _log.info("Setup reset: credentials and sessions cleared")
     except Exception as e:
         raise deps.server_error(e)

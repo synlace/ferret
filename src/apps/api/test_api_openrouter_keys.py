@@ -86,6 +86,11 @@ def _mock_httpx_response(status_code: int, json_body: dict) -> MagicMock:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+async def _noop_require_auth():
+    """Bypass authentication in tests."""
+    return None
+
+
 @pytest_asyncio.fixture
 async def app_client():
     """Yield an (AsyncClient, db, project_id) tuple with a real project seeded."""
@@ -96,6 +101,9 @@ async def app_client():
     db = await _make_db()
     mgr = _make_mitm_manager()
     m.app.router.lifespan_context = _noop_lifespan
+
+    # Bypass auth so these tests are not blocked by require_auth.
+    m.app.dependency_overrides[deps.require_auth] = _noop_require_auth
 
     # Create a real project in the DB
     from models import Project
@@ -122,6 +130,7 @@ async def app_client():
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac, db, project.id
 
+    m.app.dependency_overrides.pop(deps.require_auth, None)
     await db.close()
 
 

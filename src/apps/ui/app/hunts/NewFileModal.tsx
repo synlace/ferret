@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState } from "react"
 import { X, Loader2 } from "lucide-react"
 
@@ -17,7 +19,7 @@ export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProp
     setSaving(true)
     try {
       const path = `${subdir}/${name.trim()}`
-      await fetch(`${API_BASE}/api/workspaces/${sessionId}/files/${path}`, {
+      await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files/${path}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "" }),
       })
       onCreated(path)

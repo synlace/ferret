@@ -310,6 +310,7 @@ class TestSetupBaseUrlValidation:
                 "api_key": "",
                 "model": "local-model",
                 "base_url": "http://192.168.1.10:1234/v1",
+                "password": "testpassword1",
             },
         )
         assert resp.status_code == 201, (
@@ -326,6 +327,7 @@ class TestSetupBaseUrlValidation:
                 "api_key": "",
                 "model": "llama3",
                 "base_url": "http://127.0.0.1:11434/v1",
+                "password": "testpassword1",
             },
         )
         assert resp.status_code == 201, (
@@ -341,6 +343,7 @@ class TestSetupBaseUrlValidation:
                 "provider": "openai",
                 "api_key": "sk-test",
                 "model": "gpt-4o",
+                "password": "testpassword1",
             },
         )
         assert resp.status_code == 201
