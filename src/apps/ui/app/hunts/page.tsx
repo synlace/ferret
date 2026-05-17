@@ -47,6 +47,8 @@ function HuntsPageInner() {
   const pendingNoticeRef = useRef<ChatMsg | null>(null)
   const toolGroupCollapsed = useRef<Map<string, boolean>>(new Map())
   const [, forceToolGroupRender] = useState(0)
+  // Debounce timer for scroll-position localStorage writes
+  const scrollSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleToolGroupToggle = (key: string, collapsed: boolean) => {
     toolGroupCollapsed.current.set(key, collapsed)
@@ -186,8 +188,15 @@ function HuntsPageInner() {
     const el = scrollContainerRef.current
     shouldAutoScroll.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150
     if (activeSessionId) {
-      scrollPositions.current.set(activeSessionId, el.scrollTop)
-      localStorage.setItem(`ferret_scroll:${activeSessionId}`, String(el.scrollTop))
+      const sid = activeSessionId
+      const top = el.scrollTop
+      scrollPositions.current.set(sid, top)
+      // Debounce the synchronous localStorage write to avoid blocking the main
+      // thread on every scroll frame (especially during auto-scroll streaming).
+      if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
+      scrollSaveTimerRef.current = setTimeout(() => {
+        localStorage.setItem(`ferret_scroll:${sid}`, String(top))
+      }, 200)
     }
   }
 
@@ -224,6 +233,9 @@ function HuntsPageInner() {
       pendingNoticeRef.current = (last?.role === "notice") ? last : null
       return prev
     })
+    // Clear the collapse-state Map when switching sessions so stale entries from
+    // previous sessions don't accumulate and cause unbounded localStorage reads.
+    toolGroupCollapsed.current.clear()
     setActiveSessionId(sessionId); setSelectedFilePath(null)
     if (activeProjectId) localStorage.setItem(lastSessionKey(activeProjectId), sessionId)
     setLoadingHistory(true)
@@ -306,11 +318,12 @@ function HuntsPageInner() {
         try {
           const evt = JSON.parse(payload)
           if (evt.type === "tool_start") {
-            const isStreaming = evt.name === "run_script" || evt.name === "run_ffuf"
             const newEntry: LiveToolCall = {
               name: evt.name, toolArgsRaw: evt.args as string | undefined,
               result: null, startedAt: Date.now(),
-              liveChunks: isStreaming ? [] : undefined,
+              // onLiveChunk is set imperatively by XTermView via registerWriter;
+              // no array accumulation needed — avoids O(n) copies per chunk.
+              onLiveChunk: undefined,
               rationale: extractRationale(evt.args as string | undefined),
             }
             liveToolCallsRef.current = [...liveToolCallsRef.current, newEntry]
@@ -320,10 +333,9 @@ function HuntsPageInner() {
             const idx = [...prev].reverse().findIndex(e => e.name === evt.name && e.result === null)
             if (idx !== -1) {
               const realIdx = prev.length - 1 - idx
-              const tc = prev[realIdx]
-              const newChunks = [...(tc.liveChunks ?? []), evt.chunk as string]
-              liveToolCallsRef.current = prev.map((e, i) => i === realIdx ? { ...e, liveChunks: newChunks } : e)
-              setLiveToolCalls(liveToolCallsRef.current)
+              // Write directly to the xterm instance via the registered callback.
+              // No React state update needed — xterm manages its own display.
+              prev[realIdx].onLiveChunk?.(evt.chunk as string)
             }
           } else if (evt.type === "tool_result") {
             const prev = liveToolCallsRef.current
@@ -418,6 +430,14 @@ function HuntsPageInner() {
   }
 
   const stopStream = () => { abortControllerRef.current?.abort() }
+
+  // Called by XTermView (via ToolGroup → renderBody) once the terminal is ready.
+  // Stores the write function directly on the live ref entry so incoming chunks
+  // can be pushed imperatively without any React state update.
+  const handleRegisterLiveWriter = useCallback((idx: number, write: (chunk: string) => void) => {
+    const entry = liveToolCallsRef.current[idx]
+    if (entry) entry.onLiveChunk = write
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); return }
@@ -568,6 +588,7 @@ function HuntsPageInner() {
         onNewHunt={() => setShowNewModal(true)}
         onBackFromFile={() => setSelectedFilePath(null)}
         onFileDeleted={() => { setSelectedFilePath(null); if (activeSessionId) fetchWorkspaceFiles(activeSessionId) }}
+        onRegisterLiveWriter={handleRegisterLiveWriter}
       />
 
       {/* ── Modals ── */}

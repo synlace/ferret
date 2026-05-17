@@ -223,21 +223,18 @@ function PaneHeader({ label, children }: { label: string; children?: React.React
   )
 }
 
-// ─── RunScriptView ────────────────────────────────────────────────────────────
 // ─── XTermView ────────────────────────────────────────────────────────────────
 // Renders terminal output using xterm.js. Accepts:
 //   initialContent: full output string to write on mount (for loaded history)
-//   liveChunks: array of raw chunks to write as they arrive (for streaming)
-// When liveChunks changes (new item appended), only the new chunk is written.
+//   registerWriter: called once the terminal is ready; receives a write(chunk)
+//                   function so the parent can push chunks imperatively without
+//                   storing them in React state (avoids O(n) array copies per chunk).
 interface XTermViewProps {
   initialContent?: string
-  liveChunks?: string[]
+  registerWriter?: (write: (chunk: string) => void) => void
 }
-function XTermView({ initialContent, liveChunks }: XTermViewProps) {
+function XTermView({ initialContent, registerWriter }: XTermViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const termRef = useRef<any>(null)
-  const writtenChunksRef = useRef(0)
 
   // Mount terminal once
   useEffect(() => {
@@ -270,36 +267,24 @@ function XTermView({ initialContent, liveChunks }: XTermViewProps) {
       term.loadAddon(fit)
       term.open(containerRef.current)
       fit.fit()
-      termRef.current = term
       // Write initial content (history load)
-      if (initialContent) {
-        term.write(initialContent)
-        writtenChunksRef.current = 0 // chunks not applicable for initial content
-      }
+      if (initialContent) term.write(initialContent)
+      // Register the imperative write callback so the parent can push chunks
+      // directly without going through React state.
+      if (registerWriter) registerWriter((chunk: string) => term.write(chunk))
     })()
     return () => {
       disposed = true
       if (term) term.dispose()
-      termRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // Write new live chunks as they arrive
-  useEffect(() => {
-    if (!termRef.current || !liveChunks) return
-    const newChunks = liveChunks.slice(writtenChunksRef.current)
-    for (const chunk of newChunks) {
-      termRef.current.write(chunk)
-    }
-    writtenChunksRef.current = liveChunks.length
-  }, [liveChunks])
 
   return <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden bg-[#0a0a0a]" />
 }
 
 // ─── RunScriptView ────────────────────────────────────────────────────────────
-export function RunScriptView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?: string; result: string | null; liveChunks?: string[] }) {
+export function RunScriptView({ toolArgsRaw, result, registerWriter }: { toolArgsRaw?: string; result: string | null; registerWriter?: (write: (chunk: string) => void) => void }) {
   const { output } = parseMeta(result)
   let scriptSrc = ""
   try { const a = JSON.parse(toolArgsRaw ?? "{}"); scriptSrc = a.command ?? a.script ?? "" } catch { /**/ }
@@ -333,14 +318,14 @@ export function RunScriptView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw
           </button>
         )}
       </PaneHeader>
-      <XTermView initialContent={output || undefined} liveChunks={liveChunks} />
+      <XTermView initialContent={output || undefined} registerWriter={registerWriter} />
     </div>
   )
   return <SplitPane left={left} right={right} height="h-72" />
 }
 
 // ─── RunFfufView ──────────────────────────────────────────────────────────────
-export function RunFfufView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?: string; result: string | null; liveChunks?: string[] }) {
+export function RunFfufView({ toolArgsRaw, result, registerWriter }: { toolArgsRaw?: string; result: string | null; registerWriter?: (write: (chunk: string) => void) => void }) {
   const { output } = parseMeta(result)
   let ffufArgs: Record<string, unknown> = {}
   try { ffufArgs = JSON.parse(toolArgsRaw ?? "{}") } catch { /**/ }
@@ -373,7 +358,7 @@ export function RunFfufView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?:
       <PaneHeader label="Output">
         {output && <CopyButton text={output} />}
       </PaneHeader>
-      <XTermView initialContent={output || undefined} liveChunks={liveChunks} />
+      <XTermView initialContent={output || undefined} registerWriter={registerWriter} />
     </div>
   )
   return <SplitPane left={left} right={right} height="h-72" />
@@ -522,7 +507,7 @@ export function HttpRequestView({ toolArgsRaw, result }: { toolArgsRaw?: string;
 // ─── WriteTestView ────────────────────────────────────────────────────────────
 // Left: CM6 Python editor (read-only) showing the generated test code.
 // Right: CM6 pane showing the pytest result output.
-export function WriteTestView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw?: string; result: string | null; liveChunks?: string[] }) {
+export function WriteTestView({ toolArgsRaw, result }: { toolArgsRaw?: string; result: string | null }) {
   const { output } = parseMeta(result)
   let filename = "test_generated.py"
   let code = ""
@@ -560,7 +545,7 @@ export function WriteTestView({ toolArgsRaw, result, liveChunks }: { toolArgsRaw
 
 // ─── RunTestView ──────────────────────────────────────────────────────────────
 // Left: filename + command summary. Right: plain pre with word-wrap.
-export function RunTestView({ toolArgsRaw, result, liveChunks: _liveChunks }: { toolArgsRaw?: string; result: string | null; liveChunks?: string[] }) {
+export function RunTestView({ toolArgsRaw, result }: { toolArgsRaw?: string; result: string | null }) {
   const { output } = parseMeta(result)
   let filename = ""
   try { filename = JSON.parse(toolArgsRaw ?? "{}").filename ?? "" } catch { /**/ }
@@ -797,7 +782,9 @@ export interface ToolGroupProps {
   forceOpen?: boolean
   exitCode?: number | null
   runtimeMs?: number | null
-  liveChunks?: string[]
+  /** Imperative writer registration — passed to XTermView for streaming tools.
+   *  Avoids storing chunks in React state. */
+  registerWriter?: (write: (chunk: string) => void) => void
   /** Controlled collapse state — when provided, overrides local state */
   collapsedOverride?: boolean
   /** Called when the user toggles; receives the new collapsed value */
@@ -806,7 +793,7 @@ export interface ToolGroupProps {
   rationale?: string
 }
 
-export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, persistKey, forceOpen, exitCode, runtimeMs, liveChunks, collapsedOverride, onToggle, rationale }: ToolGroupProps) {
+export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, persistKey, forceOpen, exitCode, runtimeMs, registerWriter, collapsedOverride, onToggle, rationale }: ToolGroupProps) {
   const controlled = collapsedOverride !== undefined
   const [localCollapsed, setLocalCollapsed] = useState(() => {
     if (forceOpen) return false
@@ -864,7 +851,7 @@ export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, 
               </p>
             </div>
           )}
-          {renderBody(toolName, toolArgsRaw, result, isRunning, liveChunks)}
+          {renderBody(toolName, toolArgsRaw, result, isRunning, registerWriter)}
         </>
       )}
     </div>
@@ -886,12 +873,12 @@ function ChevronDown({ className }: { className?: string }) {
   )
 }
 
-function renderBody(toolName: string, toolArgsRaw: string | undefined, result: string | null, isRunning: boolean, liveChunks?: string[]) {
+function renderBody(toolName: string, toolArgsRaw: string | undefined, result: string | null, isRunning: boolean, registerWriter?: (write: (chunk: string) => void) => void) {
   if (toolName === "run_script" || toolName === "run_command") {
-    return <RunScriptView toolArgsRaw={toolArgsRaw} result={result} liveChunks={liveChunks} />
+    return <RunScriptView toolArgsRaw={toolArgsRaw} result={result} registerWriter={registerWriter} />
   }
   if (toolName === "run_ffuf") {
-    return <RunFfufView toolArgsRaw={toolArgsRaw} result={result} liveChunks={liveChunks} />
+    return <RunFfufView toolArgsRaw={toolArgsRaw} result={result} registerWriter={registerWriter} />
   }
   if (toolName === "get_request_detail") {
     return <RequestDetailView toolArgsRaw={toolArgsRaw} result={result} />
@@ -900,10 +887,10 @@ function renderBody(toolName: string, toolArgsRaw: string | undefined, result: s
     return <HttpRequestView toolArgsRaw={toolArgsRaw} result={result} />
   }
   if (toolName === "write_test" || toolName === "write_pytest_file") {
-    return <WriteTestView toolArgsRaw={toolArgsRaw} result={result} liveChunks={liveChunks} />
+    return <WriteTestView toolArgsRaw={toolArgsRaw} result={result} />
   }
   if (toolName === "run_test" || toolName === "run_pytest_file") {
-    return <RunTestView toolArgsRaw={toolArgsRaw} result={result} liveChunks={liveChunks} />
+    return <RunTestView toolArgsRaw={toolArgsRaw} result={result} />
   }
   if (toolName === "create_finding") {
     return <CreateFindingView toolArgsRaw={toolArgsRaw} result={result} />
