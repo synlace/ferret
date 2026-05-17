@@ -187,6 +187,9 @@ class ChatSession(BaseModel):
     scope_data: Optional[Dict[str, Any]] = Field(None, description="Scope-specific data (e.g. request_id, host)")
     project_id: str = Field("temp", description="Project this session belongs to")
     workspace_dir: Optional[str] = Field(None, description="Relative path under WORKSPACES_DIR for this workspace")
+    target_url: str = Field("", description="Target URL for hunt sessions")
+    plan_id: str = Field("", description="Plan ID used to auto-run this session")
+    hunt_status: str = Field("idle", description="Hunt status: idle | running | done | error")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -197,6 +200,8 @@ class ChatSessionCreate(BaseModel):
     name: str
     scope: str = "blank"
     scope_data: Optional[Dict[str, Any]] = None
+    target_url: str = ""
+    plan_id: str = ""
 
 
 class ChatSessionUpdate(BaseModel):

@@ -16,6 +16,7 @@ import {
   Target,
   Radio,
   ExternalLink,
+  BookOpen,
 } from "lucide-react"
 import ProjectSwitcher from "@/components/project-switcher"
 import ProjectSheet from "@/components/project-sheet"
@@ -39,7 +40,8 @@ const navItems = [
   { href: "/snare",      icon: Zap,               label: "Snare" },
   { href: "/gnaw",       icon: RefreshCw,         label: "Gnaw" },
   { href: "/pounce",     icon: Target,            label: "Pounce" },
-  { href: "/workspaces", icon: LayoutDashboard,   label: "Workspaces" },
+  { href: "/plans",      icon: BookOpen,          label: "Plans" },
+  { href: "/hunts",      icon: LayoutDashboard,   label: "Hunts" },
   { href: "/findings",   icon: Shield,            label: "Findings" },
   { href: "/projects",   icon: FolderOpen,        label: "Projects" },
   { href: "/settings",   icon: SlidersHorizontal, label: "Settings" },

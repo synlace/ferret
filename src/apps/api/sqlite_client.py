@@ -172,7 +172,23 @@ class SQLiteClient(ProjectsMixin):
                 scope         TEXT NOT NULL DEFAULT 'blank',
                 scope_data    TEXT,
                 workspace_dir TEXT,
+                target_url    TEXT DEFAULT '',
+                plan_id       TEXT DEFAULT '',
+                hunt_status   TEXT DEFAULT 'idle',
                 created_at    TEXT NOT NULL
+            );
+
+            -- Hunt plans (built-in and project-scoped)
+            CREATE TABLE IF NOT EXISTS plans (
+                id             TEXT PRIMARY KEY,
+                project_id     TEXT,
+                name           TEXT NOT NULL,
+                description    TEXT DEFAULT '',
+                tool           TEXT DEFAULT 'hunt',
+                prompt         TEXT NOT NULL,
+                max_tool_calls INTEGER DEFAULT 15,
+                is_builtin     INTEGER DEFAULT 0,
+                created_at     TEXT NOT NULL
             );
 
             -- Test runs
@@ -290,6 +306,21 @@ class SQLiteClient(ProjectsMixin):
             await self._db.commit()
         except Exception:
             pass  # column already exists
+
+        # Migration: add hunt columns to chat_sessions
+        for migration in [
+            "ALTER TABLE chat_sessions ADD COLUMN target_url TEXT DEFAULT ''",
+            "ALTER TABLE chat_sessions ADD COLUMN plan_id TEXT DEFAULT ''",
+            "ALTER TABLE chat_sessions ADD COLUMN hunt_status TEXT DEFAULT 'idle'",
+        ]:
+            try:
+                await self._db.execute(migration)
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
+        # Seed built-in plans (idempotent)
+        await self._seed_builtin_plans()
 
     # ------------------------------------------------------------------
     # Temp-project seed (idempotent)
@@ -618,6 +649,14 @@ class SQLiteClient(ProjectsMixin):
         """Delete all chat messages for a request."""
         await self._db.execute(
             "DELETE FROM chat_messages WHERE request_id = ?", (request_id,)
+        )
+        await self._db.commit()
+
+    async def update_hunt_status(self, session_id: str, status: str) -> None:
+        """Update the hunt_status field on a chat session."""
+        await self._db.execute(
+            "UPDATE chat_sessions SET hunt_status = ? WHERE id = ?",
+            (status, session_id),
         )
         await self._db.commit()
 
