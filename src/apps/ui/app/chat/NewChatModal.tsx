@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -70,7 +72,7 @@ export function NewChatModal({
   useEffect(() => {
     if (!activeProjectId) return
     setPlansLoading(true)
-    fetch(`${API_BASE}/api/plans?project_id=${activeProjectId}`)
+    apiFetch(`${API_BASE}/api/plans?project_id=${activeProjectId}`)
       .then(r => r.ok ? r.json() : [])
       .then((data: Plan[]) => setPlans(Array.isArray(data) ? data.filter(p => p.tool === "hunt") : []))
       .catch(() => setPlans([]))
@@ -114,7 +116,7 @@ export function NewChatModal({
       }
       if (targetUrl.trim()) body.target_url = targetUrl.trim()
       if (planId) body.plan_id = planId
-      const res = await fetch(`${API_BASE}/api/chats`, {
+      const res = await apiFetch(`${API_BASE}/api/chats`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

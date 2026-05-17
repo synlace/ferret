@@ -44,11 +44,13 @@ export const PRESET_COLORS = [
 export const DEFAULT_MODEL = "google/gemini-3-flash-preview"
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 export async function fetchStats(projectId: string): Promise<ProjectStats> {
   try {
     const [reqRes, findRes] = await Promise.all([
-      fetch(`${API_BASE}/api/requests?project_id=${projectId}&limit=1`),
-      fetch(`${API_BASE}/api/findings?project_id=${projectId}`),
+      apiFetch(`${API_BASE}/api/requests?project_id=${projectId}&limit=1`),
+      apiFetch(`${API_BASE}/api/findings?project_id=${projectId}`),
     ])
     const requests = reqRes.ok ? parseInt(reqRes.headers.get("X-Total-Count") ?? "0", 10) : 0
     const findings = findRes.ok ? (await findRes.json()).length : 0
@@ -60,7 +62,7 @@ export async function fetchStats(projectId: string): Promise<ProjectStats> {
 
 export async function fetchSpend(projectId: string): Promise<SpendData | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/spend`)
+    const res = await apiFetch(`${API_BASE}/api/projects/${projectId}/spend`)
     if (!res.ok) return null
     return await res.json()
   } catch {
@@ -70,7 +72,7 @@ export async function fetchSpend(projectId: string): Promise<SpendData | null> {
 
 export async function fetchKeys(projectId: string): Promise<ApiKey[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/keys`)
+    const res = await apiFetch(`${API_BASE}/api/projects/${projectId}/keys`)
     if (!res.ok) return []
     return await res.json()
   } catch {

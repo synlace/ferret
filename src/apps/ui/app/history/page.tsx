@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -106,7 +108,7 @@ export default function HistoryPage() {
 
   // Fetch test files to know which hosts have tests
   useEffect(() => {
-    fetch(`${API_BASE}/api/tests/files?project_id=${activeProjectId}`)
+    apiFetch(`${API_BASE}/api/tests/files?project_id=${activeProjectId}`)
       .then(r => r.ok ? r.json() : { files: [] })
       .then((data: { files?: Array<{ host: string }> }) => {
         const files = data.files ?? (Array.isArray(data) ? data : [])
@@ -133,7 +135,7 @@ export default function HistoryPage() {
       if (freeText) params.set("search", freeText)
       params.set("project_id", activeProjectId)
 
-      const res = await fetch(`${API_BASE}/api/requests?${params}`)
+      const res = await apiFetch(`${API_BASE}/api/requests?${params}`)
       if (!res.ok) throw new Error(`API returned ${res.status}`)
       const data: ApiRequest[] = await res.json()
       const total = parseInt(res.headers.get("X-Total-Count") ?? "0", 10)
@@ -191,7 +193,7 @@ export default function HistoryPage() {
     setAnnotating(req.id)
     setAnnotateError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/requests/${req.id}/annotate`, { method: "POST" })
+      const res = await apiFetch(`${API_BASE}/api/requests/${req.id}/annotate`, { method: "POST" })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: res.statusText }))
         throw new Error(body.detail ?? `HTTP ${res.status}`)
@@ -213,7 +215,7 @@ export default function HistoryPage() {
     if (!window.confirm(`Delete all ${totalCount} captured requests? This cannot be undone.`)) return
     setClearing(true)
     try {
-      const res = await fetch(`${API_BASE}/api/requests`, { method: "DELETE" })
+      const res = await apiFetch(`${API_BASE}/api/requests`, { method: "DELETE" })
       if (!res.ok) throw new Error(`API returned ${res.status}`)
       setRequests([])
       setTotalCount(0)
@@ -468,7 +470,7 @@ export default function HistoryPage() {
                 req.body ?? "",
               ].join("\n")
               const label = `${req.method} ${req.host}`
-              const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+              const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ raw_request: rawRequest, label }),
               }).catch(() => null)
@@ -1016,7 +1018,7 @@ export default function HistoryPage() {
                         req.body ?? "",
                       ].join("\n")
                       const label = `${req.method} ${req.host}`
-                      const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+                      const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ raw_request: rawRequest, label }),
@@ -1081,7 +1083,7 @@ export default function HistoryPage() {
         }
 
         const sendToGnaw = async (r: ApiRequest) => {
-          const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+          const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ raw_request: buildRawRequest(r), label: `${r.method} ${r.host}` }),

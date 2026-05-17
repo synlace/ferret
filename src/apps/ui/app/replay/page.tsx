@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -135,7 +137,7 @@ export default function ReplayPage() {
       const params = new URLSearchParams({ limit: "200" })
       if (methodFilter !== "all") params.set("method", methodFilter)
       if (searchFilter.trim()) params.set("search", searchFilter.trim())
-      const res = await fetch(`${API_BASE}/api/requests?${params}`)
+      const res = await apiFetch(`${API_BASE}/api/requests?${params}`)
       if (res.ok) setRequests(await res.json())
     } catch {
       // ignore
@@ -197,7 +199,7 @@ export default function ReplayPage() {
     setReplayError(null)
     setActiveTab("response")
     try {
-      const res = await fetch(`${API_BASE}/api/replay`, {
+      const res = await apiFetch(`${API_BASE}/api/replay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -253,7 +255,7 @@ export default function ReplayPage() {
     setChatInput("")
     setChatLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/replay/chat`, {
+      const res = await apiFetch(`${API_BASE}/api/replay/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

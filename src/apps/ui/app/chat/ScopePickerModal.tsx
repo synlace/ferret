@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 /**
  * ScopePickerModal
  *
@@ -179,7 +181,7 @@ export function ScopePickerModal({
       })
       if (methodFilter !== "all") params.set("method", methodFilter)
       if (search.trim()) params.set("search", search.trim())
-      const res = await fetch(`${API_BASE}/api/requests?${params}`)
+      const res = await apiFetch(`${API_BASE}/api/requests?${params}`)
       if (!res.ok) throw new Error(`API ${res.status}`)
       const data: PickerRequest[] = await res.json()
       const total = parseInt(res.headers.get("X-Total-Count") ?? "0", 10)
@@ -280,7 +282,7 @@ export function ScopePickerModal({
         : null
 
     try {
-      const res = await fetch(`${API_BASE}/api/chats/${sessionId}`, {
+      const res = await apiFetch(`${API_BASE}/api/chats/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope, scope_data: scopeData }),

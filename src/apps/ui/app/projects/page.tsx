@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useRef, useCallback, useEffect } from "react"
 import { Plus, Upload, Search, X } from "lucide-react"
 import { useProject, Project } from "../context/project-context"
@@ -121,7 +123,7 @@ export default function ProjectsPage() {
     labels: string[], defaultModel: string, provisionKey: boolean,
   ) => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
+      const res = await apiFetch(`${API_BASE}/api/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description, color: "#f97316", emoji, labels, default_model: defaultModel, provision_key: provisionKey }),
@@ -140,7 +142,7 @@ export default function ProjectsPage() {
     updates: { name: string; description: string; emoji: string; labels: string[]; defaultModel: string },
   ) => {
     try {
-      await fetch(`${API_BASE}/api/projects/${id}`, {
+      await apiFetch(`${API_BASE}/api/projects/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -157,7 +159,7 @@ export default function ProjectsPage() {
 
   const handleExport = useCallback(async (project: Project) => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${project.id}/export`)
+      const res = await apiFetch(`${API_BASE}/api/projects/${project.id}/export`)
       if (!res.ok) return
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -172,7 +174,7 @@ export default function ProjectsPage() {
   const handleDelete = useCallback(async (id: string) => {
     if (!window.confirm("Delete this project? This action cannot be undone.")) return
     try {
-      const res = await fetch(`${API_BASE}/api/projects/${id}`, { method: "DELETE" })
+      const res = await apiFetch(`${API_BASE}/api/projects/${id}`, { method: "DELETE" })
       if (res.ok) {
         if (activeProjectId === id) await setActiveProjectId("temp")
         await refreshProjects()
@@ -186,7 +188,7 @@ export default function ProjectsPage() {
   const handlePromote = useCallback(async (name: string) => {
     if (!promoteTarget) return
     try {
-      const res = await fetch(`${API_BASE}/api/projects/temp/promote`, {
+      const res = await apiFetch(`${API_BASE}/api/projects/temp/promote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, provision_key: false }),
@@ -206,7 +208,7 @@ export default function ProjectsPage() {
     try {
       const text = await file.text()
       const json = JSON.parse(text)
-      const res = await fetch(`${API_BASE}/api/projects/import`, {
+      const res = await apiFetch(`${API_BASE}/api/projects/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(json),

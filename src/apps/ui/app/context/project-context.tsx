@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -42,7 +44,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProjects = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects`)
+      const res = await apiFetch(`${API_BASE}/api/projects`)
       if (res.ok) setProjects(await res.json())
     } catch { /* ignore */ }
   }, [])
@@ -54,7 +56,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const init = async () => {
       let resolvedId = "temp"
       try {
-        const res = await fetch(`${API_BASE}/api/settings/active-project`)
+        const res = await apiFetch(`${API_BASE}/api/settings/active-project`)
         if (res.ok) {
           const data = await res.json()
           resolvedId = data.project_id ?? "temp"
@@ -70,7 +72,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       // Fetch projects first so we can validate the resolved ID
       let loadedProjects: Project[] = []
       try {
-        const res = await fetch(`${API_BASE}/api/projects`)
+        const res = await apiFetch(`${API_BASE}/api/projects`)
         if (res.ok) {
           loadedProjects = await res.json()
           setProjects(loadedProjects)
@@ -94,7 +96,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setActiveProjectIdState(id)
     localStorage.setItem("ferret_active_project_id", id)
     try {
-      await fetch(`${API_BASE}/api/settings/active-project`, {
+      await apiFetch(`${API_BASE}/api/settings/active-project`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: id }),

@@ -106,6 +106,15 @@ async def mem_db():
     await db.close()
 
 
+# ---------------------------------------------------------------------------
+# Shared no-op auth override (used by client and client_with_tests_dir)
+# ---------------------------------------------------------------------------
+
+async def _noop_require_auth():
+    """FastAPI dependency override that bypasses authentication in tests."""
+    return None
+
+
 @pytest_asyncio.fixture
 async def client(mem_db, tmp_path):
     """
@@ -115,6 +124,7 @@ async def client(mem_db, tmp_path):
     * ``deps.db_client``                → the in-memory SQLiteClient  (routers read from deps)
     * ``deps.mitm_manager``             → a fully-mocked MitmproxyManager
     * ``deps.TESTS_DIR``                → a temporary directory (empty by default)
+    * ``app.dependency_overrides``      → require_auth bypassed (no-op)
     * ``main.db_client``                → same in-memory SQLiteClient  (backward compat)
     * ``main.mitm_manager``             → same mock manager            (backward compat)
     * ``main.TESTS_DIR``                → same tmp_path                (backward compat)
@@ -132,6 +142,9 @@ async def client(mem_db, tmp_path):
     original_lifespan = main_module.app.router.lifespan_context
     main_module.app.router.lifespan_context = _noop_lifespan
 
+    # Override the require_auth dependency so all routes are accessible.
+    main_module.app.dependency_overrides[deps_module.require_auth] = _noop_require_auth
+
     with (
         patch.object(deps_module, "db_client", mem_db),
         patch.object(deps_module, "mitm_manager", mock_mgr),
@@ -144,6 +157,7 @@ async def client(mem_db, tmp_path):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac
 
+    main_module.app.dependency_overrides.pop(deps_module.require_auth, None)
     main_module.app.router.lifespan_context = original_lifespan
 
 
@@ -165,6 +179,8 @@ async def client_with_tests_dir(mem_db, tmp_path):
     original_lifespan = main_module.app.router.lifespan_context
     main_module.app.router.lifespan_context = _noop_lifespan
 
+    main_module.app.dependency_overrides[deps_module.require_auth] = _noop_require_auth
+
     with (
         patch.object(deps_module, "db_client", mem_db),
         patch.object(deps_module, "mitm_manager", mock_mgr),
@@ -176,5 +192,136 @@ async def client_with_tests_dir(mem_db, tmp_path):
         transport = ASGITransport(app=main_module.app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             yield ac, tmp_path
+
+    main_module.app.dependency_overrides.pop(deps_module.require_auth, None)
+    main_module.app.router.lifespan_context = original_lifespan
+
+
+# ---------------------------------------------------------------------------
+# authed_client — real auth enforcement with pre-seeded credentials
+# ---------------------------------------------------------------------------
+
+_TEST_PASSWORD = "test-password-123"
+
+
+@pytest_asyncio.fixture
+async def authed_client(mem_db, tmp_path):
+    """
+    Yield an httpx.AsyncClient with real ``require_auth`` enforcement.
+
+    Before yielding:
+    - Seeds a bcrypt-hashed password into the in-memory DB.
+    - Creates a valid session token and injects it as a cookie.
+    - Does NOT override require_auth — the real dependency runs.
+
+    Use this fixture for auth-specific tests that need to exercise the real
+    authentication path (login, logout, session validation, Bearer tokens).
+    """
+    import main as main_module
+    import deps as deps_module
+    import secrets
+    from datetime import datetime, timezone
+    from passlib.context import CryptContext
+
+    mock_mgr = _make_mock_mitm_manager()
+
+    # Seed credentials
+    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    password_hash = pwd_ctx.hash(_TEST_PASSWORD)
+    await mem_db.set_password_hash(password_hash)
+
+    # Seed a valid session
+    session_token = secrets.token_hex(32)
+    expires_at = (
+        datetime.now(timezone.utc) + deps_module.SESSION_TTL
+    ).isoformat()
+    await mem_db.create_session(session_token, expires_at)
+
+    @asynccontextmanager
+    async def _noop_lifespan(app):
+        yield
+
+    original_lifespan = main_module.app.router.lifespan_context
+    main_module.app.router.lifespan_context = _noop_lifespan
+
+    # Ensure no leftover override from other fixtures.
+    main_module.app.dependency_overrides.pop(deps_module.require_auth, None)
+
+    with (
+        patch.object(deps_module, "db_client", mem_db),
+        patch.object(deps_module, "mitm_manager", mock_mgr),
+        patch.object(deps_module, "TESTS_DIR", tmp_path),
+        patch.object(main_module, "db_client", mem_db),
+        patch.object(main_module, "mitm_manager", mock_mgr),
+        patch.object(main_module, "TESTS_DIR", tmp_path),
+    ):
+        transport = ASGITransport(app=main_module.app)
+        # Inject the session cookie so every request is authenticated.
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies={deps_module.SESSION_COOKIE: session_token},
+        ) as ac:
+            # Expose test helpers on the client for convenience.
+            ac._test_password = _TEST_PASSWORD          # type: ignore[attr-defined]
+            ac._test_session_token = session_token      # type: ignore[attr-defined]
+            ac._test_mem_db = mem_db                    # type: ignore[attr-defined]
+            yield ac
+
+    main_module.app.router.lifespan_context = original_lifespan
+
+
+# ---------------------------------------------------------------------------
+# unauthed_client — real auth enforcement, no pre-seeded session cookie
+# ---------------------------------------------------------------------------
+
+@pytest_asyncio.fixture
+async def unauthed_client(mem_db, tmp_path):
+    """
+    Yield an httpx.AsyncClient with real ``require_auth`` enforcement but
+    NO session cookie pre-injected.
+
+    Use this fixture for auth tests that need to verify that requests without
+    credentials are correctly rejected (401).  Unlike ``authed_client``, this
+    client has credentials seeded in the DB (so login works) but does not
+    carry a session cookie, so protected endpoints return 401.
+    """
+    import main as main_module
+    import deps as deps_module
+    from passlib.context import CryptContext
+
+    mock_mgr = _make_mock_mitm_manager()
+
+    # Seed credentials so login endpoint works, but don't inject a cookie.
+    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    password_hash = pwd_ctx.hash("test-password-123")
+    await mem_db.set_password_hash(password_hash)
+
+    @asynccontextmanager
+    async def _noop_lifespan(app):
+        yield
+
+    original_lifespan = main_module.app.router.lifespan_context
+    main_module.app.router.lifespan_context = _noop_lifespan
+
+    # Ensure no leftover override from other fixtures.
+    main_module.app.dependency_overrides.pop(deps_module.require_auth, None)
+
+    with (
+        patch.object(deps_module, "db_client", mem_db),
+        patch.object(deps_module, "mitm_manager", mock_mgr),
+        patch.object(deps_module, "TESTS_DIR", tmp_path),
+        patch.object(main_module, "db_client", mem_db),
+        patch.object(main_module, "mitm_manager", mock_mgr),
+        patch.object(main_module, "TESTS_DIR", tmp_path),
+    ):
+        transport = ASGITransport(app=main_module.app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            # No cookies — every request is unauthenticated by default.
+        ) as ac:
+            ac._test_mem_db = mem_db  # type: ignore[attr-defined]
+            yield ac
 
     main_module.app.router.lifespan_context = original_lifespan

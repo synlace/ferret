@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -92,7 +94,7 @@ export default function FindingsPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams({ project_id: activeProjectId })
-      const res = await fetch(`${API_BASE}/api/findings?${params}`)
+      const res = await apiFetch(`${API_BASE}/api/findings?${params}`)
       if (res.ok) setFindings(await res.json())
     } catch {
       // ignore
@@ -133,7 +135,7 @@ export default function FindingsPage() {
   const cycleStatus = async (finding: Finding) => {
     const next = STATUS_CYCLE[finding.status] ?? "open"
     try {
-      await fetch(`${API_BASE}/api/findings/${finding.id}`, {
+      await apiFetch(`${API_BASE}/api/findings/${finding.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next }),
@@ -146,7 +148,7 @@ export default function FindingsPage() {
 
   const deleteFinding = async (id: string) => {
     try {
-      await fetch(`${API_BASE}/api/findings/${id}`, { method: "DELETE" })
+      await apiFetch(`${API_BASE}/api/findings/${id}`, { method: "DELETE" })
       setFindings(prev => prev.filter(f => f.id !== id))
     } catch {
       // ignore
@@ -160,7 +162,7 @@ export default function FindingsPage() {
     setChatInput("")
     setChatLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/findings/chat?project_id=${activeProjectId}`, {
+      const res = await apiFetch(`${API_BASE}/api/findings/chat?project_id=${activeProjectId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: chatInput, project_id: activeProjectId }),

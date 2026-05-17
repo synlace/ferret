@@ -261,6 +261,23 @@ class SQLiteClient(ProjectsMixin):
                 updated_at  TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_gnaw_tabs_project ON gnaw_tabs(project_id, position ASC);
+
+            -- Authentication: single-row credentials table (id=1 enforced by CHECK)
+            CREATE TABLE IF NOT EXISTS auth_credentials (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                password_hash TEXT NOT NULL,
+                totp_secret   TEXT,
+                mfa_enabled   INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL
+            );
+
+            -- Authentication: active browser sessions
+            CREATE TABLE IF NOT EXISTS sessions (
+                token      TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
         """)
         await self._db.commit()
 
@@ -312,6 +329,17 @@ class SQLiteClient(ProjectsMixin):
             "ALTER TABLE chat_sessions ADD COLUMN target_url TEXT DEFAULT ''",
             "ALTER TABLE chat_sessions ADD COLUMN plan_id TEXT DEFAULT ''",
             "ALTER TABLE chat_sessions ADD COLUMN hunt_status TEXT DEFAULT 'idle'",
+        ]:
+            try:
+                await self._db.execute(migration)
+                await self._db.commit()
+            except Exception:
+                pass  # column already exists
+
+        # Migration: add MFA columns to auth_credentials
+        for migration in [
+            "ALTER TABLE auth_credentials ADD COLUMN totp_secret TEXT",
+            "ALTER TABLE auth_credentials ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 await self._db.execute(migration)
@@ -747,3 +775,111 @@ class SQLiteClient(ProjectsMixin):
         # Remove project_id from dict before passing to HttpRequest (not a field on it)
         d.pop("project_id", None)
         return HttpRequest(**d)
+
+    # ------------------------------------------------------------------
+    # Auth — credentials
+    # ------------------------------------------------------------------
+
+    async def set_password_hash(self, password_hash: str) -> None:
+        """Store (or replace) the single-row bcrypt password hash."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self._db.execute(
+            """
+            INSERT INTO auth_credentials (id, password_hash, created_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET password_hash = excluded.password_hash
+            """,
+            (password_hash, now),
+        )
+        await self._db.commit()
+
+    async def get_password_hash(self) -> Optional[str]:
+        """Return the stored bcrypt hash, or None if no password has been set."""
+        async with self._db.execute(
+            "SELECT password_hash FROM auth_credentials WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+            return row["password_hash"] if row else None
+
+    async def delete_credentials(self) -> None:
+        """Remove stored credentials (used by DELETE /api/setup reset)."""
+        await self._db.execute("DELETE FROM auth_credentials")
+        await self._db.commit()
+
+    # ------------------------------------------------------------------
+    # Auth — sessions
+    # ------------------------------------------------------------------
+
+    async def create_session(self, token: str, expires_at: str) -> None:
+        """Persist a new session token."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self._db.execute(
+            "INSERT INTO sessions (token, created_at, expires_at) VALUES (?, ?, ?)",
+            (token, now, expires_at),
+        )
+        await self._db.commit()
+
+    async def get_session(self, token: str) -> Optional[Dict[str, Any]]:
+        """Return the session row for *token*, or None if not found."""
+        async with self._db.execute(
+            "SELECT token, created_at, expires_at FROM sessions WHERE token = ?",
+            (token,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def delete_session(self, token: str) -> None:
+        """Delete a single session (logout)."""
+        await self._db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        await self._db.commit()
+
+    async def delete_all_sessions(self) -> None:
+        """Delete all sessions (used by setup reset)."""
+        await self._db.execute("DELETE FROM sessions")
+        await self._db.commit()
+
+    async def purge_expired_sessions(self) -> None:
+        """Remove sessions whose expiry has passed."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self._db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+        await self._db.commit()
+
+    # ------------------------------------------------------------------
+    # Auth — MFA (TOTP)
+    # ------------------------------------------------------------------
+
+    async def set_totp_secret(self, secret: str) -> None:
+        """Store a pending TOTP secret (not yet active — call set_mfa_enabled to activate)."""
+        await self._db.execute(
+            "UPDATE auth_credentials SET totp_secret = ? WHERE id = 1",
+            (secret,),
+        )
+        await self._db.commit()
+
+    async def get_totp_secret(self) -> Optional[str]:
+        """Return the stored TOTP secret, or None if not set."""
+        async with self._db.execute(
+            "SELECT totp_secret FROM auth_credentials WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+            return row["totp_secret"] if row else None
+
+    async def set_mfa_enabled(self, enabled: bool) -> None:
+        """Enable or disable MFA.  When disabling, also clears the stored secret."""
+        if enabled:
+            await self._db.execute(
+                "UPDATE auth_credentials SET mfa_enabled = 1 WHERE id = 1"
+            )
+        else:
+            await self._db.execute(
+                "UPDATE auth_credentials SET mfa_enabled = 0, totp_secret = NULL WHERE id = 1"
+            )
+        await self._db.commit()
+
+    async def get_mfa_enabled(self) -> bool:
+        """Return True if MFA is currently enabled for this instance."""
+        async with self._db.execute(
+            "SELECT mfa_enabled FROM auth_credentials WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+            return bool(row["mfa_enabled"]) if row else False

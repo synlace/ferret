@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 /**
  * ProjectSheet
  *
@@ -45,7 +47,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
         projects
           .filter(p => !p.is_temp)
           .map(async p => {
-            const res = await fetch(`${API_BASE}/api/projects/${p.id}/spend`)
+            const res = await apiFetch(`${API_BASE}/api/projects/${p.id}/spend`)
             if (!res.ok) return { id: p.id, total: 0 }
             const data = await res.json()
             return { id: p.id, total: typeof data.total_usd === "number" ? data.total_usd : 0 }

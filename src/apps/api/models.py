@@ -330,6 +330,7 @@ class KeySpend(BaseModel):
 
 class SetupConfig(BaseModel):
     """Payload submitted by the setup wizard to configure the AI provider."""
+    password: Optional[str] = Field(None, min_length=8, description="Instance password (min 8 characters). Required for POST /api/setup; ignored by POST /api/setup/test.")
     provider: str = Field(..., description="Provider key: openrouter | openai | anthropic | gemini | deepseek | mistral | ollama | lmstudio")
     api_key: Optional[str] = Field(None, description="API key for cloud providers")
     provisioning_key: Optional[str] = Field(None, description="OpenRouter provisioning key (optional — enables per-project sub-key creation)")
@@ -342,3 +343,49 @@ class SetupStatus(BaseModel):
     setup_complete: bool
     provider: Optional[str] = None
     model: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    """Payload for POST /api/auth/login."""
+    password: str = Field(..., description="Instance password")
+
+
+class AuthStatus(BaseModel):
+    """Returned by GET /api/auth/me and POST /api/auth/login."""
+    authenticated: bool = True
+    mfa_required: bool = False
+    mfa_enabled: bool = False
+
+
+class SessionToken(BaseModel):
+    """Internal representation of a session (not exposed directly to clients)."""
+    token: str
+    expires_at: str
+
+
+class ChangePasswordRequest(BaseModel):
+    """Payload for PUT /api/auth/password."""
+    current_password: str = Field(..., description="The current instance password")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+
+
+class MfaSetupResponse(BaseModel):
+    """Returned by POST /api/auth/mfa/setup — contains the TOTP secret and QR code."""
+    secret: str = Field(..., description="Base32-encoded TOTP secret (for manual entry)")
+    otpauth_uri: str = Field(..., description="otpauth:// URI for QR code scanning")
+    qr_png_b64: str = Field(..., description="Base64-encoded PNG of the QR code")
+
+
+class MfaVerifyRequest(BaseModel):
+    """Payload for POST /api/auth/mfa/verify-setup and POST /api/auth/mfa/challenge."""
+    code: str = Field(..., min_length=6, max_length=6, description="6-digit TOTP code")
+
+
+class MfaDisableRequest(BaseModel):
+    """Payload for POST /api/auth/mfa/disable."""
+    current_password: str = Field(..., description="Current instance password (confirmation)")
+    code: str = Field(..., min_length=6, max_length=6, description="6-digit TOTP code")

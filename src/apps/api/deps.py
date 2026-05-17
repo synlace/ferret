@@ -8,13 +8,15 @@ a single module (``deps``) rather than every individual router.
 import logging
 import os
 import re
+import secrets
 import sys
 import asyncio
 import httpx
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlite_client import SQLiteClient
 from mitmproxy_manager import MitmproxyManager
 
@@ -219,3 +221,94 @@ def server_error(exc: Exception) -> HTTPException:
     """
     _log.exception("Unhandled server error: %s", exc)
     return HTTPException(status_code=500, detail="Internal server error")
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+# Paths that bypass auth entirely (no cookie / Bearer required).
+# /api/auth/logout is intentionally NOT exempt — a valid session is required
+# to log out, which prevents CSRF-based forced-logout attacks.
+# Exact paths that bypass authentication entirely.
+_AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({
+    "/",
+    "/health",
+    "/api/setup",
+    "/api/setup/test",
+    "/api/auth/login",
+    "/api/auth/mfa/challenge",  # requires ferret_pending cookie, not a full session
+    "/api/ca-cert",
+})
+
+# Path prefixes that bypass authentication (e.g. DELETE /api/setup).
+_AUTH_EXEMPT_PREFIXES: tuple[str, ...] = ("/api/setup",)
+
+# Optional static API key for programmatic / CI access.
+# Set FERRET_API_KEY in the environment to enable Bearer-token auth.
+_API_KEY: str = os.getenv("FERRET_API_KEY", "")
+
+# Session lifetime (24 hours).
+SESSION_TTL = timedelta(hours=24)
+
+# Cookie name used for browser sessions.
+SESSION_COOKIE = "ferret_session"
+
+# Short-lived cookie issued after password verification when MFA is enabled.
+# The client must exchange this for a full SESSION_COOKIE by completing the
+# TOTP challenge at POST /api/auth/mfa/challenge.
+PENDING_COOKIE = "ferret_pending"
+
+# Lifetime of the pending (pre-MFA) cookie — 5 minutes.
+PENDING_TTL = timedelta(minutes=5)
+
+
+async def require_auth(request: Request) -> None:
+    """Global FastAPI dependency that enforces authentication on every request.
+
+    Accepts either:
+    - A valid ``ferret_session`` HttpOnly cookie (browser flow), or
+    - A valid ``Authorization: Bearer <FERRET_API_KEY>`` header (programmatic flow).
+
+    Paths listed in ``_AUTH_EXEMPT_PATHS`` bypass this check entirely.
+
+    In tests, patch this dependency to a no-op via::
+
+        patch.object(deps_module, "require_auth", AsyncMock(return_value=None))
+    """
+    path = request.url.path
+    if path in _AUTH_EXEMPT_PATHS:
+        return
+    if any(path.startswith(prefix) for prefix in _AUTH_EXEMPT_PREFIXES):
+        return
+
+    # 1. Bearer token (programmatic access) — only checked when FERRET_API_KEY is set.
+    if _API_KEY:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            provided = auth_header[len("Bearer "):]
+            if secrets.compare_digest(provided, _API_KEY):
+                return
+            # A Bearer header was sent but the key is wrong — reject immediately.
+            raise HTTPException(status_code=401, detail="Invalid API key")
+
+    # 2. Reject ferret_pending cookies on protected routes.
+    # A pending cookie is only valid for POST /api/auth/mfa/challenge (which is
+    # exempt above).  If it appears on any other route, reject with 401 so the
+    # UI knows to show the MFA challenge step rather than the login page.
+    if request.cookies.get(PENDING_COOKIE):
+        raise HTTPException(status_code=401, detail="MFA challenge required")
+
+    # 3. Session cookie (browser access).
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        session = await db_client.get_session(token)
+        if session:
+            now = datetime.now(timezone.utc).isoformat()
+            if session["expires_at"] > now:
+                return
+            # Session exists but has expired — clean it up.
+            await db_client.delete_session(token)
+            raise HTTPException(status_code=401, detail="Session expired")
+
+    raise HTTPException(status_code=401, detail="Authentication required")

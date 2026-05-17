@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import {
   useEffect, useState, useRef, useCallback, useMemo, useLayoutEffect,
 } from "react"
@@ -230,7 +232,7 @@ export default function SnarePage() {
 
   useEffect(() => {
     // Load pending intercepted requests
-    fetch(`${API_BASE}/api/snare/intercepted`)
+    apiFetch(`${API_BASE}/api/snare/intercepted`)
       .then(r => r.ok ? r.json() : [])
       .then((data: InterceptedRequest[]) => {
         setIntercepted(data)
@@ -246,7 +248,7 @@ export default function SnarePage() {
 
     // Load rules
     setRulesLoading(true)
-    fetch(`${API_BASE}/api/snare/rules`)
+    apiFetch(`${API_BASE}/api/snare/rules`)
       .then(r => r.ok ? r.json() : [])
       .then((data: SnareRule[]) => setRules(data))
       .catch(() => {})
@@ -367,7 +369,7 @@ export default function SnarePage() {
     setTogglingSnare(true)
     try {
       const endpoint = snaring ? "/api/snare/stop" : "/api/snare/start"
-      const res = await fetch(`${API_BASE}${endpoint}`, { method: "POST" })
+      const res = await apiFetch(`${API_BASE}${endpoint}`, { method: "POST" })
       if (res.ok) setSnaring(v => !v)
     } catch { /* ignore */ } finally {
       setTogglingSnare(false)
@@ -425,7 +427,7 @@ export default function SnarePage() {
     setForwarding(true)
     setActionError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/snare/intercepted/${selectedId}/forward`, {
+      const res = await apiFetch(`${API_BASE}/api/snare/intercepted/${selectedId}/forward`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raw_request: rawRequest }),
@@ -457,7 +459,7 @@ export default function SnarePage() {
     setDropping(true)
     setActionError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/snare/intercepted/${selectedId}/drop`, {
+      const res = await apiFetch(`${API_BASE}/api/snare/intercepted/${selectedId}/drop`, {
         method: "POST",
       })
       if (!res.ok) {
@@ -481,7 +483,7 @@ export default function SnarePage() {
     setForwardingResponse(true)
     setActionError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/snare/response/${id}/forward`, {
+      const res = await apiFetch(`${API_BASE}/api/snare/response/${id}/forward`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raw_response: rawResponse || null }),
@@ -509,7 +511,7 @@ export default function SnarePage() {
     setDroppingResponse(true)
     setActionError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/snare/response/${id}/drop`, {
+      const res = await apiFetch(`${API_BASE}/api/snare/response/${id}/drop`, {
         method: "POST",
       })
       if (!res.ok) {
@@ -568,7 +570,7 @@ export default function SnarePage() {
         body_pattern: null,
         action: "snare",
       }
-      const res = await fetch(`${API_BASE}/api/snare/rules`, {
+      const res = await apiFetch(`${API_BASE}/api/snare/rules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(rule),
@@ -590,7 +592,7 @@ export default function SnarePage() {
 
   const handleDeleteRule = useCallback(async (ruleId: string) => {
     try {
-      await fetch(`${API_BASE}/api/snare/rules/${ruleId}`, { method: "DELETE" })
+      await apiFetch(`${API_BASE}/api/snare/rules/${ruleId}`, { method: "DELETE" })
       setRules(prev => prev.filter(r => r.id !== ruleId))
     } catch { /* ignore */ }
   }, [])

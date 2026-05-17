@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
@@ -141,7 +143,7 @@ function HuntsPageInner() {
   const fetchSessions = useCallback(async () => {
     if (!activeProjectId) return []
     try {
-      const res = await fetch(`${API_BASE}/api/chats?project_id=${activeProjectId}`)
+      const res = await apiFetch(`${API_BASE}/api/chats?project_id=${activeProjectId}`)
       const data = await res.json()
       const chats = Array.isArray(data) ? data : (data.chats ?? [])
       setSessions(chats); return chats
@@ -150,7 +152,7 @@ function HuntsPageInner() {
 
   const fetchWorkspaceFiles = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/workspaces/${sessionId}/files`)
+      const res = await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files`)
       const data = await res.json()
       const files: WorkspaceFile[] = data.files ?? []
       setWorkspaceFiles(files)
@@ -168,7 +170,7 @@ function HuntsPageInner() {
   const fetchAllFileCounts = useCallback(async (sessionList: WorkspaceSession[]) => {
     await Promise.all(sessionList.map(async s => {
       try {
-        const res = await fetch(`${API_BASE}/api/workspaces/${s.id}/files`)
+        const res = await apiFetch(`${API_BASE}/api/workspaces/${s.id}/files`)
         const data = await res.json()
         const files: WorkspaceFile[] = data.files ?? []
         setSessionFileCounts(prev => ({
@@ -240,7 +242,7 @@ function HuntsPageInner() {
     if (activeProjectId) localStorage.setItem(lastSessionKey(activeProjectId), sessionId)
     setLoadingHistory(true)
     try {
-      const res = await fetch(`${API_BASE}/api/chats/${sessionId}/messages`)
+      const res = await apiFetch(`${API_BASE}/api/chats/${sessionId}/messages`)
       const data = await res.json()
       const fetched = annotateToolArgs(data.messages ?? [])
       const notice = pendingNoticeRef.current
@@ -270,7 +272,7 @@ function HuntsPageInner() {
   const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await fetch(`${API_BASE}/api/chats/${sessionId}`, { method: "DELETE" })
+      await apiFetch(`${API_BASE}/api/chats/${sessionId}`, { method: "DELETE" })
       setSessions(prev => prev.filter(s => s.id !== sessionId))
       if (activeSessionId === sessionId) { setActiveSessionId(null); setMessages([]); setWorkspaceFiles([]) }
     } catch { /**/ }
@@ -293,7 +295,7 @@ function HuntsPageInner() {
 
     const abort = new AbortController(); abortControllerRef.current = abort
     try {
-      const res = await fetch(`${API_BASE}/api/chats/${activeSessionId}/messages/stream`, {
+      const res = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/messages/stream`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMsg.content, model, max_tool_calls: maxToolCalls }),
         signal: abort.signal,
@@ -381,7 +383,7 @@ function HuntsPageInner() {
             setLoading(false)
             fetchWorkspaceFiles(activeSessionId)
             if (activeProjectId) {
-              fetch(`${API_BASE}/api/projects/${activeProjectId}/spend`).then(r => r.ok ? r.json() : null)
+              apiFetch(`${API_BASE}/api/projects/${activeProjectId}/spend`).then(r => r.ok ? r.json() : null)
                 .then(d => { if (d) setSessionSpend(d.total_usd ?? null) }).catch(() => {})
             }
           } else if (evt.type === "error") {

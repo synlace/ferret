@@ -21,7 +21,7 @@ if str(_ROUTERS_DIR) not in sys.path:
     sys.path.insert(0, str(_ROUTERS_DIR))
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.responses import Response
@@ -33,6 +33,7 @@ _log = logging.getLogger(__name__)
 
 import deps
 from routers import requests, proxy, findings, chats, tests, projects, settings, workspaces, setup, plans
+from routers import auth as auth_router
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,7 @@ app = FastAPI(
     description="Forensic Analysis & Request Tracker - MITM Proxy Web Interface",
     version="1.0.0",
     lifespan=lifespan,
+    dependencies=[Depends(deps.require_auth)],
 )
 
 _UI_PORT = os.getenv("UI_PORT", "3000")
@@ -218,6 +220,7 @@ async def download_ca_cert():
 # Include routers
 # ---------------------------------------------------------------------------
 
+app.include_router(auth_router.router)
 app.include_router(setup.router)
 app.include_router(requests.router)
 app.include_router(proxy.router)

@@ -1,5 +1,7 @@
 "use client"
 
+import { apiFetch } from "@/lib/api-fetch"
+
 import { useEffect, useState, useLayoutEffect, useCallback, useRef, useMemo, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -214,7 +216,7 @@ function ResponsePanel({ response, view, isDragging }: { response: ResponseData;
 
 async function apiCreateTab(rawRequest: string, label: string): Promise<GnawTab | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/gnaw/tabs`, {
+    const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw_request: rawRequest, label }),
@@ -228,7 +230,7 @@ async function apiCreateTab(rawRequest: string, label: string): Promise<GnawTab 
 
 async function apiGetTab(tabId: string): Promise<GnawTab | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/gnaw/tabs/${tabId}`)
+    const res = await apiFetch(`${API_BASE}/api/gnaw/tabs/${tabId}`)
     if (!res.ok) return null
     return await res.json()
   } catch {
@@ -238,7 +240,7 @@ async function apiGetTab(tabId: string): Promise<GnawTab | null> {
 
 async function apiUpdateTab(tabId: string, label: string, rawRequest: string): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/gnaw/tabs/${tabId}`, {
+    await apiFetch(`${API_BASE}/api/gnaw/tabs/${tabId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ label, raw_request: rawRequest }),
@@ -248,7 +250,7 @@ async function apiUpdateTab(tabId: string, label: string, rawRequest: string): P
 
 async function apiDeleteTab(tabId: string): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/gnaw/tabs/${tabId}`, { method: "DELETE" })
+    await apiFetch(`${API_BASE}/api/gnaw/tabs/${tabId}`, { method: "DELETE" })
   } catch { /* ignore */ }
 }
 
@@ -427,7 +429,7 @@ function GnawPageInner() {
       try {
         let data: GnawTab[] = []
         try {
-          const res = await fetch(`${API_BASE}/api/gnaw/tabs`)
+          const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`)
           if (res.ok && !cancelled) data = await res.json()
         } catch { /* network error — fall through to create default */ }
 
@@ -596,7 +598,7 @@ function GnawPageInner() {
         ? `${API_BASE}/api/gnaw/tabs/${activeTabId}/send`
         : `${API_BASE}/api/gnaw/send`
 
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
