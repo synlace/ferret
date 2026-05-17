@@ -1,7 +1,7 @@
 services:
   # ── Docker socket proxy ────────────────────────────────────────────────────
   # Exposes only the Docker API operations Ferret actually needs:
-  #   CONTAINERS=1  → inspect/list containers (needed to find ferret-lab)
+  #   CONTAINERS=0  → listing containers is not needed; Ferret uses a hardcoded name
   #   EXEC=1        → docker exec (needed to run AI-generated tests/scripts)
   #   POST=1        → required for exec create + start calls
   # Everything else (image pull, volume mount, privileged container creation)
@@ -9,11 +9,13 @@ services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:latest
     environment:
-      CONTAINERS: 1
+      CONTAINERS: 0
       EXEC: 1
       POST: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-internal
     restart: unless-stopped
 
   api:
@@ -22,10 +24,10 @@ services:
       dockerfile: Dockerfile
     image: ferret-api:latest
     ports:
-      - "8000:8000"
-      - "1337:1337"
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:1337:1337"
     environment:
-      PROXY_HOST: ${PROXY_HOST:-0.0.0.0}
+      PROXY_HOST: ${PROXY_HOST:-127.0.0.1}
       PROXY_PORT: ${PROXY_PORT:-1337}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-3-flash-preview}
       FERRET_TESTS_DIR: /data/tests
@@ -35,6 +37,9 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
+    networks:
+      - default
+      - docker-internal
     depends_on:
       - docker-proxy
     healthcheck:
@@ -54,7 +59,7 @@ services:
         NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-dev}
     image: ferret-ui:latest
     ports:
-      - "${UI_PORT:-3000}:3000"
+      - "127.0.0.1:${UI_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
     depends_on:
@@ -74,7 +79,7 @@ services:
     image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}
     container_name: ferret-lab
     volumes:
-      - ${FERRET_DATA_DIR:-./data}:/data
+      - ${FERRET_DATA_DIR:-./data}/workspaces:/data/workspaces
       - ${FERRET_DATA_DIR:-./data}/workspaces:/workspaces
     cap_add:
       - NET_ADMIN
@@ -88,3 +93,8 @@ services:
 # This makes ./data/tests, ./data/mitmproxy, ./data/workspaces, etc. directly accessible for editing.
 # The lab container also gets ./data/workspaces mounted at /workspaces so scripts/tests
 # written by the AI are accessible at the same path the API uses when building docker exec commands.
+
+networks:
+  default: {}
+  docker-internal:
+    internal: true

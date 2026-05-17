@@ -185,7 +185,7 @@ function ResponsePanel({ response, view, isDragging }: { response: ResponseData;
       <div className="flex-1 min-h-0 relative">
         <iframe
           srcDoc={response.response_body ?? ""}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-scripts"
           className="absolute inset-0 w-full h-full bg-white border-0"
           title="Rendered HTML response"
         />
