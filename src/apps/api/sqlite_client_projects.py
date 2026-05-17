@@ -107,8 +107,10 @@ class ProjectsMixin:
         import json as _json
         await self._db.execute(
             """
-            INSERT INTO chat_sessions (id, name, scope, scope_data, workspace_dir, created_at, project_id)
-            VALUES (:id, :name, :scope, :scope_data, :workspace_dir, :created_at, :project_id)
+            INSERT INTO chat_sessions
+                (id, name, scope, scope_data, workspace_dir, target_url, plan_id, hunt_status, created_at, project_id)
+            VALUES
+                (:id, :name, :scope, :scope_data, :workspace_dir, :target_url, :plan_id, :hunt_status, :created_at, :project_id)
             """,
             {
                 "id": session.id,
@@ -116,6 +118,9 @@ class ProjectsMixin:
                 "scope": session.scope,
                 "scope_data": _json.dumps(session.scope_data) if session.scope_data else None,
                 "workspace_dir": session.workspace_dir,
+                "target_url": getattr(session, "target_url", "") or "",
+                "plan_id": getattr(session, "plan_id", "") or "",
+                "hunt_status": getattr(session, "hunt_status", "idle") or "idle",
                 "created_at": session.created_at.isoformat(),
                 "project_id": session.project_id,
             },
@@ -901,3 +906,189 @@ class ProjectsMixin:
             changed = cur.rowcount
         await self._db.commit()
         return changed > 0
+
+    # ------------------------------------------------------------------
+    # Plans CRUD
+    # ------------------------------------------------------------------
+
+    async def get_plans(self, project_id: str) -> List[Dict[str, Any]]:
+        """Return built-in plans (project_id IS NULL) UNION project plans (project_id = ?),
+        ordered by is_builtin DESC, name ASC."""
+        async with self._db.execute(
+            """
+            SELECT * FROM plans
+            WHERE project_id IS NULL OR project_id = ?
+            ORDER BY is_builtin DESC, name ASC
+            """,
+            (project_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_plan(self, plan_id: str) -> Optional[Dict[str, Any]]:
+        """Return a single plan by ID, or None if not found."""
+        async with self._db.execute(
+            "SELECT * FROM plans WHERE id = ?", (plan_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def create_plan(self, plan: dict) -> dict:
+        """Insert a plan row and return it."""
+        await self._db.execute(
+            """
+            INSERT INTO plans
+                (id, project_id, name, description, tool, prompt, max_tool_calls, is_builtin, created_at)
+            VALUES
+                (:id, :project_id, :name, :description, :tool, :prompt, :max_tool_calls, :is_builtin, :created_at)
+            """,
+            {
+                "id": plan["id"],
+                "project_id": plan.get("project_id"),
+                "name": plan["name"],
+                "description": plan.get("description", ""),
+                "tool": plan.get("tool", "hunt"),
+                "prompt": plan["prompt"],
+                "max_tool_calls": plan.get("max_tool_calls", 15),
+                "is_builtin": int(plan.get("is_builtin", 0)),
+                "created_at": plan["created_at"],
+            },
+        )
+        await self._db.commit()
+        return await self.get_plan(plan["id"])
+
+    async def update_plan(self, plan_id: str, updates: dict) -> Optional[Dict[str, Any]]:
+        """Update name/description/tool/prompt/max_tool_calls only. Returns updated row or None."""
+        allowed = {"name", "description", "tool", "prompt", "max_tool_calls"}
+        filtered = {k: v for k, v in updates.items() if k in allowed}
+        if not filtered:
+            return await self.get_plan(plan_id)
+        set_clause = ", ".join(f"{k} = :{k}" for k in filtered)
+        filtered["plan_id"] = plan_id
+        async with self._db.execute(
+            f"UPDATE plans SET {set_clause} WHERE id = :plan_id",
+            filtered,
+        ) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        if changed == 0:
+            return None
+        return await self.get_plan(plan_id)
+
+    async def delete_plan(self, plan_id: str, project_id: str) -> bool:
+        """Delete a plan only if project_id matches and is_builtin=0. Returns True if deleted."""
+        async with self._db.execute(
+            "DELETE FROM plans WHERE id = ? AND project_id = ? AND is_builtin = 0",
+            (plan_id, project_id),
+        ) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        return changed > 0
+
+    async def clone_plan(self, plan_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        """Copy a built-in plan into the project with a new UUID. Returns the new plan or None."""
+        source = await self.get_plan(plan_id)
+        if not source:
+            return None
+        new_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+        new_plan = {
+            "id": new_id,
+            "project_id": project_id,
+            "name": source["name"],
+            "description": source.get("description", ""),
+            "tool": source.get("tool", "hunt"),
+            "prompt": source["prompt"],
+            "max_tool_calls": source.get("max_tool_calls", 15),
+            "is_builtin": 0,
+            "created_at": now,
+        }
+        return await self.create_plan(new_plan)
+
+    async def _seed_builtin_plans(self) -> None:
+        """Insert built-in plans if they don't already exist (checked by name WHERE project_id IS NULL)."""
+        BUILTIN_PLANS = [
+            {
+                "name": "Quick Recon",
+                "description": "Crawl the target, check security headers, summarise findings.",
+                "tool": "hunt",
+                "prompt": (
+                    "Run a quick recon against {{target}}.\n"
+                    "1. Crawl with katana (depth 3, js_crawl true) to discover endpoints.\n"
+                    "2. Send a GET request to the root path and inspect the response headers for security misconfigurations (missing CSP, HSTS, X-Frame-Options, etc.).\n"
+                    "3. List all discovered endpoints.\n"
+                    "4. Write a concise summary to notes/recon.md covering: target, endpoints found, header issues, and any interesting observations."
+                ),
+                "max_tool_calls": 15,
+            },
+            {
+                "name": "Full Recon",
+                "description": "Deep crawl + ffuf directory fuzzing + JS endpoint extraction.",
+                "tool": "hunt",
+                "prompt": (
+                    "Run a full recon against {{target}}.\n"
+                    "1. Crawl with katana (depth 5, js_crawl true, headless false).\n"
+                    "2. Run ffuf on the root path with the raft-medium-directories wordlist to find hidden directories.\n"
+                    "3. Use run_script (python3) to extract any API endpoints from discovered JavaScript files.\n"
+                    "4. Check security headers on the root path.\n"
+                    "5. Write a detailed report to notes/recon.md covering all findings."
+                ),
+                "max_tool_calls": 30,
+            },
+            {
+                "name": "API Surface",
+                "description": "Enumerate REST endpoints, probe authentication behaviour.",
+                "tool": "hunt",
+                "prompt": (
+                    "Map the API surface of {{target}}.\n"
+                    "1. Crawl with katana focusing on API paths (/api/, /v1/, /v2/, /graphql, /rest/).\n"
+                    "2. Run ffuf with the api-endpoints wordlist against common API base paths.\n"
+                    "3. For each discovered endpoint, probe with GET and OPTIONS to determine auth requirements (200 vs 401 vs 403).\n"
+                    "4. Note any endpoints that return data without authentication.\n"
+                    "5. Write findings to notes/api-surface.md."
+                ),
+                "max_tool_calls": 25,
+            },
+            {
+                "name": "Subdomain Enum",
+                "description": "Discover subdomains via DNS fuzzing, probe each live host.",
+                "tool": "hunt",
+                "prompt": (
+                    "Enumerate subdomains for {{target}}.\n"
+                    "1. Extract the base domain from {{target}}.\n"
+                    "2. Run ffuf with the subdomains-top1million-5000 wordlist against the base domain using DNS mode.\n"
+                    "3. For each discovered subdomain, send a GET request to check if it is live.\n"
+                    "4. Note the status code, server header, and title of each live subdomain.\n"
+                    "5. Write results to notes/subdomains.md."
+                ),
+                "max_tool_calls": 20,
+            },
+        ]
+        now = datetime.utcnow().isoformat()
+        for plan in BUILTIN_PLANS:
+            # Check if a built-in with this name already exists
+            async with self._db.execute(
+                "SELECT id FROM plans WHERE name = ? AND project_id IS NULL",
+                (plan["name"],),
+            ) as cur:
+                existing = await cur.fetchone()
+            if existing:
+                continue
+            await self._db.execute(
+                """
+                INSERT INTO plans
+                    (id, project_id, name, description, tool, prompt, max_tool_calls, is_builtin, created_at)
+                VALUES
+                    (?, NULL, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    plan["name"],
+                    plan["description"],
+                    plan["tool"],
+                    plan["prompt"],
+                    plan["max_tool_calls"],
+                    now,
+                ),
+            )
+        await self._db.commit()

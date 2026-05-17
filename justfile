@@ -82,6 +82,7 @@ test component:
           test_api_workspaces.py \
           test_api_security.py \
           test_api_setup.py \
+          test_api_plans.py \
           -v --tb=short
         ;;
       ui)
