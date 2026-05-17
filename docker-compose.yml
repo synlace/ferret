@@ -1,19 +1,21 @@
 services:
-  # ── Docker socket proxy ────────────────────────────────────────────────────
-  # Exposes only the Docker API operations Ferret actually needs:
-  #   CONTAINERS=0  → listing containers is not needed; Ferret uses a hardcoded name
-  #   EXEC=1        → docker exec (needed to run AI-generated tests/scripts)
-  #   POST=1        → required for exec create + start calls
-  # Everything else (image pull, volume mount, privileged container creation)
-  # is denied, limiting the blast radius if the API container is compromised.
-  docker-proxy:
-    image: tecnativa/docker-socket-proxy:latest
-    environment:
-      CONTAINERS: 0
-      EXEC: 1
-      POST: 1
+  # ── Docker exec shim ───────────────────────────────────────────────────────
+  # Custom Python HTTP proxy that allows ONLY the Docker API calls required
+  # for `docker exec` against the hardcoded ferret-lab container:
+  #   POST /containers/ferret-lab/exec   — exec-create
+  #   POST /exec/<id>/start              — exec-start  (handles hijacked streams)
+  #   POST /exec/<id>/resize             — exec-resize
+  #   GET  /exec/<id>/json               — exec-inspect
+  # Everything else — including POST /containers/create (the RCE vector) and
+  # GET /containers/json — is blocked with HTTP 403.
+  # The allowed container name is configurable via ALLOWED_CONTAINER env var.
+  docker-shim:
+    build:
+      context: src/apps/docker-shim
+      dockerfile: Dockerfile
+    image: ferret-docker-shim:latest
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - docker-internal
     restart: unless-stopped
@@ -33,15 +35,15 @@ services:
       FERRET_TESTS_DIR: /data/tests
       FERRET_WORKSPACES_DIR: /data/workspaces
       FERRET_SANDBOX_CONTAINER: ferret-lab
-      # Route Docker CLI calls through the socket proxy instead of the raw socket.
-      DOCKER_HOST: tcp://docker-proxy:2375
+      # Route Docker CLI calls through the exec shim instead of the raw socket.
+      DOCKER_HOST: tcp://docker-shim:2375
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
     networks:
       - default
       - docker-internal
     depends_on:
-      - docker-proxy
+      - docker-shim
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s

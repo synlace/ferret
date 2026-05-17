@@ -65,6 +65,7 @@ status:
 # Usage:
 #   just test api   — run API unit tests inside the running api container
 #   just test ui    — run Playwright UI tests (auto-starts Next.js dev server + mock API)
+#   just test shim  — run docker-shim allow/block unit tests (stdlib, no Docker needed)
 test component:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -93,9 +94,13 @@ test component:
         fi
         npx playwright test
         ;;
+      shim)
+        cd src/apps/docker-shim
+        python -m unittest test_shim -v
+        ;;
       *)
         echo "Unknown component: {{component}}"
-        echo "Available: api, ui"
+        echo "Available: api, ui, shim"
         exit 1
         ;;
     esac
