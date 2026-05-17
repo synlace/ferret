@@ -12,6 +12,7 @@ import httpx
 
 import deps
 from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana
+from proxy import _assert_safe_url
 
 _log = logging.getLogger(__name__)
 
@@ -326,11 +327,12 @@ async def execute_tool_call(
         proxies = {"http://": proxy_url, "https://": proxy_url} if proxy_url else {}
 
         try:
+            _assert_safe_url(url)
             async with httpx.AsyncClient(
                 verify=False,
                 proxies=proxies,
                 timeout=float(timeout),
-                follow_redirects=True,
+                follow_redirects=False,
             ) as client:
                 resp = await client.request(
                     method,

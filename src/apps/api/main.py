@@ -247,7 +247,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # Native WebSocket from the browser always sends an Origin header;
     # curl/wscat without --origin will have an empty string — allowed for
     # localhost developer tooling.
-    if origin and origin not in _WS_ALLOWED_ORIGINS:
+    if origin not in _WS_ALLOWED_ORIGINS:
         _log.warning("WebSocket rejected: disallowed origin %r", origin)
         await websocket.close(code=1008)  # 1008 = Policy Violation
         return

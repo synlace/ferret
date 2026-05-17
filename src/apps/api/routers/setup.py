@@ -62,6 +62,40 @@ _PROVIDER_FORMAT = {
 
 
 # ---------------------------------------------------------------------------
+# base_url validation helper
+# ---------------------------------------------------------------------------
+
+def _validate_base_url(base_url: str, provider: str) -> None:
+    """Prevent base_url from being set to attacker-controlled hosts.
+
+    Rules:
+    - Cloud providers: base_url override is never permitted (they have fixed endpoints).
+    - Local providers: any URL is accepted EXCEPT those pointing at the internal
+      Docker Compose service names (docker-proxy, api, ui, lab) which would allow
+      the operator to pivot through the API container to internal services.
+    """
+    if not base_url:
+        return
+    from urllib.parse import urlparse
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").lower()
+    if provider in _CLOUD_PROVIDERS:
+        # Cloud providers have fixed base URLs; override is not permitted
+        raise HTTPException(
+            status_code=422,
+            detail=f"base_url override is not permitted for cloud provider {provider!r}",
+        )
+    if provider in _LOCAL_PROVIDERS:
+        # Block internal Docker Compose service names to prevent SSRF pivoting
+        _BLOCKED_SERVICE_NAMES = frozenset({"docker-proxy", "api", "ui", "lab"})
+        if host in _BLOCKED_SERVICE_NAMES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"base_url must not target internal service {host!r}",
+            )
+
+
+# ---------------------------------------------------------------------------
 # GET /api/setup
 # ---------------------------------------------------------------------------
 
@@ -123,7 +157,8 @@ async def complete_setup(body: SetupConfig):
                         detail="api_key is required for cloud providers",
                     )
 
-        # Resolve base URL
+        # Validate and resolve base URL
+        _validate_base_url(body.base_url or "", provider)
         base_url = body.base_url or _PROVIDER_BASE_URLS.get(provider, "")
 
         await deps.db_client.set_setting(_KEY_AI_PROVIDER, provider)
@@ -166,6 +201,7 @@ async def test_setup_connection(body: SetupConfig):
     """
     try:
         provider = body.provider.lower()
+        _validate_base_url(body.base_url or "", provider)
         base_url = body.base_url or _PROVIDER_BASE_URLS.get(provider, "")
         fmt      = _PROVIDER_FORMAT.get(provider, "openai")
 

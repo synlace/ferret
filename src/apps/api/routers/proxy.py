@@ -4,13 +4,75 @@ Proxy management, snare rules, and gnaw endpoints.
 
 import asyncio
 import uuid
+import ipaddress
 import httpx
+from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from pydantic import BaseModel
 
 import deps
 from models import HttpRequest, ProxySettings, SnareRule, GnawTab
+
+# Ferret is a penetration-testing tool; its gnaw/send endpoints are intentionally
+# designed to reach arbitrary hosts including LAN addresses (192.168.x.x, 10.x.x.x,
+# etc.) that a tester may be assessing.
+#
+# The SSRF threat model here is narrower: prevent an *unauthenticated web attacker*
+# from using the Ferret API as a pivot to reach Ferret's own internal Docker
+# Compose services (docker-proxy, api, ui, lab) or the loopback interface of the
+# container itself.
+#
+# Blocked:
+#   - Loopback (127.x.x.x, ::1, localhost) — would reach the API container itself
+#   - Docker Compose service names (docker-proxy, api, ui, lab) — internal pivot by name
+#   - 172.16.0.0/12 — Docker's internal bridge network range; Compose service IPs
+#     always fall here.  Blocking by name alone is insufficient because an attacker
+#     who knows (or enumerates) the container IP can bypass the hostname check.
+#     Pentesters never legitimately target 172.16-31.x.x — their LAN targets are
+#     10.x.x.x or 192.168.x.x.
+#
+# Allowed: 10.x.x.x, 192.168.x.x — legitimate pentest targets on the user's LAN.
+_BLOCKED_INTERNAL_HOSTS = frozenset({
+    # Docker Compose service names — these resolve to internal container IPs
+    "docker-proxy", "api", "ui", "lab",
+    # Loopback — would reach the API container itself
+    "localhost", "127.0.0.1", "::1",
+})
+
+# IP networks that are always blocked regardless of hostname
+_BLOCKED_IP_NETWORKS = (
+    ipaddress.ip_network("127.0.0.0/8"),    # IPv4 loopback
+    ipaddress.ip_network("::1/128"),         # IPv6 loopback
+    ipaddress.ip_network("172.16.0.0/12"),   # Docker internal bridge range
+)
+
+
+def _assert_safe_url(url: str) -> None:
+    """Raise HTTP 400 if the URL targets Ferret's own internal services or loopback.
+
+    LAN/private addresses (192.168.x.x, 10.x.x.x) are intentionally allowed because
+    Ferret is a pentest tool and testers routinely target internal network hosts.
+
+    Blocked: loopback, Docker Compose service names, and 172.16.0.0/12 (Docker's
+    internal bridge range — container IPs always fall here, so blocking by hostname
+    alone is insufficient against an attacker who knows the container IP).
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise HTTPException(status_code=400, detail="URL must include a host")
+    if host in _BLOCKED_INTERNAL_HOSTS:
+        raise HTTPException(status_code=400, detail="Requests to internal hosts are not permitted")
+    try:
+        addr = ipaddress.ip_address(host)
+        if any(addr in net for net in _BLOCKED_IP_NETWORKS):
+            raise HTTPException(status_code=400, detail="Requests to internal/loopback addresses are not permitted")
+    except ValueError:
+        pass  # it's a hostname, not a bare IP — already checked above
 
 router = APIRouter()
 
@@ -211,7 +273,8 @@ async def send_request(request: HttpRequest):
         }
         body = request.body.encode() if request.body else None
 
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, verify=False) as client:
+        _assert_safe_url(url)
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, verify=True) as client:
             resp = await client.request(method, url, headers=headers, content=body)
 
         try:
@@ -227,6 +290,8 @@ async def send_request(request: HttpRequest):
             "response_body": resp_body,
             "response_time": elapsed_ms,
         }
+    except HTTPException:
+        raise
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"Request failed: {e}")
     except Exception as e:
@@ -358,7 +423,8 @@ async def send_gnaw_tab(tab_id: str, request: HttpRequest):
         }
         body = request.body.encode() if request.body else None
 
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, verify=False) as client:
+        _assert_safe_url(url)
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, verify=True) as client:
             resp = await client.request(method, url, headers=headers, content=body)
 
         try:
