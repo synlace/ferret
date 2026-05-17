@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useRef } from "react"
+import React, { useRef, memo } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Loader2, Download, Send, Square,
@@ -15,6 +15,67 @@ import { MarkdownContent } from "./MarkdownContent"
 import { formatToolArgs } from "./helpers"
 import type { WorkspaceSession, ChatMsg, LiveToolCall } from "./types"
 import type { WorkspaceFile } from "./FileTree"
+
+// ── MessageList — memoized so it does NOT re-render on every streaming delta ──
+// Only re-renders when `messages`, `activeSessionId`, or the collapse helpers change.
+interface MessageListProps {
+  messages: ChatMsg[]
+  activeSessionId: string | null
+  getToolGroupCollapsed: (key: string, defaultVal?: boolean) => boolean
+  handleToolGroupToggle: (key: string, collapsed: boolean) => void
+}
+const MessageList = memo(function MessageList({
+  messages,
+  activeSessionId,
+  getToolGroupCollapsed,
+  handleToolGroupToggle,
+}: MessageListProps) {
+  return (
+    <>
+      {messages.map((msg, i) => {
+        if (msg.role === "tool") {
+          const toolName = msg.name ?? "tool"
+          const isRunning = msg.content?.startsWith("Running ") ?? false
+          const result = isRunning ? null : (msg.content ?? "")
+          const persistKey = activeSessionId ? `${activeSessionId}:${i}` : undefined
+          return (
+            <ToolGroup key={i} toolName={toolName} toolArgs={msg.toolArgs ?? ""} toolArgsRaw={msg.toolArgsRaw}
+              result={result} isRunning={isRunning} persistKey={persistKey}
+              exitCode={msg.exitCode} runtimeMs={msg.runtimeMs}
+              collapsedOverride={persistKey ? getToolGroupCollapsed(persistKey) : undefined}
+              onToggle={handleToolGroupToggle}
+              rationale={msg.rationale} />
+          )
+        }
+        if (msg.role === "assistant" && !(msg.content ?? "").trim()) return null
+        if (msg.role === "notice") {
+          return (
+            <div key={i} className="flex flex-col items-start">
+              <div className="max-w-[80%] px-3 py-2 text-sm border bg-orange-500/10 text-orange-200 border-orange-500/30">
+                <MarkdownContent content={msg.content ?? ""} />
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 px-1">
+                <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
+              </div>
+            </div>
+          )
+        }
+        return (
+          <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+            <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-orange-500/15 text-white border-orange-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
+              {msg.role === "assistant" && <div className="text-[10px] text-orange-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
+              {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
+            </div>
+            <div className={`flex items-center gap-2 mt-0.5 px-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+              <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
+              <CopyButton text={msg.content ?? ""} />
+            </div>
+          </div>
+        )
+      })}
+    </>
+  )
+})
 
 interface ChatPanelProps {
   activeSession: WorkspaceSession | null
@@ -55,6 +116,8 @@ interface ChatPanelProps {
   onNewHunt: () => void
   onBackFromFile: () => void
   onFileDeleted: () => void
+  /** Called by XTermView when it's ready to receive chunks; idx is the liveToolCalls index */
+  onRegisterLiveWriter: (idx: number, write: (chunk: string) => void) => void
 }
 
 export function ChatPanel({
@@ -95,6 +158,7 @@ export function ChatPanel({
   onNewHunt,
   onBackFromFile,
   onFileDeleted,
+  onRegisterLiveWriter,
 }: ChatPanelProps) {
   return (
     <>
@@ -164,47 +228,12 @@ export function ChatPanel({
                   <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
                 </div>
               )}
-              {messages.map((msg, i) => {
-                if (msg.role === "tool") {
-                  const toolName = msg.name ?? "tool"
-                  const isRunning = msg.content?.startsWith("Running ") ?? false
-                  const result = isRunning ? null : (msg.content ?? "")
-                  const persistKey = activeSessionId ? `${activeSessionId}:${i}` : undefined
-                  return (
-                    <ToolGroup key={i} toolName={toolName} toolArgs={msg.toolArgs ?? ""} toolArgsRaw={msg.toolArgsRaw}
-                      result={result} isRunning={isRunning} persistKey={persistKey}
-                      exitCode={msg.exitCode} runtimeMs={msg.runtimeMs} liveChunks={undefined}
-                      collapsedOverride={persistKey ? getToolGroupCollapsed(persistKey) : undefined}
-                      onToggle={handleToolGroupToggle}
-                      rationale={msg.rationale} />
-                  )
-                }
-                if (msg.role === "assistant" && !(msg.content ?? "").trim()) return null
-                if (msg.role === "notice") {
-                  return (
-                    <div key={i} className="flex flex-col items-start">
-                      <div className="max-w-[80%] px-3 py-2 text-sm border bg-orange-500/10 text-orange-200 border-orange-500/30">
-                        <MarkdownContent content={msg.content ?? ""} />
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5 px-1">
-                        <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
-                      </div>
-                    </div>
-                  )
-                }
-                return (
-                  <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                    <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-orange-500/15 text-white border-orange-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
-                      {msg.role === "assistant" && <div className="text-[10px] text-orange-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
-                      {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
-                    </div>
-                    <div className={`flex items-center gap-2 mt-0.5 px-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                      <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
-                      <CopyButton text={msg.content ?? ""} />
-                    </div>
-                  </div>
-                )
-              })}
+              <MessageList
+                messages={messages}
+                activeSessionId={activeSessionId}
+                getToolGroupCollapsed={getToolGroupCollapsed}
+                handleToolGroupToggle={handleToolGroupToggle}
+              />
               {loading && liveToolCalls.length > 0 && (
                 <div className="space-y-1">
                   {liveToolCalls.map((tc, idx) => {
@@ -215,7 +244,7 @@ export function ChatPanel({
                         toolArgsRaw={tc.toolArgsRaw}
                         result={tc.result}
                         isRunning={tc.result === null} exitCode={tc.exitCode} runtimeMs={tc.runtimeMs}
-                        liveChunks={tc.liveChunks}
+                        registerWriter={(write) => onRegisterLiveWriter(idx, write)}
                         persistKey={liveKey}
                         collapsedOverride={getToolGroupCollapsed(liveKey)}
                         onToggle={handleToolGroupToggle}

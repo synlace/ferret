@@ -31,6 +31,8 @@ export interface LiveToolCall {
   exitCode?: number | null
   runtimeMs?: number | null
   startedAt: number
-  liveChunks?: string[]
+  /** Imperative callback — called with each raw chunk as it arrives.
+   *  Replaces the old liveChunks array to avoid O(n) array copies per chunk. */
+  onLiveChunk?: (chunk: string) => void
   rationale?: string
 }
