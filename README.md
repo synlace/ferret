@@ -1,16 +1,60 @@
 # Ferret
 
 <p align="center">
-  <img src="assets/ferret.png" alt="Ferret" width="80" />
+  <img src="assets/ferret.png" alt="Ferret" width="96" />
 </p>
 
 <p align="center">
-  <strong>AI-assisted HTTP interception and analysis for security testers.</strong>
+  <strong>The collaborative MITM proxy for security testers.</strong>
 </p>
 
 <p align="center">
-  Point your browser or tool at <code>127.0.0.1:1337</code> — Ferret captures every request, annotates it with AI, and lets you hunt for vulnerabilities from a single interface.
+  Capture HTTP traffic, annotate requests with AI, run hunt sessions, replay traffic, and track findings from one interface.
 </p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#screenshots">Screenshots</a>
+  ·
+  <a href="#configuration">Configuration</a>
+  ·
+  <a href="#contributing">Contributing</a>
+</p>
+
+---
+
+## Overview
+
+Ferret is an AI-assisted HTTP interception proxy built for security testers.
+
+Point your browser, CLI tool, or testing workflow at:
+
+```text
+127.0.0.1:1337
+````
+
+Ferret captures requests and responses, stores them locally, annotates traffic with AI, and gives you tools to replay, modify, test, and turn interesting behaviour into findings.
+
+It is designed for workflows where you want more than a passive proxy: you want something that helps you think, test, and document as you go.
+
+---
+
+## Features
+
+* **Intercepting proxy** — capture HTTP and HTTPS traffic through mitmproxy.
+* **Request history** — browse, filter, inspect, and replay captured traffic.
+* **AI annotations** — enrich requests with security-relevant context.
+* **Hunts** — run AI-assisted hunt sessions across captured traffic.
+* **Findings** — track vulnerabilities with severity, host, type, evidence, and status.
+* **Snare** — intercept and modify requests or responses in-flight.
+* **Gnaw** — repeater-style tabs for editing and resending HTTP requests.
+* **Workspaces** — per-session `scripts/`, `tests/`, and `notes/` directories.
+* **Projects** — separate request history, findings, workspaces, and API keys.
+* **Authentication** — password login, session cookies, optional API key access, and TOTP 2FA.
+* **Local-first storage** — SQLite-backed data stored in a local bind-mounted directory.
 
 ---
 
@@ -22,14 +66,18 @@
 
 ![Hunts](assets/20260518_hunts.png)
 
-**Hunts** — AI-driven hunt sessions. The agent searches request history, writes and runs tests, and creates findings automatically.
+**Hunts**
+
+AI-assisted hunt sessions that search request history, write and run tests, and create findings.
 
 </td>
 <td width="50%">
 
 ![History](assets/20260518_history.png)
 
-**History** — Full proxied request log with AI annotations, timing, status codes, and inline request/response editors.
+**History**
+
+A full proxied request log with AI annotations, timings, status codes, and inline request/response editors.
 
 </td>
 </tr>
@@ -38,14 +86,18 @@
 
 ![Findings](assets/20260518_findings.png)
 
-**Findings** — Vulnerability tracker with severity, host, type, AI-generated descriptions, and evidence snippets.
+**Findings**
+
+A vulnerability tracker with severity, host, type, AI-generated descriptions, and evidence snippets.
 
 </td>
 <td width="50%">
 
 ![Settings](assets/20260518_settings.png)
 
-**Settings** — CA certificate download, password management, two-factor authentication (TOTP), AI provider, and proxy status.
+**Settings**
+
+Manage the CA certificate, password, 2FA, AI provider, API keys, and proxy status.
 
 </td>
 </tr>
@@ -54,7 +106,9 @@
 
 ![Setup](assets/20260518_setup.png)
 
-**Setup wizard** — First-run wizard walks you through choosing an AI provider (OpenRouter, OpenAI, Anthropic, Gemini, DeepSeek, Mistral, Ollama, or LM Studio) and entering your API key.
+**Setup wizard**
+
+First-run setup for password creation and AI provider configuration.
 
 </td>
 </tr>
@@ -62,136 +116,249 @@
 
 ---
 
-## Install
+## Quick start
 
-**Requirements:** Docker, Docker Compose, [`just`](https://github.com/casey/just)
+### Requirements
+
+* Docker
+* Docker Compose
+* [`just`](https://github.com/casey/just)
+
+### Install
 
 ```bash
 git clone https://github.com/synlace/ferret.git
 cd ferret
-cp .env.example .env          # optional — see Configuration below
+
+cp .env.example .env   # optional
 just up
-# or: docker compose up --build -d
 ```
 
-| Service | URL |
-|---------|-----|
-| UI      | http://localhost:3000 |
-| API     | http://localhost:8000 |
-| Proxy   | `127.0.0.1:1337` |
+Or use Docker Compose directly:
 
-Open `http://localhost:3000` — the setup wizard runs on first visit and walks you through choosing an AI provider and entering your API key. No `.env` changes are required to get started.
+```bash
+docker compose up --build -d
+```
 
-Point your browser or tool at `127.0.0.1:1337`. For HTTPS, install the mitmproxy CA cert from the **Settings** page.
+### Open Ferret
+
+| Service | URL                     |
+| ------- | ----------------------- |
+| UI      | `http://localhost:3000` |
+| API     | `http://localhost:8000` |
+| Proxy   | `127.0.0.1:1337`        |
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+The first-run setup wizard will ask you to set a password and choose an AI provider.
+
+---
+
+## Using the proxy
+
+Configure your browser, CLI tool, or test client to use:
+
+```text
+HTTP proxy:  127.0.0.1:1337
+HTTPS proxy: 127.0.0.1:1337
+```
+
+For HTTPS interception, download and install the mitmproxy CA certificate from the **Settings** page.
 
 ---
 
 ## Authentication
 
-Ferret requires a password on every install. The password is set during the **first-run setup wizard** and stored as a bcrypt hash in the local SQLite database.
+Ferret requires authentication on every install.
 
 ### Browser login
 
-1. On first visit, the setup wizard prompts you to set a password (min. 8 characters) before choosing an AI provider.
-2. After setup completes, you are redirected to `/login`.
-3. Enter your password — a 24-hour `HttpOnly SameSite=Strict` session cookie is issued.
-4. The sidebar shows a **Sign out** button that clears the session.
+1. Open the UI for the first time.
+2. Set a password in the setup wizard.
+3. Complete AI provider setup.
+4. Log in at `/login`.
+5. Ferret issues a 24-hour `HttpOnly` `SameSite=Strict` session cookie.
 
 ### Two-factor authentication
 
-Enable TOTP-based 2FA from the **Settings** page. Once enabled, a valid authenticator code is required at every login.
+TOTP-based 2FA can be enabled from the **Settings** page.
 
-### Programmatic / CI access (Bearer token)
+Once enabled, a valid authenticator code is required at login.
 
-Set `FERRET_API_KEY` in `.env` to any random secret, then pass it as a header:
+### API access
 
-```bash
-curl -H "Authorization: Bearer <your-key>" http://localhost:8000/api/requests
+Set a static API key in `.env`:
+
+```env
+FERRET_API_KEY=your-random-secret
 ```
 
-The Bearer token is checked independently of the session cookie — both can be active simultaneously.
-
-### Resetting the password
+Then use it as a Bearer token:
 
 ```bash
-just reset   # wipes the database, including credentials — re-runs the setup wizard
+curl -H "Authorization: Bearer your-random-secret" \
+  http://localhost:8000/api/requests
 ```
 
-Or via the API (requires a valid session):
-
-```bash
-curl -X DELETE -H "Authorization: Bearer <key>" http://localhost:8000/api/setup
-```
+Session cookies and Bearer tokens are checked independently.
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` to pre-configure options. All AI provider settings can also be set through the in-browser setup wizard.
+Copy `.env.example` to `.env` to preconfigure Ferret.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FERRET_API_KEY` | — | Static Bearer token for programmatic API access (optional) |
-| `OPENROUTER_MODEL` | `google/gemini-3-flash-preview` | Default model when using OpenRouter (overridden by wizard selection) |
-| `PROXY_HOST` | `0.0.0.0` | Proxy bind address |
-| `PROXY_PORT` | `1337` | Proxy port |
-| `UI_PORT` | `3000` | UI port |
-| `FERRET_DATA_DIR` | `./data` | Host path for all persistent data |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | API URL as seen by the browser |
-| `NEXT_PUBLIC_SIGINT_URL` | — | Optional SIGINT news feed JSON URL |
+Most AI provider settings can also be configured from the setup wizard.
 
----
-
-## Features
-
-- **Intercepting proxy** — mitmproxy on `:1337`, traffic stored in SQLite
-- **Request history** — browse, filter, and replay captured requests with full request/response detail
-- **Hunts** — AI agent sessions that search history, write and run tests, and file findings automatically
-- **Findings** — track vulnerabilities with severity, status, host tagging, and AI-generated evidence
-- **Snare** — intercept and modify requests/responses in-flight before they reach the server
-- **Gnaw** — persistent repeater tabs with proxy routing and full request/response editors
-- **Workspaces** — per-session `scripts/`, `tests/`, `notes/` directories, editable and runnable in the lab container
-- **Projects** — separate request history, findings, workspaces, and API keys per project
-- **2FA** — TOTP-based two-factor authentication
+| Variable                 |                         Default | Description                                     |
+| ------------------------ | ------------------------------: | ----------------------------------------------- |
+| `FERRET_API_KEY`         |                               — | Static Bearer token for programmatic API access |
+| `OPENROUTER_MODEL`       | `google/gemini-3-flash-preview` | Default OpenRouter model                        |
+| `PROXY_HOST`             |                       `0.0.0.0` | Proxy bind address                              |
+| `PROXY_PORT`             |                          `1337` | Proxy port                                      |
+| `UI_PORT`                |                          `3000` | UI port                                         |
+| `FERRET_DATA_DIR`        |                        `./data` | Persistent data directory                       |
+| `NEXT_PUBLIC_API_URL`    |         `http://localhost:8000` | API URL used by the browser                     |
+| `NEXT_PUBLIC_SIGINT_URL` |                               — | Optional SIGINT/news feed JSON URL              |
 
 ---
 
-## `just` recipes
+## Supported AI providers
 
-| Recipe | Description |
-|--------|-------------|
-| `just up` | Build and start all services |
-| `just down` | Stop all services |
-| `just dev` | API/lab in Docker, UI hot-reload on host (requires Node.js) |
-| `just logs` | Tail logs |
-| `just test api` | API unit tests |
-| `just test ui` | Playwright UI tests |
-| `just reset` | Wipe the database |
-| `just shell` | Shell into the lab container |
+Ferret can be configured with:
+
+* OpenRouter
+* OpenAI
+* Anthropic
+* Gemini
+* DeepSeek
+* Mistral
+* Ollama
+* LM Studio
+
+Provider setup can be completed from the first-run wizard.
+
+---
+
+## `just` commands
+
+| Command         | Description                                     |
+| --------------- | ----------------------------------------------- |
+| `just up`       | Build and start all services                    |
+| `just down`     | Stop all services                               |
+| `just dev`      | Run API/lab in Docker and UI hot reload on host |
+| `just logs`     | Tail service logs                               |
+| `just test api` | Run API unit tests                              |
+| `just test ui`  | Run Playwright UI tests                         |
+| `just reset`    | Wipe the local database                         |
+| `just shell`    | Open a shell in the lab container               |
 
 ---
 
 ## Architecture
 
-```
-Browser / tool → 127.0.0.1:1337
-                      │
-               ferret-api :8000/:1337   (FastAPI + mitmproxy, SQLite)
-                      │ docker exec
-               ferret-lab               (pytest, ffuf, sqlmap…)
-               ferret-ui  :3000         (Next.js)
+```text
+Browser / tool
+      │
+      ▼
+127.0.0.1:1337
+      │
+      ▼
+ferret-api :8000 / :1337
+FastAPI + mitmproxy + SQLite
+      │
+      ├── docker exec
+      ▼
+ferret-lab
+pytest, ffuf, sqlmap, scripts, tests, notes
+      │
+      ▼
+ferret-ui :3000
+Next.js
 ```
 
-All data is bind-mounted to `${FERRET_DATA_DIR:-./data}` — no named Docker volumes.
+All persistent data is stored under:
+
+```text
+${FERRET_DATA_DIR:-./data}
+```
+
+Ferret uses bind mounts rather than named Docker volumes.
+
+---
+
+## Resetting Ferret
+
+To wipe local state and restart the setup wizard:
+
+```bash
+just reset
+```
+
+This removes the local database, including credentials.
+
+You can also reset setup through the API when authenticated:
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer your-random-secret" \
+  http://localhost:8000/api/setup
+```
+
+---
+
+## Development
+
+For local UI development with hot reload:
+
+```bash
+just dev
+```
+
+This runs the API and lab environment in Docker while running the UI on the host.
+
+Run tests with:
+
+```bash
+just test api
+just test ui
+```
+
+---
+
+## Security notes
+
+Ferret is intended for local security testing workflows.
+
+Before exposing Ferret outside localhost, make sure you understand the risks:
+
+* The proxy can capture sensitive HTTP traffic.
+* The API exposes request history and findings.
+* The lab container can execute testing tools.
+* API keys and AI provider credentials should be treated as secrets.
+
+Use strong passwords and enable 2FA where appropriate.
 
 ---
 
 ## Contributing
 
-Oh hey, I'm building a business here — want to help? [aidan@synlace.ai](mailto:aidan@synlace.ai)
+Ferret is actively being developed.
+
+Ideas, bug reports, feature requests, and contributions are welcome.
+
+Want to help build it?
+
+Email: [aidan@synlace.ai](mailto:aidan@synlace.ai)
 
 ---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+```
