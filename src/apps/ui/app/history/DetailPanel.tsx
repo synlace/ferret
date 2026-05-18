@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Sparkles, Loader2, Send, Maximize2, Link, Copy, Check } from "lucide-react"
+import { Sparkles, Loader2, Send, Maximize2, Minimize2, Link, Copy, Check } from "lucide-react"
 import CodeMirror, { EditorView } from "@uiw/react-codemirror"
 import { atomoneInit } from "@uiw/codemirror-theme-atomone"
 import { StreamLanguage } from "@codemirror/language"
@@ -344,7 +344,7 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
             <button onClick={() => onMaximize(!maximized)}
               className="w-7 h-6 flex items-center justify-center rounded text-neutral-500 hover:text-white hover:bg-neutral-700 transition-colors"
               title={maximized ? "Restore" : "Maximize"}
-            ><Maximize2 className="w-3 h-3" /></button>
+            >{maximized ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}</button>
           )}
         </div>
 

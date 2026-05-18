@@ -34,8 +34,8 @@ export interface ParsedQuery {
   text: string[]
   method: string[] | null
   status: string[] | null
-  host: string | null
-  path: string | null
+  host: string[] | null
+  path: string[] | null
   mime: string[] | null
   ext: string[] | null
   source: string[] | null
@@ -122,8 +122,8 @@ export function parseQuery(input: string): ParsedQuery {
     text: [],
     method: null,
     status: null,
-    host: null,
-    path: null,
+    host: null as string[] | null,
+    path: null as string[] | null,
     mime: null,
     ext: null,
     source: null,
@@ -155,10 +155,10 @@ export function parseQuery(input: string): ParsedQuery {
         result.status = (result.status ?? []).concat(values.map(v => v.toLowerCase()))
         break
       case "host":
-        result.host = token.value
+        result.host = (result.host ?? []).concat(token.value.split(",").map(v => v.trim()).filter(Boolean))
         break
       case "path":
-        result.path = token.value
+        result.path = (result.path ?? []).concat(token.value.split(",").map(v => v.trim()).filter(Boolean))
         break
       case "mime":
         result.mime = (result.mime ?? []).concat(values.map(v => v.toLowerCase()))
@@ -250,14 +250,14 @@ export function matchesQuery(req: ApiRequest, pq: ParsedQuery): boolean {
   }
 
   // host
-  if (pq.host) {
-    const hit = globMatch(pq.host, req.host)
+  if (pq.host && pq.host.length > 0) {
+    const hit = pq.host.some(h => globMatch(h, req.host))
     if (neg.has("host") ? hit : !hit) return false
   }
 
   // path
-  if (pq.path) {
-    const hit = globMatch(pq.path, req.path)
+  if (pq.path && pq.path.length > 0) {
+    const hit = pq.path.some(p => globMatch(p, req.path))
     if (neg.has("path") ? hit : !hit) return false
   }
 

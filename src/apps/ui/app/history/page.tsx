@@ -3,7 +3,7 @@
 import { apiFetch } from "@/lib/api-fetch"
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams, usePathname } from "next/navigation"
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,7 +21,7 @@ import {
   Download, Copy, RefreshCw, Loader2, Sparkles, Trash2,
   ChevronUp, ChevronDown, ChevronsUpDown,
   ChevronLeft, ChevronRight, SlidersHorizontal,
-  Eye, Maximize2, MessageSquare, Zap, Terminal, Code2, Link, Filter, Highlighter, X, Clock,
+  Eye, Maximize2, MessageSquare, Zap, Terminal, Code2, Link, Filter, Highlighter, X, Clock, Ban, Check,
 } from "lucide-react"
 import { useProject } from "../context/project-context"
 import {
@@ -50,12 +50,29 @@ export default function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
 
   // TanStack Table state
-  const [sorting, setSorting] = useState<SortingState>([{ id: "timestamp", desc: true }])
+  const [sorting, setSorting] = useState<SortingState>(() => {
+    try {
+      const saved = sessionStorage.getItem("history:sorting")
+      if (saved) return JSON.parse(saved) as SortingState
+    } catch { /* ignore */ }
+    return [{ id: "timestamp", desc: true }]
+  })
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
   // ── Single source of truth for all filtering ──────────────────────────────
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+  const [searchQuery, setSearchQuery] = useState(() => {
+    const fromUrl = searchParams.get("q")
+    if (fromUrl) return fromUrl
+    try { return sessionStorage.getItem("history:lastQuery") ?? "" } catch { return "" }
+  })
+  const [debouncedQuery, setDebouncedQuery] = useState(() => {
+    const fromUrl = searchParams.get("q")
+    if (fromUrl) return fromUrl
+    try { return sessionStorage.getItem("history:lastQuery") ?? "" } catch { return "" }
+  })
+  const [copiedFilterUrl, setCopiedFilterUrl] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
 
   // Pagination state
@@ -112,6 +129,19 @@ export default function HistoryPage() {
     return () => document.removeEventListener("nav-escape", handler)
   }, [])
 
+  // Escape key dismisses maximized detail panel and restores search bar focus
+  useEffect(() => {
+    if (!maximizedId) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMaximizedId(null)
+        searchInputRef.current?.focus()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [maximizedId])
+
   // Restore focus to search bar on any click that isn't on a focusable input element
   useEffect(() => {
     const FOCUS_SELECTORS = [
@@ -157,6 +187,20 @@ export default function HistoryPage() {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300)
     return () => clearTimeout(t)
   }, [searchQuery])
+
+  // Sync debouncedQuery → URL ?q= param (shareable) and sessionStorage (persist across navigation)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (debouncedQuery) {
+      params.set("q", debouncedQuery)
+      try { sessionStorage.setItem("history:lastQuery", debouncedQuery) } catch { /* ignore */ }
+    } else {
+      params.delete("q")
+      try { sessionStorage.removeItem("history:lastQuery") } catch { /* ignore */ }
+    }
+    const newUrl = params.size > 0 ? `${pathname}?${params.toString()}` : pathname
+    window.history.replaceState(null, "", newUrl)
+  }, [debouncedQuery, pathname])
 
   // ------------------------------------------------------------------
   // Parsed query (derived from debouncedQuery for fetch; searchQuery for UI)
@@ -437,7 +481,11 @@ export default function HistoryPage() {
     columns,
     state: { sorting, columnFilters },
     onSortingChange: (updater) => {
-      setSorting(updater)
+      setSorting(prev => {
+        const next = typeof updater === "function" ? updater(prev) : updater
+        try { sessionStorage.setItem("history:sorting", JSON.stringify(next)) } catch { /* ignore */ }
+        return next
+      })
       setPage(1)
     },
     onColumnFiltersChange: setColumnFilters,
@@ -621,6 +669,25 @@ export default function HistoryPage() {
         >
           <Clock className="w-3.5 h-3.5" />
         </button>
+        {searchQuery && (
+          <button
+            tabIndex={-1}
+            onClick={() => {
+              const params = new URLSearchParams()
+              params.set("q", searchQuery)
+              const url = `${window.location.origin}${pathname}?${params.toString()}`
+              navigator.clipboard.writeText(url).catch(() => {})
+              setCopiedFilterUrl(true)
+              setTimeout(() => setCopiedFilterUrl(false), 1500)
+            }}
+            className={`h-8 px-2.5 flex items-center border-l border-neutral-800 transition-colors flex-shrink-0 ${
+              copiedFilterUrl ? "text-green-400 bg-neutral-900" : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
+            }`}
+            title="Copy shareable filter URL"
+          >
+            {copiedFilterUrl ? <Check className="w-3.5 h-3.5" /> : <Link className="w-3.5 h-3.5" />}
+          </button>
+        )}
         <button
           tabIndex={-1}
           onClick={() => setFilterOpen(v => !v)}
@@ -1226,6 +1293,24 @@ export default function HistoryPage() {
             },
             {
               type: "item",
+              Icon: Ban,
+              label: `Exclude Domain: ${req.host}`,
+              action: () => { setSearchQuery(q => upsertToken(q, "host", req.host, true)); setContextMenu(null) },
+            },
+            {
+              type: "item",
+              Icon: Ban,
+              label: `Exclude Domain + Path: ${req.host}${req.path}`,
+              action: () => {
+                setSearchQuery(q => {
+                  const withHost = upsertToken(q, "host", req.host, true)
+                  return upsertToken(withHost, "path", req.path, true)
+                })
+                setContextMenu(null)
+              },
+            },
+            {
+              type: "item",
               Icon: isHighlighted ? X : Highlighter,
               label: isHighlighted ? "Remove Highlight" : "Highlight Row",
               action: () => {
@@ -1246,10 +1331,31 @@ export default function HistoryPage() {
           return acc.concat(group)
         }, [])
 
+        const MENU_WIDTH = 280
+        const ITEM_HEIGHT = 36
+        const SEPARATOR_HEIGHT = 9
+        const PADDING = 8
+        const menuEstimatedHeight = allItems.reduce((h, item) =>
+          h + (item.type === "separator" ? SEPARATOR_HEIGHT : ITEM_HEIGHT), PADDING * 2)
+
+        const spaceBelow = window.innerHeight - contextMenu.y
+        const spaceAbove = contextMenu.y
+        const flipUp = spaceBelow < menuEstimatedHeight && spaceAbove >= menuEstimatedHeight
+
+        let top: number | undefined
+        let bottom: number | undefined
+        if (flipUp) {
+          bottom = window.innerHeight - contextMenu.y
+        } else {
+          top = Math.min(contextMenu.y, window.innerHeight - menuEstimatedHeight - 8)
+          top = Math.max(top, 8)
+        }
+        const left = Math.min(contextMenu.x, window.innerWidth - MENU_WIDTH - 8)
+
         return (
           <div
             className="fixed z-50 bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl py-1 min-w-[220px]"
-            style={{ top: contextMenu.y, left: contextMenu.x }}
+            style={{ top, bottom, left }}
             onClick={(e) => e.stopPropagation()}
           >
             {allItems.map((item, i) =>
