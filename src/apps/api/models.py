@@ -190,6 +190,7 @@ class ChatSession(BaseModel):
     target_url: str = Field("", description="Target URL for hunt sessions")
     plan_id: str = Field("", description="Plan ID used to auto-run this session")
     hunt_status: str = Field("idle", description="Hunt status: idle | running | done | error")
+    enabled_tools: Optional[List[str]] = Field(None, description="Enabled tool names; null means all tools enabled")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -208,6 +209,7 @@ class ChatSessionUpdate(BaseModel):
     name: Optional[str] = None
     scope: Optional[str] = None
     scope_data: Optional[Dict[str, Any]] = None
+    enabled_tools: Optional[List[str]] = None
 
 
 class ChatSendRequest(BaseModel):
@@ -216,6 +218,8 @@ class ChatSendRequest(BaseModel):
     model: Optional[str] = None
     session_id: Optional[str] = None  # for session-based chat
     max_tool_calls: Optional[int] = None  # max tool-call iterations; None = use server default
+    # NOTE: enabled_tools is intentionally NOT a field here.
+    # It is always loaded from the session DB record to prevent enforcement bypass.
 
 
 # ---------------------------------------------------------------------------
@@ -389,3 +393,39 @@ class MfaDisableRequest(BaseModel):
     """Payload for POST /api/auth/mfa/disable."""
     current_password: str = Field(..., description="Current instance password (confirmation)")
     code: str = Field(..., min_length=6, max_length=6, description="6-digit TOTP code")
+
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+
+class SourceKind(str, Enum):
+    documentation = "documentation"
+    source_code   = "source_code"
+    openapi       = "openapi"
+    note          = "note"
+    other         = "other"
+
+
+class SourceMeta(BaseModel):
+    """Metadata for a source file (no content — content lives on disk)."""
+    filename: str = Field(..., description="Filename as stored on disk")
+    name: str = Field(..., description="Display name (derived from filename)")
+    kind: SourceKind = Field(SourceKind.other, description="Source kind")
+    size: int = Field(0, description="File size in bytes")
+    created_at: str = Field(..., description="ISO-8601 ctime of the file")
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class SourceCreate(BaseModel):
+    """Payload for POST /api/projects/{project_id}/sources (JSON body)."""
+    filename: str = Field(..., description="Desired filename, e.g. 'swagger.yaml'")
+    kind: SourceKind = Field(SourceKind.other, description="Source kind")
+    content: str = Field(..., description="Full text content of the source")
+
+
+class SourceRename(BaseModel):
+    """Payload for PATCH /api/projects/{project_id}/sources/{filename} — rename only."""
+    new_filename: str = Field(..., description="New filename")

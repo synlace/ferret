@@ -8,6 +8,7 @@ export interface WorkspaceSession {
   target_url?: string
   plan_id?: string
   hunt_status?: string
+  enabled_tools?: string[] | null
 }
 
 export interface ChatMsg {

@@ -55,6 +55,7 @@ export default function HistoryPage() {
 
   // ── Single source of truth for all filtering ──────────────────────────────
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
   const [filterOpen, setFilterOpen] = useState(false)
 
   // Pagination state
@@ -91,6 +92,8 @@ export default function HistoryPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(-1)
   const historyPanelRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const tabResetRef = useRef<HTMLDivElement>(null)
 
   // Filtered suggestions: when query is non-empty, show matching history; when empty show all
   const historySuggestions = useMemo(() => {
@@ -98,6 +101,38 @@ export default function HistoryPage() {
     if (!q) return searchHistory
     return searchHistory.filter(h => h.toLowerCase().includes(q))
   }, [searchQuery, searchHistory])
+
+  // Auto-focus search bar on mount
+  useEffect(() => { searchInputRef.current?.focus() }, [])
+
+  // When nav Escape fires, focus the search bar directly
+  useEffect(() => {
+    const handler = () => { searchInputRef.current?.focus() }
+    document.addEventListener("nav-escape", handler)
+    return () => document.removeEventListener("nav-escape", handler)
+  }, [])
+
+  // Restore focus to search bar on any click that isn't on a focusable input element
+  useEffect(() => {
+    const FOCUS_SELECTORS = [
+      'textarea',
+      'input[type="text"]',
+      'input[type="search"]',
+      'input:not([type])',
+      'select',
+      '[contenteditable]',
+    ]
+    const handler = (e: MouseEvent) => {
+      const input = searchInputRef.current
+      if (!input) return
+      const target = e.target as HTMLElement
+      const needsOwnFocus = FOCUS_SELECTORS.some(sel => target.closest(sel))
+      if (needsOwnFocus) return
+      setTimeout(() => { searchInputRef.current?.focus() }, 0)
+    }
+    document.addEventListener("mousedown", handler, true)
+    return () => document.removeEventListener("mousedown", handler, true)
+  }, [])
 
   // Close history dropdown on outside click
   useEffect(() => {
@@ -117,11 +152,17 @@ export default function HistoryPage() {
       .catch(() => {})
   }, [activeProjectId])
 
+  // Debounce searchQuery → debouncedQuery (300 ms) to avoid re-fetching on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
   // ------------------------------------------------------------------
-  // Parsed query (derived from searchQuery)
+  // Parsed query (derived from debouncedQuery for fetch; searchQuery for UI)
   // ------------------------------------------------------------------
 
-  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery])
+  const parsedQuery = useMemo(() => parseQuery(debouncedQuery), [debouncedQuery])
 
   // ------------------------------------------------------------------
   // Data fetching
@@ -152,7 +193,7 @@ export default function HistoryPage() {
   // Reset to page 1 whenever filters or page size change
   useEffect(() => {
     setPage(1)
-  }, [searchQuery, pageSize, activeProjectId])
+  }, [debouncedQuery, pageSize, activeProjectId])
 
   // Initial fetch on mount / filter change
   useEffect(() => {
@@ -446,6 +487,8 @@ export default function HistoryPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
+      {/* Hidden sentinel: focused on Esc to reset tab sequence back to tabIndex=1 */}
+      <div ref={tabResetRef} tabIndex={-1} className="sr-only" aria-hidden="true" />
       {/* Maximized detail overlay */}
       {maximizedRequest && (
         <div className="absolute inset-0 z-20 bg-neutral-950 flex flex-col">
@@ -493,15 +536,16 @@ export default function HistoryPage() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-brand-400 hover:bg-transparent" onClick={fetchRequests} disabled={loading}>
+          <Button tabIndex={-1} variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-brand-400 hover:bg-transparent" onClick={fetchRequests} disabled={loading}>
             {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
             Refresh
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-brand-400 hover:bg-transparent">
+          <Button tabIndex={-1} variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-brand-400 hover:bg-transparent">
             <Download className="w-3 h-3 mr-1" />
             Export
           </Button>
           <Button
+            tabIndex={-1}
             variant="ghost" size="sm"
             className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20"
             onClick={handleClearHistory}
@@ -531,8 +575,10 @@ export default function HistoryPage() {
       <div className="flex border-b border-neutral-800 flex-shrink-0">
         <div className="relative flex-1">
           <Input
+            ref={searchInputRef}
             placeholder='Search... or use qualifiers: method:GET status:4xx host:*api* mime:json -ext:js'
             value={searchQuery}
+            tabIndex={1}
             onChange={(e) => { setSearchQuery(e.target.value); setHistoryIndex(-1) }}
             onKeyDown={(e) => {
               if (historyOpen && historySuggestions.length > 0) {
@@ -547,12 +593,16 @@ export default function HistoryPage() {
                 if (e.key === "Escape") { setHistoryOpen(false); setHistoryIndex(-1); return }
               } else if (e.key === "Enter" && searchQuery.trim()) {
                 pushHistory(searchQuery)
+              } else if (e.key === "Escape") {
+                searchInputRef.current?.blur()
+                tabResetRef.current?.focus()
               }
             }}
-            className="h-8 text-xs bg-neutral-900 border-0 text-white w-full rounded-none focus-visible:ring-0 font-mono placeholder:font-sans placeholder:text-neutral-600 pr-7"
+            className="h-8 text-xs bg-neutral-900 border border-transparent text-white w-full rounded-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-brand-500 font-mono placeholder:font-sans placeholder:text-neutral-600 pr-7"
           />
           {searchQuery && (
             <button
+              tabIndex={-1}
               onClick={() => { setSearchQuery(""); setHistoryOpen(false) }}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors"
               title="Clear search"
@@ -562,6 +612,7 @@ export default function HistoryPage() {
           )}
         </div>
         <button
+          tabIndex={-1}
           onClick={() => { setHistoryOpen(v => !v); setHistoryIndex(-1) }}
           className={`h-8 px-2.5 flex items-center border-l border-neutral-800 transition-colors flex-shrink-0 ${
             historyOpen ? "bg-brand-500/20 text-brand-400" : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
@@ -571,6 +622,7 @@ export default function HistoryPage() {
           <Clock className="w-3.5 h-3.5" />
         </button>
         <button
+          tabIndex={-1}
           onClick={() => setFilterOpen(v => !v)}
           className={`h-8 px-3 text-xs flex items-center gap-1.5 border-l border-neutral-800 transition-colors flex-shrink-0 ${
             filterOpen || hasActiveFilters

@@ -11,6 +11,7 @@ import { NewProjectModal } from "./NewProjectModal"
 import { PromoteModal } from "./PromoteModal"
 import { EditProjectModal } from "./EditProjectModal"
 import { KeysSheet } from "./KeysSheet"
+import { SourcesSheet } from "./SourcesSheet"
 import { SortKey, SortDir, API_BASE, ApiKey, SpendData, fetchKeys, fetchSpend } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -60,8 +61,9 @@ export default function ProjectsPage() {
   const [showNewModal, setShowNewModal] = useState(false)
   const [promoteTarget, setPromoteTarget] = useState<Project | null>(null)
   const [editTarget, setEditTarget] = useState<Project | null>(null)
-  // keysTarget: which project's sheet is open (null = sheet closed)
+  // keysTarget / sourcesTarget: which project's sheet is open (null = sheet closed)
   const [keysTarget, setKeysTarget] = useState<Project | null>(null)
+  const [sourcesTarget, setSourcesTarget] = useState<Project | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("created_at")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
@@ -334,6 +336,7 @@ export default function ProjectsPage() {
                   onEdit={setEditTarget}
                   onDelete={handleDelete}
                   onKeys={setKeysTarget}
+                  onSources={setSourcesTarget}
                   onPromote={setPromoteTarget}
                 />
               ))
@@ -359,7 +362,7 @@ export default function ProjectsPage() {
         />
       )}
 
-      {/* ── Keys sheet — always mounted, slides up/down ──────────── */}
+      {/* ── Keys sheet ───────────────────────────────────────────── */}
       <KeysSheet
         open={keysTarget !== null}
         projectId={keysTarget?.id ?? ""}
@@ -367,6 +370,14 @@ export default function ProjectsPage() {
         initialKeys={keysTarget ? (projectKeys[keysTarget.id] ?? undefined) : undefined}
         initialSpend={keysTarget ? (projectSpend[keysTarget.id] ?? null) : null}
         onClose={() => setKeysTarget(null)}
+      />
+
+      {/* ── Sources sheet ────────────────────────────────────────── */}
+      <SourcesSheet
+        open={sourcesTarget !== null}
+        projectId={sourcesTarget?.id ?? ""}
+        projectName={sourcesTarget?.name ?? ""}
+        onClose={() => setSourcesTarget(null)}
       />
     </div>
   )

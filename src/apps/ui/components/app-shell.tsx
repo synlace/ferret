@@ -57,6 +57,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
   const { logout } = useAuth()
+  const navRef = useRef<HTMLElement>(null)
 
   // State is only used for drag logic / collapsed detection.
   // The visual width is driven by the CSS custom property --sidebar-w which is
@@ -214,6 +215,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 href="https://synlace.ai"
                 target="_blank"
                 rel="noopener noreferrer"
+                tabIndex={-1}
                 className="text-neutral-500 hover:text-brand-400 text-[10px] transition-colors mt-0.5 flex items-center gap-1 whitespace-nowrap"
               >
                 by Synlace
@@ -236,13 +238,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <ProjectSwitcher collapsed={collapsed} onOpen={() => setProjectOpen(true)} />
 
         {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto">
-          {navItems.map(({ href, icon: Icon, label }) => {
+        <nav
+          ref={navRef}
+          className="flex-1 overflow-y-auto"
+          onKeyDown={e => {
+            if (e.key === "Escape") {
+              ;(document.activeElement as HTMLElement)?.blur()
+              document.dispatchEvent(new CustomEvent("nav-escape"))
+              return
+            }
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
+            const links = Array.from(navRef.current?.querySelectorAll<HTMLAnchorElement>("a[tabindex]") ?? [])
+            const idx = links.indexOf(document.activeElement as HTMLAnchorElement)
+            if (idx === -1) return
+            e.preventDefault()
+            const next = e.key === "ArrowDown" ? links[idx + 1] : links[idx - 1]
+            next?.focus()
+          }}
+        >
+          {navItems.map(({ href, icon: Icon, label }, i) => {
             const active = pathname === href || pathname.startsWith(href + "/")
             return (
               <Link
                 key={href}
                 href={href}
+                tabIndex={10 + i}
                 className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors border-b border-neutral-800/60 overflow-hidden ${
                   active
                     ? "bg-brand-500/20 text-brand-400 border-l-2 border-l-brand-500"
@@ -267,6 +287,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-neutral-800 flex-shrink-0">
           <button
             onClick={() => setSigintOpen(true)}
+            tabIndex={-1}
             className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-neutral-800 overflow-hidden ${
               unreadCount > 0 ? "text-brand-400" : "text-neutral-400 hover:text-white"
             }`}
@@ -294,6 +315,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-neutral-800 flex-shrink-0">
           <button
             onClick={logout}
+            tabIndex={-1}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors
                        text-neutral-500 hover:text-red-400 hover:bg-neutral-800 overflow-hidden"
             title="Sign out"

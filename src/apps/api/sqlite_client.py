@@ -175,6 +175,7 @@ class SQLiteClient(ProjectsMixin):
                 target_url    TEXT DEFAULT '',
                 plan_id       TEXT DEFAULT '',
                 hunt_status   TEXT DEFAULT 'idle',
+                enabled_tools TEXT DEFAULT NULL,
                 created_at    TEXT NOT NULL
             );
 
@@ -329,6 +330,7 @@ class SQLiteClient(ProjectsMixin):
             "ALTER TABLE chat_sessions ADD COLUMN target_url TEXT DEFAULT ''",
             "ALTER TABLE chat_sessions ADD COLUMN plan_id TEXT DEFAULT ''",
             "ALTER TABLE chat_sessions ADD COLUMN hunt_status TEXT DEFAULT 'idle'",
+            "ALTER TABLE chat_sessions ADD COLUMN enabled_tools TEXT DEFAULT NULL",
         ]:
             try:
                 await self._db.execute(migration)

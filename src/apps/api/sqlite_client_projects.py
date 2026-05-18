@@ -105,12 +105,13 @@ class ProjectsMixin:
 
     async def create_chat_session(self, session: ChatSession) -> None:
         import json as _json
+        _enabled = getattr(session, "enabled_tools", None)
         await self._db.execute(
             """
             INSERT INTO chat_sessions
-                (id, name, scope, scope_data, workspace_dir, target_url, plan_id, hunt_status, created_at, project_id)
+                (id, name, scope, scope_data, workspace_dir, target_url, plan_id, hunt_status, enabled_tools, created_at, project_id)
             VALUES
-                (:id, :name, :scope, :scope_data, :workspace_dir, :target_url, :plan_id, :hunt_status, :created_at, :project_id)
+                (:id, :name, :scope, :scope_data, :workspace_dir, :target_url, :plan_id, :hunt_status, :enabled_tools, :created_at, :project_id)
             """,
             {
                 "id": session.id,
@@ -121,11 +122,25 @@ class ProjectsMixin:
                 "target_url": getattr(session, "target_url", "") or "",
                 "plan_id": getattr(session, "plan_id", "") or "",
                 "hunt_status": getattr(session, "hunt_status", "idle") or "idle",
+                "enabled_tools": _json.dumps(_enabled) if _enabled is not None else None,
                 "created_at": session.created_at.isoformat(),
                 "project_id": session.project_id,
             },
         )
         await self._db.commit()
+
+    @staticmethod
+    def _deserialise_session(row) -> Dict[str, Any]:
+        """Convert a raw DB row to a dict, deserialising JSON-encoded columns."""
+        import json as _json
+        d = dict(row)
+        for col in ("scope_data", "enabled_tools"):
+            if isinstance(d.get(col), str):
+                try:
+                    d[col] = _json.loads(d[col])
+                except Exception:
+                    pass
+        return d
 
     async def get_chat_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Return a single chat session by ID, or None if not found."""
@@ -133,7 +148,7 @@ class ProjectsMixin:
             "SELECT * FROM chat_sessions WHERE id = ?", (session_id,)
         ) as cur:
             row = await cur.fetchone()
-        return dict(row) if row else None
+        return self._deserialise_session(row) if row else None
 
     async def get_chat_sessions(self, project_id: str = "temp") -> List[Dict[str, Any]]:
         async with self._db.execute(
@@ -141,18 +156,21 @@ class ProjectsMixin:
             (project_id,),
         ) as cur:
             rows = await cur.fetchall()
-        return [dict(r) for r in rows]
+        return [self._deserialise_session(r) for r in rows]
 
     async def update_chat_session(self, session_id: str, updates: dict) -> bool:
-        """Apply a partial update to a chat session. Allowed keys: name, scope, scope_data."""
+        """Apply a partial update to a chat session. Allowed keys: name, scope, scope_data, enabled_tools."""
         import json as _json
-        allowed = {"name", "scope", "scope_data"}
+        allowed = {"name", "scope", "scope_data", "enabled_tools"}
         filtered = {k: v for k, v in updates.items() if k in allowed}
         if not filtered:
             return False
-        # scope_data must be JSON-serialised
+        # scope_data and enabled_tools must be JSON-serialised
         if "scope_data" in filtered:
             filtered["scope_data"] = _json.dumps(filtered["scope_data"]) if filtered["scope_data"] else None
+        if "enabled_tools" in filtered:
+            v = filtered["enabled_tools"]
+            filtered["enabled_tools"] = _json.dumps(v) if v is not None else None
         set_clause = ", ".join(f"{k} = :{k}" for k in filtered)
         filtered["session_id"] = session_id
         async with self._db.execute(
