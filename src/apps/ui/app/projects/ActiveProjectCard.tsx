@@ -23,7 +23,7 @@ export function ActiveProjectCard({ project }: { project: Project }) {
     <div className="flex items-center h-8 border-b border-neutral-800 bg-neutral-900 flex-shrink-0 overflow-x-auto scrollbar-none text-xs">
       {/* Identity */}
       <div className="flex items-center gap-1.5 px-3 h-full border-r border-neutral-800 flex-shrink-0">
-        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
+        <span className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" />
         <span className="text-base leading-none flex-shrink-0">{project.emoji || "📁"}</span>
         <span className="font-semibold text-white truncate max-w-36">{project.name}</span>
       </div>
@@ -48,7 +48,7 @@ export function ActiveProjectCard({ project }: { project: Project }) {
           <div className="flex items-center gap-1.5 px-3 h-full border-r border-neutral-800 flex-shrink-0">
             <AlertTriangle className="w-3 h-3 text-neutral-600 flex-shrink-0" />
             <span className="text-neutral-500">Findings</span>
-            <span className={`font-mono ${stats.findings > 0 ? "text-orange-400" : "text-white"}`}>
+            <span className={`font-mono ${stats.findings > 0 ? "text-brand-400" : "text-white"}`}>
               {stats.findings.toLocaleString()}
             </span>
           </div>

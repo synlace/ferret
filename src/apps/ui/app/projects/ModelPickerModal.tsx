@@ -98,7 +98,7 @@ export function ModelPickerModal({
   const ModelRow = ({ m }: { m: OpenRouterModel }) => (
     <button
       onClick={() => { onSelect(m.id); onClose() }}
-      className={`w-full text-left px-3 py-2 hover:bg-neutral-700 transition-colors flex items-center gap-2 ${currentModel === m.id ? "bg-orange-500/10" : ""}`}
+      className={`w-full text-left px-3 py-2 hover:bg-neutral-700 transition-colors flex items-center gap-2 ${currentModel === m.id ? "bg-brand-500/10" : ""}`}
     >
       <button onClick={(e: React.MouseEvent) => toggleFav(m.id, e)} className="flex-shrink-0 text-neutral-500 hover:text-yellow-400">
         <Star className="w-3.5 h-3.5" fill={favourites.includes(m.id) ? "currentColor" : "none"} color={favourites.includes(m.id) ? "#facc15" : undefined} />
@@ -111,7 +111,7 @@ export function ModelPickerModal({
         {m.context_length > 0 && <div className="text-[10px] text-neutral-400">{(m.context_length / 1000).toFixed(0)}K ctx</div>}
         {m.pricing && <div className="text-[10px] text-neutral-500">{fmt(m.pricing.prompt)}</div>}
       </div>
-      {currentModel === m.id && <span className="text-[10px] text-orange-400 flex-shrink-0">✓</span>}
+      {currentModel === m.id && <span className="text-[10px] text-brand-400 flex-shrink-0">✓</span>}
     </button>
   )
 

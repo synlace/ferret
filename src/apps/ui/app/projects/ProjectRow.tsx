@@ -35,7 +35,7 @@ export function ProjectRow({
   return (
     <tr
       className={`border-b border-neutral-800/60 hover:bg-neutral-800/30 transition-colors ${
-        isActive ? "bg-orange-500/[0.03]" : ""
+        isActive ? "bg-brand-500/[0.03]" : ""
       }`}
     >
       {/* Emoji */}
@@ -50,7 +50,7 @@ export function ProjectRow({
         <div className="flex items-center gap-1.5 mb-0.5">
           <span className="text-sm font-medium text-neutral-100">{project.name}</span>
           {isActive && (
-            <span className="text-[10px] bg-orange-500/15 text-orange-400 border border-orange-500/30 rounded px-1.5 py-0.5 leading-none">
+            <span className="text-[10px] bg-brand-500/15 text-brand-400 border border-brand-500/30 rounded px-1.5 py-0.5 leading-none">
               Active
             </span>
           )}
@@ -93,7 +93,7 @@ export function ProjectRow({
 
       {/* Findings */}
       <td className="px-3 py-2.5 text-right">
-        <span className={`text-xs font-mono ${stats.findings > 0 ? "text-orange-400" : "text-neutral-700"}`}>
+        <span className={`text-xs font-mono ${stats.findings > 0 ? "text-brand-400" : "text-neutral-700"}`}>
           {stats.findings.toLocaleString()}
         </span>
       </td>
@@ -114,7 +114,7 @@ export function ProjectRow({
           <button
             onClick={() => onKeys(project)}
             title="API Keys"
-            className="p-1.5 rounded text-neutral-600 hover:text-orange-400 hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded text-neutral-600 hover:text-brand-400 hover:bg-neutral-800 transition-colors"
           >
             <Key className="w-3.5 h-3.5" />
           </button>
@@ -134,8 +134,8 @@ export function ProjectRow({
             title={isActive ? "Active project" : "Set as active"}
             className={`p-1.5 rounded transition-colors ${
               isActive
-                ? "text-orange-500 bg-orange-500/10"
-                : "text-neutral-600 hover:text-orange-400 hover:bg-neutral-800"
+                ? "text-brand-500 bg-brand-500/10"
+                : "text-neutral-600 hover:text-brand-400 hover:bg-neutral-800"
             }`}
           >
             <Star className="w-3.5 h-3.5" fill={isActive ? "currentColor" : "none"} />

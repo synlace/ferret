@@ -374,7 +374,7 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
             {/* Request pane */}
             <div className="flex flex-col min-h-0 min-w-0" style={{ width: `${splitPct}%` }}>
               <div className="px-4 h-8 bg-neutral-900 border-b border-neutral-700 flex-shrink-0 flex items-center">
-                <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">Request</span>
+                <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider">Request</span>
               </div>
               <div ref={reqPaneRef} className="flex-1 min-h-0 overflow-hidden">
                 <CodeMirror
@@ -389,7 +389,7 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
             {/* Horizontal drag handle */}
             <div
               onMouseDown={onDragStart}
-              className="w-1 flex-shrink-0 bg-neutral-700 hover:bg-orange-500 cursor-col-resize transition-colors select-none"
+              className="w-1 flex-shrink-0 bg-neutral-700 hover:bg-brand-500 cursor-col-resize transition-colors select-none"
             />
             {/* Response pane */}
             <div className="flex flex-col min-h-0 min-w-0 flex-1">
@@ -420,7 +420,7 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
       {!maximized && (
         <div
           onMouseDown={onHeightDragStart}
-          className="h-1 flex-shrink-0 bg-neutral-700 hover:bg-orange-500 cursor-row-resize transition-colors select-none"
+          className="h-1 flex-shrink-0 bg-neutral-700 hover:bg-brand-500 cursor-row-resize transition-colors select-none"
           title="Drag to resize"
         />
       )}

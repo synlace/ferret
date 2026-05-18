@@ -1,10 +1,10 @@
 /**
  * app-shell.spec.js
  *
- * Smoke tests for the FERRET app shell (sidebar) DOM structure.
+ * Smoke tests for the Ferret app shell (sidebar) DOM structure.
  *
  * Checks:
- *   1. FERRET branding ("FERRET" heading) is visible in the sidebar.
+ *   1. Ferret branding ("Ferret" heading) is visible in the sidebar.
  *   2. Version/subtitle text is present.
  *   3. All 9 nav items are rendered.
  *   4. The collapse/expand toggle button is present.
@@ -16,10 +16,10 @@
 import { test, expect } from './fixtures.js';
 
 test.describe('App shell — sidebar structure', () => {
-  test('FERRET branding is visible', async ({ page }) => {
+  test('Ferret branding is visible', async ({ page }) => {
     const heading = page.locator('aside h1');
     await expect(heading).toBeVisible({ timeout: 5000 });
-    await expect(heading).toHaveText('FERRET');
+    await expect(heading).toHaveText('Ferret');
   });
 
   test('version subtitle is visible', async ({ page }) => {
@@ -58,7 +58,7 @@ test.describe('App shell — sidebar structure', () => {
     const toggle = page.locator('aside button[title="Collapse sidebar"]');
     await toggle.click();
 
-    // After collapse, the FERRET heading should be hidden
+    // After collapse, the Ferret heading should be hidden
     const heading = page.locator('aside h1');
     await expect(heading).toBeHidden({ timeout: 3000 });
   });

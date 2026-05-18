@@ -49,10 +49,10 @@ export function PromoteModal({ onClose, onPromote }: PromoteModalProps) {
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Project name..."
-            className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-orange-500" autoFocus />
+            className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-brand-500" autoFocus />
           <div className="flex gap-2">
             <Button type="submit" disabled={loading || !name.trim()}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50">
+              className="flex-1 bg-brand-500 hover:bg-brand-600 text-neutral-900 disabled:opacity-50">
               {loading ? "Copying..." : "Copy to Project"}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}

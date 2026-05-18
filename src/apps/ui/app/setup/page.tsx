@@ -319,9 +319,9 @@ export default function SetupPage() {
 
         {/* Header — mascot to the side of text — always at the same Y position */}
         <div className="flex items-center gap-4 mb-8">
-          <Image src="/ferret.png" alt="FERRET" width={56} height={56} className="rounded-xl flex-shrink-0" />
+          <Image src="/ferret.png" alt="Ferret" width={56} height={56} className="rounded-xl flex-shrink-0" />
           <div>
-            <h1 className="text-2xl font-bold text-white">Welcome to FERRET</h1>
+            <h1 className="text-2xl font-bold text-white">Welcome to Ferret</h1>
             <p className="mt-0.5 text-sm text-neutral-400">
               Set up your AI provider to get started
             </p>
@@ -337,18 +337,18 @@ export default function SetupPage() {
               <div key={label} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center gap-1">
                   <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors
-                    ${done   ? "bg-orange-500 text-white"
-                    : active ? "border-2 border-orange-500 text-orange-400"
+                    ${done   ? "bg-brand-500 text-neutral-900"
+                    : active ? "border-2 border-brand-500 text-brand-400"
                     :          "border border-neutral-700 text-neutral-600"}`}
                   >
                     {done ? "✓" : i + 1}
                   </div>
-                  <span className={`text-[10px] ${active ? "text-orange-400" : done ? "text-neutral-400" : "text-neutral-600"}`}>
+                  <span className={`text-[10px] ${active ? "text-brand-400" : done ? "text-neutral-400" : "text-neutral-600"}`}>
                     {label}
                   </span>
                 </div>
                 {i < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-2 mb-4 ${step > i ? "bg-orange-500" : "bg-neutral-700"}`} />
+                  <div className={`flex-1 h-px mx-2 mb-4 ${step > i ? "bg-brand-500" : "bg-neutral-700"}`} />
                 )}
               </div>
             )
@@ -369,8 +369,8 @@ export default function SetupPage() {
             </h2>
             <p className="mt-0.5 text-xs text-neutral-500 leading-tight">
               {step === 0 && "Protect your Ferret instance with a password. Minimum 8 characters."}
-              {step === 1 && "Select how FERRET calls the AI for chat, annotations, and findings."}
-              {step === 2 && (provider.local ? "No API key required — FERRET connects directly to your local server." : "Enter your API key to authenticate with the provider.")}
+              {step === 1 && "Select how Ferret calls the AI for chat, annotations, and findings."}
+              {step === 2 && (provider.local ? "No API key required — Ferret connects directly to your local server." : "Enter your API key to authenticate with the provider.")}
               {step === 3 && "Used for all AI features. You can change it per-project later."}
               {step === 4 && "\u00a0"}
             </p>
@@ -395,7 +395,7 @@ export default function SetupPage() {
                     autoComplete="new-password"
                     className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
                                text-neutral-100 text-sm placeholder-neutral-600
-                               focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                               focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
                   />
                   <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300">
@@ -417,7 +417,7 @@ export default function SetupPage() {
                     autoComplete="new-password"
                     className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
                                text-neutral-100 text-sm placeholder-neutral-600
-                               focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                               focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
                   />
                   <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300">
@@ -436,7 +436,7 @@ export default function SetupPage() {
                 <button
                   onClick={advanceFromPassword}
                   disabled={!password || !confirmPassword}
-                  className="rounded-md bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40 transition-colors"
+                  className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
                   Continue →
                 </button>
@@ -458,7 +458,7 @@ export default function SetupPage() {
                       onClick={() => selectProvider(p)}
                       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all w-full
                         ${provider.key === p.key
-                          ? "border-orange-500 bg-orange-500/10 text-white"
+                          ? "border-brand-500 bg-brand-500/10 text-neutral-900"
                           : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
                         }`}
                     >
@@ -469,7 +469,7 @@ export default function SetupPage() {
                         <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">{p.tag}</span>
                       </span>
                       {provider.key === p.key && (
-                        <span className="text-orange-400 text-xs flex-shrink-0">✓</span>
+                        <span className="text-brand-400 text-xs flex-shrink-0">✓</span>
                       )}
                     </button>
                   ))}
@@ -485,7 +485,7 @@ export default function SetupPage() {
                       onClick={() => selectProvider(p)}
                       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all w-full
                         ${provider.key === p.key
-                          ? "border-orange-500 bg-orange-500/10 text-white"
+                          ? "border-brand-500 bg-brand-500/10 text-neutral-900"
                           : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
                         }`}
                     >
@@ -496,7 +496,7 @@ export default function SetupPage() {
                         <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">{p.tag}</span>
                       </span>
                       {provider.key === p.key && (
-                        <span className="text-orange-400 text-xs flex-shrink-0">✓</span>
+                        <span className="text-brand-400 text-xs flex-shrink-0">✓</span>
                       )}
                     </button>
                   ))}
@@ -512,7 +512,7 @@ export default function SetupPage() {
                 </button>
                 <button
                   onClick={() => setStep(2)}
-                  className="rounded-md bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-400 transition-colors"
+                  className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 transition-colors"
                 >
                   Continue →
                 </button>
@@ -546,7 +546,7 @@ export default function SetupPage() {
                       value={baseUrl}
                       onChange={e => setBaseUrl(e.target.value)}
                       placeholder={provider.defaultBaseUrl}
-                      className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-orange-500 focus:outline-none"
+                      className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                     />
                     <p className="text-xs text-neutral-500">
                       Make sure {provider.name} is running and accessible from this container.
@@ -584,13 +584,13 @@ export default function SetupPage() {
                     onChange={e => setApiKey(e.target.value)}
                     placeholder="sk-..."
                     autoComplete="off"
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-orange-500 focus:outline-none"
+                    className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                   />
                   <p className="text-xs text-neutral-500">
                     Your key is stored locally and only sent to the provider&apos;s API.
                     {provider.key === "openrouter" && (
                       <> Get a free key at{" "}
-                        <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-orange-400 hover:underline">
+                        <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-brand-400 hover:underline">
                           openrouter.ai/keys
                         </a>.
                       </>
@@ -612,11 +612,11 @@ export default function SetupPage() {
                     onChange={e => setProvisioningKey(e.target.value)}
                     placeholder="sk-or-v1-... (master account key)"
                     autoComplete="off"
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-orange-500 focus:outline-none"
+                    className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                   />
                   <p className="text-xs text-neutral-500">
                     Enables auto-creation of per-project sub-keys via the{" "}
-                    <a href="https://openrouter.ai/docs/provisioned-keys" target="_blank" rel="noreferrer" className="text-orange-400 hover:underline">
+                    <a href="https://openrouter.ai/docs/provisioned-keys" target="_blank" rel="noreferrer" className="text-brand-400 hover:underline">
                       OpenRouter provisioning API
                     </a>. Leave blank to use your main key for all projects.
                   </p>
@@ -664,7 +664,7 @@ export default function SetupPage() {
                 <button
                   onClick={() => setStep(3)}
                   disabled={!provider.local && !testResult?.ok}
-                  className="rounded-md bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40 transition-colors"
+                  className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
                   Continue →
                 </button>
@@ -682,7 +682,7 @@ export default function SetupPage() {
                 <button
                   type="button"
                   onClick={() => setShowModelPicker(true)}
-                  className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-left flex items-center justify-between hover:border-neutral-500 focus:border-orange-500 focus:outline-none transition-colors"
+                  className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-left flex items-center justify-between hover:border-neutral-500 focus:border-brand-500 focus:outline-none transition-colors"
                 >
                   <span className={model ? "text-white" : "text-neutral-500"}>
                     {model || "Select a model..."}
@@ -736,7 +736,7 @@ export default function SetupPage() {
                 <button
                   onClick={saveSetup}
                   disabled={saving || !model}
-                  className="rounded-md bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-40 transition-colors"
+                  className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
                   {saving ? "Saving..." : "Finish setup →"}
                 </button>
@@ -755,7 +755,7 @@ export default function SetupPage() {
               <div>
                 <h3 className="text-lg font-semibold text-white">You&apos;re all set!</h3>
                 <p className="mt-1 text-sm text-neutral-400">
-                  FERRET is configured to use <span className="text-white font-medium">{provider.name}</span> with model{" "}
+                  Ferret is configured to use <span className="text-white font-medium">{provider.name}</span> with model{" "}
                   <span className="text-white font-medium">{model}</span>.
                 </p>
               </div>
@@ -774,9 +774,9 @@ export default function SetupPage() {
               </p>
               <button
                 onClick={() => router.replace("/login")}
-                className="rounded-md bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 transition-colors"
+                className="rounded-md bg-brand-500 px-6 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-brand-400 transition-colors"
               >
-                Sign in to FERRET →
+                Sign in to Ferret →
               </button>
             </div>
           )}

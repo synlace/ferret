@@ -30,13 +30,13 @@ export function MarkdownContent({ content }: { content: string }) {
             </div>
           )
         }
-        return <code className="bg-neutral-800 px-1 text-orange-300 text-xs" {...props}>{children}</code>
+        return <code className="bg-neutral-800 px-1 text-brand-300 text-xs" {...props}>{children}</code>
       },
       blockquote({ children }: MdProps) {
-        return <blockquote className="border-l-2 border-orange-500 pl-3 my-2 text-neutral-400 italic">{children}</blockquote>
+        return <blockquote className="border-l-2 border-brand-500 pl-3 my-2 text-neutral-400 italic">{children}</blockquote>
       },
       a({ href, children }: MdProps) {
-        return <a href={href} target="_blank" rel="noopener noreferrer" className="text-orange-400 underline hover:text-orange-300">{children}</a>
+        return <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand-400 underline hover:text-brand-300">{children}</a>
       },
       table({ children }: MdProps) {
         return <div className="overflow-x-auto my-2"><table className="text-xs border-collapse w-full">{children}</table></div>

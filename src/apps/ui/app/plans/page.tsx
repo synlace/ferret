@@ -30,7 +30,7 @@ const TOOL_TABS: { key: ToolFilter; label: string }[] = [
 ]
 
 const TOOL_BADGE: Record<string, string> = {
-  hunt:   "bg-orange-500/20 text-orange-300 border-orange-500/40",
+  hunt:   "bg-brand-500/20 text-brand-300 border-brand-500/40",
   gnaw:   "bg-blue-500/20 text-blue-300 border-blue-500/40",
   pounce: "bg-purple-500/20 text-purple-300 border-purple-500/40",
   snare:  "bg-green-500/20 text-green-300 border-green-500/40",
@@ -92,7 +92,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
             <input
               autoFocus value={name} onChange={e => setName(e.target.value)}
               placeholder="e.g. OWASP Top 10 Hunt"
-              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-orange-500/60"
+              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-brand-500/60"
             />
           </div>
 
@@ -101,7 +101,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
             <input
               value={description} onChange={e => setDescription(e.target.value)}
               placeholder="Short description of what this plan does"
-              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-orange-500/60"
+              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-brand-500/60"
             />
           </div>
 
@@ -109,7 +109,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
             <label className="text-[10px] text-neutral-500 uppercase tracking-wider block mb-1">Tool</label>
             <select
               value={tool} onChange={e => setTool(e.target.value)}
-              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500/60"
+              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-brand-500/60"
             >
               <option value="hunt">hunt</option>
               <option value="gnaw">gnaw</option>
@@ -124,7 +124,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
               value={prompt} onChange={e => setPrompt(e.target.value)}
               placeholder="System prompt or instructions for the AI agent..."
               rows={8}
-              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-orange-500/60 resize-none font-mono"
+              className="w-full bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-brand-500/60 resize-none font-mono"
             />
           </div>
 
@@ -133,7 +133,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
             <input
               type="number" min={1} max={200} value={maxToolCalls}
               onChange={e => setMaxToolCalls(Math.max(1, Math.min(200, Number(e.target.value))))}
-              className="w-24 bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500/60 text-center"
+              className="w-24 bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-brand-500/60 text-center"
             />
           </div>
         </div>
@@ -142,7 +142,7 @@ function PlanModal({ plan, projectId, onClose, onSaved }: PlanModalProps) {
         <div className="flex gap-2 px-4 py-3 border-t border-neutral-800 flex-shrink-0">
           <button
             onClick={handleSave} disabled={saving}
-            className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white text-sm py-2 transition-colors flex items-center justify-center gap-1.5"
+            className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-neutral-900 text-sm py-2 transition-colors flex items-center justify-center gap-1.5"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {saving ? "Saving..." : "Save Plan"}
@@ -195,7 +195,7 @@ function PlanCard({ plan, onEdit, onDelete, onClone }: PlanCardProps) {
           {plan.is_builtin ? (
             <button
               onClick={onClone}
-              className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-orange-400 border border-neutral-700 hover:border-orange-500/40 px-2 py-0.5 transition-colors"
+              className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-brand-400 border border-neutral-700 hover:border-brand-500/40 px-2 py-0.5 transition-colors"
               title="Clone to edit"
             >
               <Copy className="w-2.5 h-2.5" />Clone
@@ -204,7 +204,7 @@ function PlanCard({ plan, onEdit, onDelete, onClone }: PlanCardProps) {
             <>
               <button
                 onClick={onEdit}
-                className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-orange-400 border border-neutral-700 hover:border-orange-500/40 px-2 py-0.5 transition-colors"
+                className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-brand-400 border border-neutral-700 hover:border-brand-500/40 px-2 py-0.5 transition-colors"
                 title="Edit plan"
               >
                 <Pencil className="w-2.5 h-2.5" />Edit
@@ -270,7 +270,7 @@ export default function PlansPage() {
         <span className="text-xs font-semibold text-white">Plans</span>
         <button
           onClick={() => setEditingPlan(null)}
-          className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-orange-400 border border-neutral-800 hover:border-orange-500/40 px-2 py-1 transition-colors"
+          className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-brand-400 border border-neutral-800 hover:border-brand-500/40 px-2 py-1 transition-colors"
         >
           <Plus className="w-3 h-3" />New Plan
         </button>
@@ -284,7 +284,7 @@ export default function PlansPage() {
             onClick={() => setToolFilter(tab.key)}
             className={`px-3 py-2 text-[10px] font-medium transition-colors border-b-2 -mb-px ${
               toolFilter === tab.key
-                ? "text-orange-400 border-orange-500"
+                ? "text-brand-400 border-brand-500"
                 : "text-neutral-500 border-transparent hover:text-neutral-300"
             }`}
           >
@@ -300,7 +300,7 @@ export default function PlansPage() {
         )}
         {activeProjectId && loading && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+            <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
           </div>
         )}
         {activeProjectId && !loading && filtered.length === 0 && (
@@ -308,7 +308,7 @@ export default function PlansPage() {
             <p className="text-sm mb-2">No plans yet.</p>
             <button
               onClick={() => setEditingPlan(null)}
-              className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
+              className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
             >
               Create your first plan →
             </button>

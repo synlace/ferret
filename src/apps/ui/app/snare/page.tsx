@@ -636,7 +636,7 @@ export default function SnarePage() {
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-bold text-white">Snare</h1>
           {intercepted.length > 0 && (
-            <span className="px-1.5 py-0.5 bg-orange-900/50 border border-orange-700 text-orange-300 text-[10px] font-mono rounded">
+            <span className="px-1.5 py-0.5 bg-brand-900/50 border border-brand-700 text-brand-300 text-[10px] font-mono rounded">
               {intercepted.length} pending
             </span>
           )}
@@ -655,7 +655,7 @@ export default function SnarePage() {
             className={`h-7 text-xs ${
               snaring
                 ? "text-red-400 hover:text-red-300 hover:bg-red-900/20"
-                : "text-orange-400 hover:text-orange-300 hover:bg-orange-900/20"
+                : "text-brand-400 hover:text-brand-300 hover:bg-brand-900/20"
             }`}
             onClick={handleToggleSnare}
             disabled={togglingSnare}
@@ -679,7 +679,7 @@ export default function SnarePage() {
         >
           <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
             <span className="text-xs font-semibold text-white">Intercepted</span>
-            <ShieldAlert className="w-3 h-3 text-orange-500" />
+            <ShieldAlert className="w-3 h-3 text-brand-500" />
           </div>
           <div className="flex-1 overflow-y-auto">
             {intercepted.length === 0 ? (
@@ -705,18 +705,18 @@ export default function SnarePage() {
                   >
                     <div className="flex items-center gap-1 min-w-0">
                       <span className={`text-[9px] font-bold font-mono flex-shrink-0 ${
-                        isSelected ? "text-orange-400" : methodColor(req.method)
+                        isSelected ? "text-brand-400" : methodColor(req.method)
                       }`}>
                         {req.method}
                       </span>
                       <span className={`flex-1 text-[10px] font-mono truncate min-w-0 ${
-                        isSelected ? "text-orange-300" : "text-neutral-300"
+                        isSelected ? "text-brand-300" : "text-neutral-300"
                       }`} title={req.host}>
                         {req.host}
                       </span>
                       {/* Phase badge */}
                       {phase === "request" ? (
-                        <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-orange-900/40 text-orange-400 border border-orange-800/60">
+                        <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-brand-900/40 text-brand-400 border border-brand-800/60">
                           REQ
                         </span>
                       ) : isWaiting ? (
@@ -743,7 +743,7 @@ export default function SnarePage() {
 
         {/* Sidebar resize handle */}
         <div
-          className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-orange-500 transition-colors cursor-col-resize z-10"
+          className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors cursor-col-resize z-10"
           onMouseDown={handleSidebarDragStart}
         />
 
@@ -762,8 +762,8 @@ export default function SnarePage() {
                   !selectedReq
                     ? "text-neutral-700 cursor-not-allowed"
                     : forwarding
-                      ? "text-orange-400"
-                      : "text-neutral-500 hover:text-orange-400 hover:bg-neutral-700"
+                      ? "text-brand-400"
+                      : "text-neutral-500 hover:text-brand-400 hover:bg-neutral-700"
                 }`}
                 title="Forward request to server"
               >
@@ -858,7 +858,7 @@ export default function SnarePage() {
           <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
             <div className="flex items-center gap-2">
               {editorMode === "request" ? (
-                <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">Request</span>
+                <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider">Request</span>
               ) : pendingResponseId && !response ? (
                 <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider animate-pulse">Waiting...</span>
               ) : (
@@ -933,7 +933,7 @@ export default function SnarePage() {
               />
             ) : editorMode === "response" && pendingResponseId && !response ? (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-neutral-600 text-xs font-mono bg-neutral-950 gap-2">
-                <div className="w-4 h-4 border-2 border-neutral-700 border-t-orange-500 rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-neutral-700 border-t-brand-500 rounded-full animate-spin" />
                 <span>Waiting for server response...</span>
               </div>
             ) : (
@@ -956,7 +956,7 @@ export default function SnarePage() {
           </span>
           <button
             onClick={() => setShowAddRule(v => !v)}
-            className="text-neutral-500 hover:text-orange-400 transition-colors"
+            className="text-neutral-500 hover:text-brand-400 transition-colors"
             title="Add rule"
           >
             <Plus className="w-3 h-3" />
@@ -968,13 +968,13 @@ export default function SnarePage() {
           <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-900/30 flex flex-col gap-1.5">
             <div className="flex gap-1.5">
               <input
-                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-orange-600 placeholder-neutral-600"
+                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-brand-600 placeholder-neutral-600"
                 placeholder="Rule name *"
                 value={newRuleName}
                 onChange={e => setNewRuleName(e.target.value)}
               />
               <select
-                className="bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-orange-600"
+                className="bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-brand-600"
                 value={newRuleMethod}
                 onChange={e => setNewRuleMethod(e.target.value)}
               >
@@ -986,13 +986,13 @@ export default function SnarePage() {
             </div>
             <div className="flex gap-1.5">
               <input
-                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-orange-600 placeholder-neutral-600 font-mono"
+                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-brand-600 placeholder-neutral-600 font-mono"
                 placeholder="Host pattern (regex, e.g. example\.com)"
                 value={newRuleHost}
                 onChange={e => setNewRuleHost(e.target.value)}
               />
               <input
-                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-orange-600 placeholder-neutral-600 font-mono"
+                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-200 text-xs px-2 py-1 rounded focus:outline-none focus:border-brand-600 placeholder-neutral-600 font-mono"
                 placeholder="Path pattern (regex, e.g. /api/.*)"
                 value={newRulePath}
                 onChange={e => setNewRulePath(e.target.value)}
@@ -1010,7 +1010,7 @@ export default function SnarePage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 text-xs text-orange-400 hover:text-orange-300 hover:bg-orange-900/20 px-2"
+                className="h-6 text-xs text-brand-400 hover:text-brand-300 hover:bg-brand-900/20 px-2"
                 onClick={handleAddRule}
                 disabled={addingRule || !newRuleName.trim()}
               >

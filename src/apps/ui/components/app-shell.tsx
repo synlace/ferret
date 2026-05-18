@@ -198,7 +198,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 min-w-0">
             <Image
               src="/ferret.png"
-              alt="FERRET"
+              alt="Ferret"
               width={collapsed ? 24 : 28}
               height={collapsed ? 24 : 28}
               className="rounded flex-shrink-0"
@@ -209,12 +209,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
               }`}
             >
-              <h1 className="text-orange-500 font-bold text-sm tracking-wider whitespace-nowrap">FERRET <span className="text-orange-400/60 font-normal text-[10px]">{process.env.NEXT_PUBLIC_APP_VERSION ?? "dev"}</span></h1>
+              <h1 className="text-brand-500 font-bold text-sm tracking-wider whitespace-nowrap">Ferret <span className="text-brand-400/60 font-normal text-[10px]">{process.env.NEXT_PUBLIC_APP_VERSION ?? "dev"}</span></h1>
               <a
                 href="https://synlace.ai"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-neutral-500 hover:text-orange-400 text-[10px] transition-colors mt-0.5 flex items-center gap-1 whitespace-nowrap"
+                className="text-neutral-500 hover:text-brand-400 text-[10px] transition-colors mt-0.5 flex items-center gap-1 whitespace-nowrap"
               >
                 by Synlace
                 <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
@@ -223,7 +223,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <button
             onClick={toggleCollapse}
-            className="text-neutral-400 hover:text-orange-500 p-1 transition-colors ml-auto flex-shrink-0"
+            className="text-neutral-400 hover:text-brand-500 p-1 transition-colors ml-auto flex-shrink-0"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             <ChevronRight
@@ -245,7 +245,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 href={href}
                 className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors border-b border-neutral-800/60 overflow-hidden ${
                   active
-                    ? "bg-orange-500/20 text-orange-400 border-l-2 border-l-orange-500"
+                    ? "bg-brand-500/20 text-brand-400 border-l-2 border-l-brand-500"
                     : "text-neutral-400 hover:text-white hover:bg-neutral-800"
                 }`}
                 title={collapsed ? label : undefined}
@@ -268,14 +268,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setSigintOpen(true)}
             className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-neutral-800 overflow-hidden ${
-              unreadCount > 0 ? "text-orange-400" : "text-neutral-400 hover:text-white"
+              unreadCount > 0 ? "text-brand-400" : "text-neutral-400 hover:text-white"
             }`}
             title="Latest News"
           >
             <div className="relative flex-shrink-0">
               <Radio className="w-4 h-4" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">
+                <span className="absolute -top-1 -right-1 bg-brand-500 text-neutral-900 text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
@@ -335,7 +335,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Drag handle */}
       <div
         onMouseDown={onDragStart}
-        className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-orange-500/60 cursor-col-resize transition-colors active:bg-orange-500"
+        className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500/60 cursor-col-resize transition-colors active:bg-brand-500"
         title="Drag to resize sidebar"
       />
 

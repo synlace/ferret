@@ -10,7 +10,7 @@ const jetbrainsMono = JetBrainsMono({ subsets: ["latin"], variable: "--font-jetb
 const geistMono = GeistMono({ subsets: ["latin"], variable: "--font-geist-mono" })
 
 export const metadata: Metadata = {
-  title: "FERRET by Synlace — Forensic Analysis & Request Tracker",
+  title: "Ferret by Synlace — Forensic Analysis & Request Tracker",
   description: "MITM proxy by Synlace.ai — forensic analysis and request tracking",
   generator: "v0.app",
   icons: {

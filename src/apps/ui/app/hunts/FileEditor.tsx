@@ -127,7 +127,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
       <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900 flex-shrink-0">
         <FileCode className="w-3.5 h-3.5 text-neutral-500" />
         <span className="text-xs text-neutral-300 font-mono truncate flex-1">{filePath}</span>
-        {isDirty && <span className="text-[10px] text-orange-400">●</span>}
+        {isDirty && <span className="text-[10px] text-brand-400">●</span>}
       </div>
       {loading
         ? <div className="flex-1 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-neutral-500" /></div>
@@ -159,7 +159,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
       </div>
       <pre ref={outputRef} className="flex-1 overflow-y-auto p-3 text-xs font-mono text-neutral-300 bg-neutral-950 whitespace-pre-wrap">
         {runOutput.length === 0 && !running ? <span className="text-neutral-600 italic">No output yet. Click Run to execute.</span> : runOutput.join("\n")}
-        {running && <span className="text-orange-400 animate-pulse">▌</span>}
+        {running && <span className="text-brand-400 animate-pulse">▌</span>}
       </pre>
     </div>
   )
@@ -175,7 +175,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
         <span className="text-sm font-bold text-white font-mono">{fileName}</span>
         <div className="flex-1" />
         <button onClick={() => setWordWrap(w => !w)} title={wordWrap ? "Disable word wrap" : "Enable word wrap"}
-          className={`text-xs transition-colors px-2 py-1 border ${wordWrap ? "text-orange-400 border-orange-500/40 hover:border-orange-400" : "text-neutral-500 border-neutral-700 hover:text-neutral-300 hover:border-neutral-600"}`}>
+          className={`text-xs transition-colors px-2 py-1 border ${wordWrap ? "text-brand-400 border-brand-500/40 hover:border-brand-400" : "text-neutral-500 border-neutral-700 hover:text-neutral-300 hover:border-neutral-600"}`}>
           <WrapText className="w-3.5 h-3.5" />
         </button>
         <button onClick={() => setStacked(s => !s)}
@@ -186,14 +186,14 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
         <Button size="sm" variant="ghost"
-          className={`h-7 text-xs ${isDirty ? "text-orange-400 hover:text-orange-300" : "text-neutral-500"}`}
+          className={`h-7 text-xs ${isDirty ? "text-brand-400 hover:text-brand-300" : "text-neutral-500"}`}
           onClick={handleSave} disabled={saving || !isDirty}>
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
           <span className="ml-1">Save</span>
         </Button>
         {isRunnable && (
           <Button size="sm"
-            className={`h-7 text-xs ${running ? "bg-red-600 hover:bg-red-700" : "bg-orange-500 hover:bg-orange-600"} text-white`}
+            className={`h-7 text-xs ${running ? "bg-red-600 hover:bg-red-700 text-white" : "bg-brand-500 hover:bg-brand-600 text-neutral-900"}`}
             onClick={running ? () => { runAbortRef.current?.abort(); setRunning(false) } : handleRun}>
             {running ? <><Square className="w-3.5 h-3.5 mr-1" />Stop</> : <><Play className="w-3.5 h-3.5 mr-1" />Run</>}
           </Button>
@@ -207,7 +207,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
       ) : (
         <div className="flex flex-1 overflow-hidden">
           <div className="overflow-hidden" style={{ width: `${splitPct}%` }}>{editorPane}</div>
-          <div className="w-1 bg-neutral-800 hover:bg-orange-500/40 flex-shrink-0 transition-colors" {...dragHandleProps} />
+          <div className="w-1 bg-neutral-800 hover:bg-brand-500/40 flex-shrink-0 transition-colors" {...dragHandleProps} />
           <div className="overflow-hidden flex-1">{outputPane}</div>
         </div>
       )}

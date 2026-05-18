@@ -126,7 +126,7 @@ function MfaSetupModal({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-orange-400" />
+            <ShieldCheck className="w-4 h-4 text-brand-400" />
             <span className="text-sm font-semibold text-white">Set up two-factor authentication</span>
           </div>
           <button onClick={onClose} className="text-neutral-500 hover:text-neutral-300 transition-colors">
@@ -137,7 +137,7 @@ function MfaSetupModal({
         <div className="p-4 space-y-4">
           {step === "loading" && (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 text-orange-400 animate-spin" />
+              <Loader2 className="w-6 h-6 text-brand-400 animate-spin" />
             </div>
           )}
 
@@ -177,7 +177,7 @@ function MfaSetupModal({
               <button
                 onClick={() => { setStep("verify"); setError("") }}
                 disabled={!secret}
-                className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg py-2 transition-colors"
+                className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-neutral-900 text-xs font-medium rounded-lg py-2 transition-colors"
               >
                 I&apos;ve scanned the code →
               </button>
@@ -205,7 +205,7 @@ function MfaSetupModal({
                   disabled={loading}
                   className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5
                              text-neutral-100 text-sm text-center tracking-[0.4em] placeholder-neutral-600
-                             focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500
+                             focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500
                              disabled:opacity-50"
                 />
               </div>
@@ -228,7 +228,7 @@ function MfaSetupModal({
                 <button
                   type="submit"
                   disabled={loading || code.length !== 6}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg py-2 transition-colors"
+                  className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-neutral-900 text-xs font-medium rounded-lg py-2 transition-colors"
                 >
                   {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Enable MFA"}
                 </button>
@@ -440,7 +440,7 @@ export default function SettingsPage() {
         {/* CA Certificate section */}
         <div className="border-b border-neutral-800">
           <SectionHeader
-            icon={<ShieldCheck className="w-4 h-4 text-orange-400 flex-shrink-0" />}
+            icon={<ShieldCheck className="w-4 h-4 text-brand-400 flex-shrink-0" />}
             label="CA Certificate"
             open={certOpen}
             onToggle={() => setCertOpen(o => !o)}
@@ -456,7 +456,7 @@ export default function SettingsPage() {
                   onClick={downloadCert}
                   disabled={certStatus === "downloading"}
                   size="sm"
-                  className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
+                  className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
                 >
                   {certStatus === "downloading" ? (
                     <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Downloading...</>
@@ -530,7 +530,7 @@ export default function SettingsPage() {
         {/* Change Password section */}
         <div className="border-b border-neutral-800">
           <SectionHeader
-            icon={<KeyRound className="w-4 h-4 text-orange-400 flex-shrink-0" />}
+            icon={<KeyRound className="w-4 h-4 text-brand-400 flex-shrink-0" />}
             label="Change Password"
             open={pwOpen}
             onToggle={() => setPwOpen(o => !o)}
@@ -553,7 +553,7 @@ export default function SettingsPage() {
                     onChange={e => setCurrentPw(e.target.value)}
                     placeholder="Current password"
                     required
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-orange-500"
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                   />
                 </div>
                 <div className="space-y-1">
@@ -565,7 +565,7 @@ export default function SettingsPage() {
                     placeholder="New password"
                     required
                     minLength={8}
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-orange-500"
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                   />
                 </div>
                 <div className="space-y-1">
@@ -576,7 +576,7 @@ export default function SettingsPage() {
                     onChange={e => setConfirmPw(e.target.value)}
                     placeholder="Confirm new password"
                     required
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-orange-500"
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                   />
                 </div>
 
@@ -591,7 +591,7 @@ export default function SettingsPage() {
                   type="submit"
                   disabled={pwStatus === "saving"}
                   size="sm"
-                  className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
+                  className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
                 >
                   {pwStatus === "saving" ? (
                     <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
@@ -607,7 +607,7 @@ export default function SettingsPage() {
         {/* Two-Factor Authentication section */}
         <div className="border-b border-neutral-800">
           <SectionHeader
-            icon={<ShieldAlert className="w-4 h-4 text-orange-400 flex-shrink-0" />}
+            icon={<ShieldAlert className="w-4 h-4 text-brand-400 flex-shrink-0" />}
             label="Two-Factor Authentication"
             open={mfaOpen}
             onToggle={() => setMfaOpen(o => !o)}
@@ -643,7 +643,7 @@ export default function SettingsPage() {
                           onChange={e => setDisablePw(e.target.value)}
                           placeholder="Current password"
                           required
-                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-orange-500"
+                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                         />
                       </div>
                       <div className="space-y-1">
@@ -656,7 +656,7 @@ export default function SettingsPage() {
                           onChange={e => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                           placeholder="000000"
                           required
-                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-orange-500 tracking-widest text-center"
+                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 tracking-widest text-center"
                         />
                       </div>
 
@@ -690,7 +690,7 @@ export default function SettingsPage() {
                   <Button
                     onClick={() => setShowMfaSetup(true)}
                     size="sm"
-                    className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
+                    className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
                   >
                     Enable two-factor authentication
                   </Button>
@@ -703,7 +703,7 @@ export default function SettingsPage() {
         {/* AI Provider section */}
         <div className="border-b border-neutral-800">
           <SectionHeader
-            icon={<Cpu className="w-4 h-4 text-orange-400 flex-shrink-0" />}
+            icon={<Cpu className="w-4 h-4 text-brand-400 flex-shrink-0" />}
             label="AI Provider"
             open={aiOpen}
             onToggle={() => setAiOpen(o => !o)}
@@ -732,7 +732,7 @@ export default function SettingsPage() {
               <Link href="/setup">
                 <Button
                   size="sm"
-                  className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-none"
+                  className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
                 >
                   Re-run setup wizard
                 </Button>
@@ -744,7 +744,7 @@ export default function SettingsPage() {
         {/* Proxy section */}
         <div className="border-b border-neutral-800">
           <SectionHeader
-            icon={<Activity className="w-4 h-4 text-orange-400 flex-shrink-0" />}
+            icon={<Activity className="w-4 h-4 text-brand-400 flex-shrink-0" />}
             label="Proxy"
             open={proxyOpen}
             onToggle={() => setProxyOpen(o => !o)}
