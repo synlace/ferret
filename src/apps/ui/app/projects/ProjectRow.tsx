@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Star, Settings2, Trash2, Key, Tag } from "lucide-react"
+import { Star, Settings2, Trash2, Key, Tag, BookOpen } from "lucide-react"
 import { Project } from "../context/project-context"
 import { ProjectStats, fetchStats, fetchSpend } from "./types"
 
@@ -12,6 +12,7 @@ export interface ProjectRowProps {
   onEdit: (project: Project) => void
   onDelete: (id: string) => void
   onKeys: (project: Project) => void
+  onSources: (project: Project) => void
   onPromote: (project: Project) => void
 }
 
@@ -22,6 +23,7 @@ export function ProjectRow({
   onEdit,
   onDelete,
   onKeys,
+  onSources,
   onPromote,
 }: ProjectRowProps) {
   const [stats, setStats] = useState<ProjectStats>({ requests: 0, findings: 0 })
@@ -117,6 +119,15 @@ export function ProjectRow({
             className="p-1.5 rounded text-neutral-600 hover:text-brand-400 hover:bg-neutral-800 transition-colors"
           >
             <Key className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Sources */}
+          <button
+            onClick={() => onSources(project)}
+            title="Sources"
+            className="p-1.5 rounded text-neutral-600 hover:text-blue-400 hover:bg-neutral-800 transition-colors"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
           </button>
 
           {/* Edit */}

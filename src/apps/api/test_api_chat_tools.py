@@ -14,6 +14,13 @@ _execute_tool_call (routers.chats):
   - run_pytest_file: runs existing file and returns output
   - run_pytest_file: missing file returns helpful error message
   - unknown tool name → returns "[FERRET] Unknown tool" message
+  - list_sources: project dir missing → returns "No sources found" message
+  - list_sources: project dir empty → returns "No sources found" message
+  - list_sources: files present → returns formatted list with filenames and sizes
+  - read_source: empty filename → returns "filename is required" message
+  - read_source: file not found → returns "not found. Use list_sources" message
+  - read_source: file exists → returns header + content
+  - read_source: path traversal in filename → stripped to basename, resolved safely
 
 POST /api/chats/{id}/messages — agentic loop:
   - When OpenRouter returns a tool_call, the endpoint executes it and loops
@@ -788,3 +795,204 @@ class TestStreamSessionMessage:
         roles = [m["role"] for m in messages]
         assert "user" in roles, "user message should be persisted"
         assert "notice" in roles, "notice message should be persisted"
+
+
+# ---------------------------------------------------------------------------
+# execute_tool_call — list_sources / read_source
+# ---------------------------------------------------------------------------
+
+def _make_tc(name: str, **kwargs) -> dict:
+    """Build a minimal tool-call dict for execute_tool_call."""
+    import json as _json
+    return {"function": {"name": name, "arguments": _json.dumps(kwargs)}}
+
+
+async def test_list_sources_no_project_dir(tmp_path):
+    """list_sources returns a helpful message when the project dir doesn't exist."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    with patch.object(deps_module, "SOURCES_DIR", tmp_path / "sources"):
+        result = await execute_tool_call(_make_tc("list_sources"), project_id="proj-x")
+
+    assert "No sources found" in result
+
+
+async def test_list_sources_empty_dir(tmp_path):
+    """list_sources returns a helpful message when the project dir is empty."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    sources_root = tmp_path / "sources"
+    (sources_root / "proj-empty").mkdir(parents=True)
+
+    with patch.object(deps_module, "SOURCES_DIR", sources_root):
+        result = await execute_tool_call(_make_tc("list_sources"), project_id="proj-empty")
+
+    assert "No sources found" in result
+
+
+async def test_list_sources_returns_filenames(tmp_path):
+    """list_sources returns a formatted list of filenames and sizes."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    sources_root = tmp_path / "sources"
+    proj_dir = sources_root / "proj-abc"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "openapi.yaml").write_text("openapi: 3.0.0")
+    (proj_dir / "README.md").write_text("# Docs")
+
+    with patch.object(deps_module, "SOURCES_DIR", sources_root):
+        result = await execute_tool_call(_make_tc("list_sources"), project_id="proj-abc")
+
+    assert "openapi.yaml" in result
+    assert "README.md" in result
+    assert "KB" in result
+
+
+async def test_read_source_missing_filename(tmp_path):
+    """read_source returns an error when filename arg is empty."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    with patch.object(deps_module, "SOURCES_DIR", tmp_path / "sources"):
+        result = await execute_tool_call(_make_tc("read_source", filename=""), project_id="proj-x")
+
+    assert "filename is required" in result
+
+
+async def test_read_source_file_not_found(tmp_path):
+    """read_source returns a helpful message when the file doesn't exist."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    sources_root = tmp_path / "sources"
+    sources_root.mkdir()
+
+    with patch.object(deps_module, "SOURCES_DIR", sources_root):
+        result = await execute_tool_call(
+            _make_tc("read_source", filename="ghost.md"), project_id="proj-x"
+        )
+
+    assert "not found" in result
+    assert "list_sources" in result
+
+
+async def test_read_source_returns_content(tmp_path):
+    """read_source returns the file content with a header line."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    sources_root = tmp_path / "sources"
+    proj_dir = sources_root / "proj-read"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "spec.yaml").write_text("openapi: 3.0.0\ninfo:\n  title: Test API")
+
+    with patch.object(deps_module, "SOURCES_DIR", sources_root):
+        result = await execute_tool_call(
+            _make_tc("read_source", filename="spec.yaml"), project_id="proj-read"
+        )
+
+    assert "spec.yaml" in result
+    assert "openapi: 3.0.0" in result
+    assert "KB" in result
+
+
+async def test_read_source_strips_path_traversal(tmp_path):
+    """read_source strips directory components from the filename (no traversal)."""
+    import deps as deps_module
+    from routers.chats_execute import execute_tool_call
+
+    sources_root = tmp_path / "sources"
+    proj_dir = sources_root / "proj-safe"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "safe.md").write_text("safe content")
+
+    with patch.object(deps_module, "SOURCES_DIR", sources_root):
+        # Attempt traversal — should resolve to "safe.md" in the project dir
+        result = await execute_tool_call(
+            _make_tc("read_source", filename="../../safe.md"), project_id="proj-safe"
+        )
+
+    # The basename "safe.md" exists, so content should be returned
+    assert "safe content" in result
+
+
+# ---------------------------------------------------------------------------
+# GET /api/tools — tool catalogue endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_tools_returns_list(client, mem_db):
+    """GET /api/tools returns a non-empty list of {name, label} objects."""
+    resp = await client.get("/api/tools")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+
+
+@pytest.mark.asyncio
+async def test_get_tools_contains_expected_names(client, mem_db):
+    """GET /api/tools includes all known tool names."""
+    resp = await client.get("/api/tools")
+    names = {t["name"] for t in resp.json()}
+    expected = {
+        "search_requests", "get_request_detail", "create_finding", "list_findings",
+        "write_test", "run_test", "read_test", "pip_install", "run_script",
+        "run_katana", "run_ffuf", "http_request", "list_sources", "read_source",
+    }
+    assert expected == names
+
+
+@pytest.mark.asyncio
+async def test_get_tools_each_has_label(client, mem_db):
+    """Every tool entry returned by GET /api/tools has a non-empty label."""
+    resp = await client.get("/api/tools")
+    for tool in resp.json():
+        assert "label" in tool, f"Tool {tool['name']!r} missing label"
+        assert tool["label"], f"Tool {tool['name']!r} has empty label"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_tools — filtering helper
+# ---------------------------------------------------------------------------
+
+def test_resolve_tools_none_returns_all():
+    """_resolve_tools(None) returns the full SESSION_CHAT_TOOLS list."""
+    from routers.chats import _resolve_tools
+    from routers.chats_tools import SESSION_CHAT_TOOLS
+    result = _resolve_tools(None)
+    assert result == SESSION_CHAT_TOOLS
+
+
+def test_resolve_tools_empty_list_returns_empty():
+    """_resolve_tools([]) means all tools disabled — returns an empty list."""
+    from routers.chats import _resolve_tools
+    result = _resolve_tools([])
+    assert result == []
+
+
+def test_resolve_tools_filters_by_name():
+    """_resolve_tools(['search_requests']) returns only that tool."""
+    from routers.chats import _resolve_tools
+    result = _resolve_tools(["search_requests"])
+    assert len(result) == 1
+    assert result[0]["function"]["name"] == "search_requests"
+
+
+def test_resolve_tools_unknown_names_ignored():
+    """_resolve_tools with unknown names silently ignores them."""
+    from routers.chats import _resolve_tools
+    result = _resolve_tools(["nonexistent_tool"])
+    assert result == []
+
+
+def test_resolve_tools_label_not_in_function_keys():
+    """The label key is present in SESSION_CHAT_TOOLS but _resolve_tools returns
+    the original tool dicts (label is stripped by _build_ai_request, not here)."""
+    from routers.chats import _resolve_tools
+    result = _resolve_tools(["search_requests"])
+    # label should still be present in the tool dict (stripped later by _build_ai_request)
+    assert "label" in result[0]["function"]

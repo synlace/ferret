@@ -132,6 +132,14 @@ SANDBOX_CONTAINER = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab")
 
 WORKSPACES_DIR = Path(os.getenv("FERRET_WORKSPACES_DIR", "/data/workspaces"))
 
+# ---------------------------------------------------------------------------
+# Sources directory (host-mounted via docker-compose, under /data)
+# Each project gets: {SOURCES_DIR}/{project_id}/{filename}
+# Files can be dropped directly on the host — no upload required.
+# ---------------------------------------------------------------------------
+
+SOURCES_DIR = Path(os.getenv("FERRET_SOURCES_DIR", "/data/sources"))
+
 
 # ---------------------------------------------------------------------------
 # AI helpers

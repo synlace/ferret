@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useRef, memo } from "react"
+import React, { useRef, memo, useState, useEffect } from "react"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Loader2, Download, Send, Square,
@@ -15,6 +15,9 @@ import { MarkdownContent } from "./MarkdownContent"
 import { formatToolArgs } from "./helpers"
 import type { WorkspaceSession, ChatMsg, LiveToolCall } from "./types"
 import type { WorkspaceFile } from "./FileTree"
+import { apiFetch } from "@/lib/api-fetch"
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 // ── MessageList — memoized so it does NOT re-render on every streaming delta ──
 // Only re-renders when `messages`, `activeSessionId`, or the collapse helpers change.
@@ -62,7 +65,7 @@ const MessageList = memo(function MessageList({
         }
         return (
           <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-            <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-900 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
+            <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-100 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
               {msg.role === "assistant" && <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
               {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
             </div>
@@ -77,6 +80,11 @@ const MessageList = memo(function MessageList({
   )
 })
 
+interface ToolInfo {
+  name: string
+  label: string
+}
+
 interface ChatPanelProps {
   activeSession: WorkspaceSession | null
   activeSessionId: string | null
@@ -89,6 +97,8 @@ interface ChatPanelProps {
   model: string
   modelDisplayName: string
   maxToolCalls: number
+  /** null = all tools enabled; string[] = only these names are enabled */
+  enabledTools: string[] | null
   sessionSpend: number | null
   sessionPanelOpen: boolean
   contextOpen: boolean
@@ -116,6 +126,11 @@ interface ChatPanelProps {
   onNewHunt: () => void
   onBackFromFile: () => void
   onFileDeleted: () => void
+  onToolToggle: (name: string, enabled: boolean) => void
+  /** PATCH enabled_tools: null (all enabled) in a single request */
+  onEnableAll: () => void
+  /** PATCH enabled_tools: [] (all disabled) in a single request */
+  onDisableAll: () => void
   /** Called by XTermView when it's ready to receive chunks; idx is the liveToolCalls index */
   onRegisterLiveWriter: (idx: number, write: (chunk: string) => void) => void
 }
@@ -132,6 +147,7 @@ export function ChatPanel({
   model,
   modelDisplayName,
   maxToolCalls,
+  enabledTools,
   sessionSpend,
   sessionPanelOpen,
   contextOpen,
@@ -158,8 +174,19 @@ export function ChatPanel({
   onNewHunt,
   onBackFromFile,
   onFileDeleted,
+  onToolToggle,
+  onEnableAll,
+  onDisableAll,
   onRegisterLiveWriter,
 }: ChatPanelProps) {
+  const [availableTools, setAvailableTools] = useState<ToolInfo[]>([])
+  useEffect(() => {
+    apiFetch(`${API_BASE}/api/tools`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((tools: ToolInfo[]) => setAvailableTools(tools))
+      .catch(() => {/* silently ignore — non-critical */})
+  }, [])
+
   return (
     <>
       {/* ── Centre: Chat or File Editor ── */}
@@ -282,7 +309,8 @@ export function ChatPanel({
                 <Textarea ref={chatInputRef} value={input} onChange={e => onInputChange(e.target.value)} onKeyDown={onKeyDown}
                   placeholder={activeSessionId ? "Message... (Enter to send, Shift+Enter for newline)" : "Select a hunt first"}
                   disabled={!activeSessionId || loading}
-                  className="flex-1 text-sm bg-neutral-800 border-neutral-700 text-white resize-none min-h-[40px] max-h-40 placeholder:text-neutral-600 focus-visible:ring-brand-500/50" rows={2} />
+                  tabIndex={1}
+                  className="flex-1 text-sm bg-neutral-800 border-neutral-700 text-white resize-none min-h-[40px] max-h-40 placeholder:text-neutral-600 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-brand-500" rows={2} />
                 {loading
                   ? <button onClick={onStopStream} className="bg-neutral-700 hover:bg-red-900/60 border border-neutral-600 hover:border-red-500/50 text-neutral-300 hover:text-red-400 w-10 flex items-center justify-center flex-shrink-0 transition-colors">
                       <Square className="w-4 h-4" />
@@ -368,19 +396,52 @@ export function ChatPanel({
                     <label className="text-[10px] text-neutral-400 flex-1">Max tool calls</label>
                     <input type="number" min={1} max={50} value={maxToolCalls}
                       onChange={e => onMaxToolCallsChange(Math.max(1, Math.min(50, Number(e.target.value))))}
+                      tabIndex={3}
                       className="w-14 text-[10px] text-center bg-neutral-800 border border-neutral-700 px-1 py-0.5 text-neutral-200 focus:outline-none focus:border-brand-500/60" />
                   </div>
                 </div>
                 {/* AI Tools */}
                 <div className="px-3 py-2">
-                  <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1.5">AI Tools</p>
-                  <div className="space-y-0.5">
-                    {["search_requests","get_request_detail","http_request","create_finding","list_findings","write_test","run_test","read_test","run_script","run_ffuf"].map(tool => (
-                      <div key={tool} className="flex items-center gap-2 py-0.5">
-                        <input type="checkbox" defaultChecked id={`tool-${tool}`} className="w-3 h-3 accent-brand-500 flex-shrink-0" />
-                        <label htmlFor={`tool-${tool}`} className="text-[10px] text-neutral-300 font-mono flex-1 truncate cursor-pointer">{tool}</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[10px] text-neutral-500 uppercase tracking-wider">AI Tools</p>
+                    {availableTools.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={onEnableAll}
+                          className="text-[9px] text-neutral-600 hover:text-neutral-400 transition-colors"
+                        >
+                          enable all
+                        </button>
+                        <span className="text-[9px] text-neutral-700">·</span>
+                        <button
+                          onClick={onDisableAll}
+                          className="text-[9px] text-neutral-600 hover:text-neutral-400 transition-colors"
+                        >
+                          disable all
+                        </button>
                       </div>
-                    ))}
+                    )}
+                  </div>
+                  <div className="space-y-0.5">
+                    {availableTools.length === 0 ? (
+                      <p className="text-[10px] text-neutral-600 italic">Loading…</p>
+                    ) : availableTools.map(({ name, label }) => {
+                      const checked = enabledTools === null || enabledTools.includes(name)
+                      return (
+                        <div key={name} className="flex items-center gap-2 py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => onToolToggle(name, e.target.checked)}
+                            id={`tool-${name}`}
+                            className="w-3 h-3 accent-brand-500 flex-shrink-0 cursor-pointer"
+                          />
+                          <label htmlFor={`tool-${name}`} className="text-[10px] text-neutral-300 flex-1 truncate cursor-pointer" title={name}>
+                            {label}
+                          </label>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               </>

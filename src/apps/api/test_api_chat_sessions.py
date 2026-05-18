@@ -609,3 +609,114 @@ class TestSendSessionMessageModelResolution:
         assert sent_model == sentinel_model, (
             f"Expected global fallback model, got {sent_model!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# enabled_tools — PATCH and GET round-trip
+# ---------------------------------------------------------------------------
+
+class TestEnabledTools:
+    """Tests for per-session enabled_tools persistence."""
+
+    @pytest.mark.asyncio
+    async def test_enabled_tools_defaults_to_null(self, client, mem_db):
+        """A freshly created session has enabled_tools=null (all tools enabled)."""
+        resp = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
+        assert resp.status_code == 201
+        session = resp.json()
+        assert session.get("enabled_tools") is None
+
+    @pytest.mark.asyncio
+    async def test_patch_enabled_tools_persists(self, client, mem_db):
+        """PATCH /api/chats/{id} with enabled_tools stores and returns the list."""
+        create = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
+        session_id = create.json()["id"]
+
+        patch_resp = await client.patch(
+            f"/api/chats/{session_id}",
+            json={"enabled_tools": ["search_requests", "http_request"]},
+        )
+        assert patch_resp.status_code == 200
+        data = patch_resp.json()
+        assert data["enabled_tools"] == ["search_requests", "http_request"]
+
+    @pytest.mark.asyncio
+    async def test_patch_enabled_tools_reflected_in_list(self, client, mem_db):
+        """After PATCH, GET /api/chats returns the updated enabled_tools."""
+        create = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
+        session_id = create.json()["id"]
+
+        await client.patch(
+            f"/api/chats/{session_id}",
+            json={"enabled_tools": ["run_ffuf"]},
+        )
+
+        list_resp = await client.get("/api/chats")
+        sessions = list_resp.json()
+        target = next(s for s in sessions if s["id"] == session_id)
+        assert target["enabled_tools"] == ["run_ffuf"]
+
+    @pytest.mark.asyncio
+    async def test_patch_enabled_tools_null_re_enables_all(self, client, mem_db):
+        """PATCHing enabled_tools=null resets to 'all tools enabled'."""
+        create = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
+        session_id = create.json()["id"]
+
+        # First restrict to one tool
+        await client.patch(
+            f"/api/chats/{session_id}",
+            json={"enabled_tools": ["run_ffuf"]},
+        )
+        # Then reset to null
+        patch_resp = await client.patch(
+            f"/api/chats/{session_id}",
+            json={"enabled_tools": None},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["enabled_tools"] is None
+
+    @pytest.mark.asyncio
+    async def test_enabled_tools_enforced_from_db_not_request_body(self, client, mem_db):
+        """
+        Regression test for the enforcement bypass bug:
+
+        When enabled_tools=[] is stored in the session DB, the message handler
+        must honour it even if the request body does NOT include an enabled_tools
+        field.  Previously the handler read body.enabled_tools (defaulting to None
+        = all tools enabled) instead of the persisted session value, allowing the
+        restriction to be bypassed by simply omitting the field.
+        """
+        await _seed_project_key(mem_db)
+        create = await client.post("/api/chats", json=_CHAT_SESSION_PAYLOAD)
+        session_id = create.json()["id"]
+
+        # Disable all tools via PATCH
+        patch_resp = await client.patch(
+            f"/api/chats/{session_id}",
+            json={"enabled_tools": []},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["enabled_tools"] == []
+
+        # Capture what is sent to the AI provider
+        cls_mock, captured = _make_capturing_async_client_ctx()
+
+        # Send a message WITHOUT enabled_tools in the body — the old code would
+        # default to None (all tools enabled); the fixed code reads from the DB.
+        with patch("routers.chats.httpx.AsyncClient", cls_mock):
+            resp = await client.post(
+                f"/api/chats/{session_id}/messages",
+                json={"message": "Try to use a tool"},
+            )
+
+        assert resp.status_code == 200
+        assert captured, "No call was made to the AI provider"
+        sent_body = captured[0].get("json", {})
+        # When all tools are disabled, _build_ai_request omits the 'tools' key entirely
+        # (sending tools=[] to some providers causes errors, so the key is only included
+        # when there is at least one tool).  The important invariant is that 'tools' is
+        # absent — meaning the DB value [] was honoured, not the body default (None → all tools).
+        assert "tools" not in sent_body, (
+            f"Expected 'tools' key to be absent (all disabled) but got tools={sent_body.get('tools')!r}. "
+            "The handler is reading enabled_tools from the request body instead of the session DB."
+        )

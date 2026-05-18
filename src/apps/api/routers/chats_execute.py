@@ -113,6 +113,10 @@ async def execute_tool_call(
     elif fn_name == "search_requests":
         query = fn_args.get("query", "").strip()
         limit = int(fn_args.get("limit", 20))
+        method = fn_args.get("method", "").strip().upper() or None
+        status_code_raw = fn_args.get("status_code")
+        status_code = int(status_code_raw) if status_code_raw is not None else None
+        host = fn_args.get("host", "").strip() or None
         try:
             # Pass the query through unchanged — the DB layer (_search_uses_like)
             # detects dots, slashes, colons and other FTS5-hostile characters and
@@ -121,7 +125,8 @@ async def execute_tool_call(
 
             # search_requests returns List[HttpRequest], not a tuple
             results = await deps.db_client.search_requests(
-                search=use_search, limit=limit, project_id=project_id
+                search=use_search, limit=limit, project_id=project_id,
+                method=method, status_code=status_code, host=host,
             )
             if not results:
                 return f"[FERRET] No requests found matching '{query}'."
@@ -359,5 +364,39 @@ async def execute_tool_call(
             return f"[FERRET] Request timed out after {timeout}s — possible blind injection if intentional."
         except Exception as exc:
             return f"[FERRET] HTTP request failed: {exc}"
+
+    elif fn_name == "list_sources":
+        try:
+            project_dir = deps.SOURCES_DIR / project_id
+            if not project_dir.exists():
+                return "[FERRET] No sources found for this project. Upload source files via Projects → Sources."
+            entries = sorted(project_dir.iterdir(), key=lambda p: p.stat().st_ctime, reverse=True)
+            files = [p for p in entries if p.is_file()]
+            if not files:
+                return "[FERRET] No sources found for this project. Upload source files via Projects → Sources."
+            lines = []
+            for p in files:
+                size_kb = p.stat().st_size / 1024
+                lines.append(f"  {p.name}  ({size_kb:.1f} KB)")
+            return "Available sources:\n" + "\n".join(lines)
+        except Exception as exc:
+            return f"[FERRET] Error listing sources: {exc}"
+
+    elif fn_name == "read_source":
+        filename = fn_args.get("filename", "").strip()
+        if not filename:
+            return "[FERRET] filename is required."
+        # Sanitise — no path traversal
+        from pathlib import Path as _Path
+        filename = _Path(filename).name
+        source_path = deps.SOURCES_DIR / project_id / filename
+        if not source_path.exists():
+            return f"[FERRET] Source '{filename}' not found. Use list_sources to see available files."
+        try:
+            content = source_path.read_text(encoding="utf-8")
+            size_kb = len(content.encode("utf-8")) / 1024
+            return f"=== {filename} ({size_kb:.1f} KB) ===\n\n{content}"
+        except Exception as exc:
+            return f"[FERRET] Error reading source '{filename}': {exc}"
 
     return f"[FERRET] Unknown tool: {fn_name}"

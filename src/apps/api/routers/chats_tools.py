@@ -20,17 +20,31 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search_requests",
+            "label": "Search proxy history",
             "description": (
-                "Search the proxy request history by keyword. "
+                "Search the proxy request history. "
                 "Returns a list of matching requests (method, URL, status). "
-                "Use this first to discover what endpoints exist."
+                "Use this first to discover what endpoints exist. "
+                "Combine query with method/status_code/host filters for precise results."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Keyword to match against URL, host, or body. Leave empty to list all.",
+                        "description": "Keyword to match against URL, host, path, or body. Leave empty to list all.",
+                    },
+                    "method": {
+                        "type": "string",
+                        "description": "Filter by HTTP method, e.g. 'GET', 'POST', 'PUT', 'DELETE'.",
+                    },
+                    "status_code": {
+                        "type": "integer",
+                        "description": "Filter by exact HTTP response status code, e.g. 200, 401, 500.",
+                    },
+                    "host": {
+                        "type": "string",
+                        "description": "Filter by hostname (partial match), e.g. 'api.example.com'.",
                     },
                     "limit": {
                         "type": "integer",
@@ -46,6 +60,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_request_detail",
+            "label": "Get request detail",
             "description": (
                 "Fetch the full details of a single HTTP request by its ID, "
                 "including request headers, body, response headers, and response body. "
@@ -70,6 +85,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_finding",
+            "label": "Create finding",
             "description": (
                 "Create a security finding in the FERRET findings database. "
                 "Use this when you have confirmed or strongly suspected a vulnerability. "
@@ -118,6 +134,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "list_findings",
+            "label": "List findings",
             "description": (
                 "List existing security findings for the current project. "
                 "Use this to avoid creating duplicate findings and to reference prior work."
@@ -147,6 +164,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_test",
+            "label": "Write pytest file",
             "description": (
                 "Write a complete Python pytest file to disk and immediately execute it. "
                 "Returns the raw pytest output. Use this to create structured, reusable "
@@ -172,6 +190,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_test",
+            "label": "Run pytest file",
             "description": "Run an existing pytest file by filename. Returns pytest output.",
             "parameters": {
                 "type": "object",
@@ -189,6 +208,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read_test",
+            "label": "Read test file",
             "description": (
                 "Read the current contents of an existing pytest file. "
                 "Use this before modifying a test — read it first, fix only the broken part, "
@@ -211,6 +231,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "pip_install",
+            "label": "Install pip package",
             "description": (
                 "Install one or more Python packages into the ferret-lab sandbox environment "
                 "using pip3. Use this when a test fails with ModuleNotFoundError. "
@@ -239,6 +260,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_script",
+            "label": "Run script",
             "description": (
                 "Write and execute an arbitrary bash or Python script in the ferret-lab sandbox. "
                 "Use this to run exploit PoCs, custom scanners, or any shell command that "
@@ -275,6 +297,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_katana",
+            "label": "Crawl with Katana",
             "description": (
                 "Crawl a web application to discover endpoints, paths, forms, and linked resources. "
                 "PREFER this over run_ffuf for directory/file/endpoint discovery — katana follows "
@@ -338,6 +361,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_ffuf",
+            "label": "Fuzz with ffuf",
             "description": (
                 "Run ffuf (Fuzz Faster U Fool) inside the ferret-lab sandbox for parameter fuzzing, "
                 "credential brute-forcing, vhost discovery, or SQLi fuzzing. "
@@ -431,6 +455,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "http_request",
+            "label": "Make HTTP request",
             "description": (
                 "Send a single HTTP request directly and return the status code, "
                 "response headers, and response body. Use this for quick interactive "
@@ -483,6 +508,49 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             },
         },
     },
+    # -----------------------------------------------------------------------
+    # Sources tools
+    # -----------------------------------------------------------------------
+    {
+        "type": "function",
+        "function": {
+            "name": "list_sources",
+            "label": "List project sources",
+            "description": (
+                "List all reference source files attached to this project "
+                "(API documentation, source code, OpenAPI specs, notes, etc.). "
+                "Call this at the start of a session to discover what context material is available."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_source",
+            "label": "Read source file",
+            "description": (
+                "Read the full text content of a source file by filename. "
+                "Use list_sources first to discover available filenames, then call this "
+                "to load API documentation, source code, or notes into context before "
+                "analysing proxy traffic or writing tests."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "The filename of the source to read (from list_sources results).",
+                    },
+                },
+                "required": ["filename"],
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -500,3 +568,22 @@ for _t in SESSION_CHAT_TOOLS:
     _req: list = _t["function"]["parameters"].setdefault("required", [])
     if "rationale" not in _req:
         _req.insert(0, "rationale")
+
+
+# ---------------------------------------------------------------------------
+# Tool resolution helper — shared by all agentic loops
+# ---------------------------------------------------------------------------
+
+def resolve_tools(enabled_names: list | None) -> list:
+    """Return the subset of SESSION_CHAT_TOOLS matching *enabled_names*.
+
+    - None  → no preference stored; return all tools (backwards-compatible default).
+    - []    → all tools explicitly disabled; return empty list.
+    - [...]  → return only the named tools; unknown names are silently ignored.
+    """
+    if enabled_names is None:
+        return SESSION_CHAT_TOOLS
+    if not enabled_names:
+        return []
+    allowed = set(enabled_names)
+    return [t for t in SESSION_CHAT_TOOLS if t["function"]["name"] in allowed]

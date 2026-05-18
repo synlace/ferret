@@ -262,10 +262,49 @@ function HuntsPageInner() {
     })
   }, [activeProjectId, fetchSessions, loadSession, fetchAllFileCounts])
 
+  // ---------------------------------------------------------------------------
+  // Focus management: keep the chat textarea focused at all times, except when
+  // the user explicitly clicks an input that needs keyboard focus (filter hunts,
+  // max tool calls, sort select, CodeMirror editor).  All other clicks —
+  // session rows, checkboxes, buttons, the app-shell nav, etc. — must not
+  // steal focus from the textarea.
+  //
+  // Strategy: "focus-restore" — on mousedown, schedule a setTimeout(0) to
+  // return focus to the textarea after the browser processes the click.  This
+  // allows checkboxes to toggle, links to navigate, etc., while keeping the
+  // caret in the chat input.  We do NOT call preventDefault() because that
+  // breaks checkbox toggle behaviour in some browsers.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (focusChatInputRef.current && activeSessionId) {
-      focusChatInputRef.current = false
-      chatInputRef.current?.focus()
+    // Selectors for elements that legitimately need keyboard focus themselves.
+    const FOCUS_SELECTORS = [
+      'textarea',
+      'input[type="text"]',
+      'input[type="number"]',
+      'select',
+      '[contenteditable]',  // CodeMirror editor
+    ]
+    const handler = (e: MouseEvent) => {
+      const textarea = chatInputRef.current
+      if (!textarea) return
+      const target = e.target as HTMLElement
+      // If the click is on an element that needs its own focus, leave it alone.
+      const needsOwnFocus = FOCUS_SELECTORS.some(sel => target.closest(sel))
+      if (needsOwnFocus) return
+      // After the browser finishes processing this click (checkbox toggle,
+      // link activation, React state updates, etc.), restore focus.
+      setTimeout(() => { chatInputRef.current?.focus() }, 0)
+    }
+    document.addEventListener("mousedown", handler, true)
+    return () => document.removeEventListener("mousedown", handler, true)
+  }, [])
+
+  // Focus the textarea whenever a session becomes active (initial load, session
+  // switch, or new session creation).  setTimeout(0) lets React finish rendering
+  // the textarea before we try to focus it.
+  useEffect(() => {
+    if (activeSessionId) {
+      setTimeout(() => { chatInputRef.current?.focus() }, 0)
     }
   }, [activeSessionId])
 
@@ -296,10 +335,14 @@ function HuntsPageInner() {
     const abort = new AbortController(); abortControllerRef.current = abort
     try {
       const res = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/messages/stream`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg.content, model, max_tool_calls: maxToolCalls }),
-        signal: abort.signal,
-      })
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: userMsg.content,
+            model,
+            max_tool_calls: maxToolCalls,
+          }),
+          signal: abort.signal,
+        })
       if (!res.ok) {
         let detail = "Unknown error"
         try { const errBody = await res.json(); detail = errBody.detail ?? detail } catch { /* ignore */ }
@@ -442,6 +485,7 @@ function HuntsPageInner() {
   }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") { e.preventDefault(); return }  // keep focus in textarea
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); return }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       const history = inputHistoryRef.current; if (history.length === 0) return
@@ -563,6 +607,7 @@ function HuntsPageInner() {
         model={model}
         modelDisplayName={modelDisplayName}
         maxToolCalls={maxToolCalls}
+        enabledTools={activeSession?.enabled_tools ?? null}
         sessionSpend={sessionSpend}
         sessionPanelOpen={sessionPanelOpen}
         contextOpen={contextOpen}
@@ -590,6 +635,77 @@ function HuntsPageInner() {
         onNewHunt={() => setShowNewModal(true)}
         onBackFromFile={() => setSelectedFilePath(null)}
         onFileDeleted={() => { setSelectedFilePath(null); if (activeSessionId) fetchWorkspaceFiles(activeSessionId) }}
+        onToolToggle={async (name, enabled) => {
+          if (!activeSessionId) return
+          // Compute the new enabled_tools list:
+          // null = all enabled; string[] = explicit list
+          const current = activeSession?.enabled_tools ?? null
+          let next: string[] | null
+          if (enabled) {
+            // Adding a tool back — if current is null (all enabled) nothing changes
+            if (current === null) return
+            next = [...current, name]
+          } else {
+            // Disabling a tool
+            if (current === null) {
+              // Was "all enabled" — fetch full list to build the exclusion
+              try {
+                const r = await apiFetch(`${API_BASE}/api/tools`)
+                const all: { name: string }[] = await r.json()
+                next = all.map(t => t.name).filter(n => n !== name)
+              } catch { return }
+            } else {
+              next = current.filter(n => n !== name)
+            }
+          }
+          try {
+            const r = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ enabled_tools: next }),
+            })
+            if (r.ok) {
+              setSessions(prev => prev.map(s =>
+                s.id === activeSessionId ? { ...s, enabled_tools: next } : s
+              ))
+              // The re-render after setSessions can steal focus from the textarea;
+              // restore it after React has finished reconciling.
+              setTimeout(() => { chatInputRef.current?.focus() }, 0)
+            }
+          } catch { /* ignore */ }
+        }}
+        onEnableAll={async () => {
+          if (!activeSessionId) return
+          try {
+            const r = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ enabled_tools: null }),
+            })
+            if (r.ok) {
+              setSessions(prev => prev.map(s =>
+                s.id === activeSessionId ? { ...s, enabled_tools: null } : s
+              ))
+              setTimeout(() => { chatInputRef.current?.focus() }, 0)
+            }
+          } catch { /* ignore */ }
+        }}
+        onDisableAll={async () => {
+          if (!activeSessionId) return
+          try {
+            const r = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ enabled_tools: [] }),
+            })
+            if (r.ok) {
+              setSessions(prev => prev.map(s =>
+                s.id === activeSessionId ? { ...s, enabled_tools: [] } : s
+              ))
+              setTimeout(() => { chatInputRef.current?.focus() }, 0)
+            }
+          } catch { /* ignore */ }
+        }}
         onRegisterLiveWriter={handleRegisterLiveWriter}
       />
 

@@ -43,7 +43,7 @@ async def _run_plan_in_background(
     """
     try:
         # Import here to avoid circular imports at module load time
-        from chats_tools import SESSION_CHAT_TOOLS
+        from chats_tools import SESSION_CHAT_TOOLS, resolve_tools
         from chats_ai import (
             _build_ai_request,
             _parse_ai_response,
@@ -64,6 +64,12 @@ async def _run_plan_in_background(
             await deps.db_client.update_hunt_status(session_id, "error")
             return
 
+        # Prevention: load the session to honour per-session enabled_tools.
+        _session = await deps.db_client.get_chat_session(session_id)
+        _enabled_tools_names = _session.get("enabled_tools") if _session else None
+        _tools_for_request = resolve_tools(_enabled_tools_names)
+        _allowed_tool_names = {t["function"]["name"] for t in _tools_for_request}
+
         _project_model = (
             (_project.get("default_model") if _project else None)
             or _ai_cfg.get("model")
@@ -77,16 +83,16 @@ async def _run_plan_in_background(
             session_id, {"role": "user", "content": prompt, "timestamp": _ts}
         )
 
-        # Build the initial message list: system prompt + user prompt
-        # _build_or_messages([], prompt) → [system, user(prompt)]
-        or_messages = _build_or_messages([], prompt)
+        # Build the initial message list: system prompt + user prompt.
+        # Pass _tools_for_request so the system prompt only mentions enabled tools.
+        or_messages = _build_or_messages([], prompt, tools=_tools_for_request)
 
         new_messages = []
         iterations = max(1, min(50, max_tool_calls))
 
         for _ in range(iterations):
             _url, _headers, _body = _build_ai_request(
-                _ai_cfg_with_key, _project_model, or_messages + new_messages, SESSION_CHAT_TOOLS
+                _ai_cfg_with_key, _project_model, or_messages + new_messages, _tools_for_request
             )
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
@@ -116,20 +122,35 @@ async def _run_plan_in_background(
                 except json.JSONDecodeError:
                     fn_args_raw = {}
 
-                if fn_name == "run_script":
+                # Enforcement: reject calls to tools that are disabled for this session.
+                # The LLM must still receive a tool message for every tool_call_id it
+                # emitted, otherwise the next API request will be rejected.
+                _exit_code: int | None = None
+                if fn_name not in _allowed_tool_names:
+                    tool_result = f"[FERRET] Tool '{fn_name}' is disabled for this session."
+                    _runtime_ms = 0
+                    _exit_code = 1
+                elif fn_name == "run_script":
                     _streamer = stream_run_script(fn_args_raw, project_id=resolved_project_id, session_id=session_id)
-                elif fn_name == "run_katana":
-                    _streamer = stream_run_katana(fn_args_raw)
-                elif fn_name == "run_ffuf":
-                    _streamer = stream_run_ffuf(fn_args_raw)
-                else:
-                    _streamer = None
-
-                if _streamer is not None:
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:
                             tool_result = _final_result or ""
+                    _runtime_ms = 0
+                elif fn_name == "run_katana":
+                    _streamer = stream_run_katana(fn_args_raw)
+                    tool_result = ""
+                    async for _chunk, _is_final, _final_result in _streamer:
+                        if _is_final:
+                            tool_result = _final_result or ""
+                    _runtime_ms = 0
+                elif fn_name == "run_ffuf":
+                    _streamer = stream_run_ffuf(fn_args_raw)
+                    tool_result = ""
+                    async for _chunk, _is_final, _final_result in _streamer:
+                        if _is_final:
+                            tool_result = _final_result or ""
+                    _runtime_ms = 0
                 else:
                     _t0 = _time.monotonic()
                     tool_result = await execute_tool_call(
@@ -139,18 +160,23 @@ async def _run_plan_in_background(
                         recent_tool_outputs=_recent_outputs,
                     )
                     _runtime_ms = round((_time.monotonic() - _t0) * 1000)
-                    # Attach __META__ timing inline (mirrors chats.py _attach_meta)
-                    _meta_prefix = "\n__META__:"
-                    _meta_idx = tool_result.rfind(_meta_prefix)
-                    if _meta_idx != -1:
-                        try:
-                            _existing = json.loads(tool_result[_meta_idx + len(_meta_prefix):])
-                        except Exception:
-                            _existing = {}
-                        _existing["runtime_ms"] = _runtime_ms
-                        tool_result = tool_result[:_meta_idx] + _meta_prefix + json.dumps(_existing)
-                    else:
-                        tool_result = tool_result + _meta_prefix + json.dumps({"runtime_ms": _runtime_ms})
+                # Attach __META__ timing inline (mirrors chats.py _attach_meta)
+                _meta_prefix = "\n__META__:"
+                _meta_idx = tool_result.rfind(_meta_prefix)
+                if _meta_idx != -1:
+                    try:
+                        _existing = json.loads(tool_result[_meta_idx + len(_meta_prefix):])
+                    except Exception:
+                        _existing = {}
+                    _existing["runtime_ms"] = _runtime_ms
+                    if _exit_code is not None:
+                        _existing["exit_code"] = _exit_code
+                    tool_result = tool_result[:_meta_idx] + _meta_prefix + json.dumps(_existing)
+                else:
+                    _meta: dict = {"runtime_ms": _runtime_ms}
+                    if _exit_code is not None:
+                        _meta["exit_code"] = _exit_code
+                    tool_result = tool_result + _meta_prefix + json.dumps(_meta)
 
                 tool_msg = {
                     "role": "tool",
@@ -236,7 +262,9 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
 async def update_chat_session(session_id: str, body: ChatSessionUpdate):
     """Update a chat session's name, scope, and/or scope_data."""
     try:
-        updates = body.model_dump(exclude_none=True)
+        # Use exclude_unset=True so that explicitly-passed null values (e.g.
+        # enabled_tools=null to re-enable all tools) are included in the update.
+        updates = body.model_dump(exclude_unset=True)
         ok = await deps.db_client.update_chat_session(session_id, updates)
         if not ok:
             raise HTTPException(status_code=404, detail="Session not found")

@@ -25,7 +25,7 @@ import deps
 from models import ChatSendRequest
 
 from chats_crud import router as _crud_router
-from chats_tools import SESSION_CHAT_TOOLS
+from chats_tools import SESSION_CHAT_TOOLS, resolve_tools
 from chats_ai import (
     _build_ai_request,
     _parse_ai_response,
@@ -51,10 +51,18 @@ router.include_router(_crud_router)
 
 
 # ---------------------------------------------------------------------------
+# Backwards-compatible local alias so existing tests that import _resolve_tools
+# from this module continue to work.
+# ---------------------------------------------------------------------------
+
+_resolve_tools = resolve_tools
+
+
+# ---------------------------------------------------------------------------
 # Shared helper: attach __META__ timing to a tool result string
 # ---------------------------------------------------------------------------
 
-def _attach_meta(tool_result: str, runtime_ms: int) -> str:
+def _attach_meta(tool_result: str, runtime_ms: int, exit_code: int | None = None) -> str:
     _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     _meta_prefix = "\n__META__:"
     _meta_idx = tool_result.rfind(_meta_prefix)
@@ -65,8 +73,13 @@ def _attach_meta(tool_result: str, runtime_ms: int) -> str:
             existing = {}
         existing["runtime_ms"] = runtime_ms
         existing["timestamp"] = _ts
+        if exit_code is not None:
+            existing["exit_code"] = exit_code
         return tool_result[:_meta_idx] + _meta_prefix + json.dumps(existing)
-    return tool_result + _meta_prefix + json.dumps({"runtime_ms": runtime_ms, "timestamp": _ts})
+    meta: dict = {"runtime_ms": runtime_ms, "timestamp": _ts}
+    if exit_code is not None:
+        meta["exit_code"] = exit_code
+    return tool_result + _meta_prefix + json.dumps(meta)
 
 
 # ---------------------------------------------------------------------------
@@ -99,18 +112,24 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
         model = body.model or _project_model
         _log.info("[chat] resolved model=%s provider=%s", model, _ai_cfg.get("provider"))
 
-        history = await deps.db_client.get_chat_history(session_id)
-        or_messages = _build_or_messages(history, body.message)
-
-        new_messages: List[Dict[str, Any]] = []
-        max_iterations = 5
-
         # Inject the resolved key into the config dict for _build_ai_request
         _ai_cfg_with_key = {**_ai_cfg, "_resolved_key": _api_key}
 
+        # Always load enabled_tools from the session DB record — never from the
+        # request body — so the restriction cannot be bypassed by omitting the field.
+        _session_record = await deps.db_client.get_chat_session(session_id)
+        _enabled_tools_names = _session_record.get("enabled_tools") if _session_record else None
+        _tools = resolve_tools(_enabled_tools_names)
+        _allowed_tool_names = {t["function"]["name"] for t in _tools}
+
+        history = await deps.db_client.get_chat_history(session_id)
+        or_messages = _build_or_messages(history, body.message, tools=_tools)
+
+        new_messages: List[Dict[str, Any]] = []
+        max_iterations = 5
         for _ in range(max_iterations):
             _url, _headers, _body = _build_ai_request(
-                _ai_cfg_with_key, model, or_messages + new_messages, SESSION_CHAT_TOOLS
+                _ai_cfg_with_key, model, or_messages + new_messages, _tools
             )
             try:
                 async with httpx.AsyncClient(timeout=90.0) as client:
@@ -124,6 +143,14 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
                 raise HTTPException(502, f"AI provider request failed: {e}")
 
             assistant_msg = _parse_ai_response(_ai_cfg_with_key, data)
+            # Fallback: if the model returns empty content with no tool calls
+            # (common when all tools are disabled and the model has nothing to say),
+            # inject a notice so the user sees a meaningful response.
+            if not assistant_msg.get("content") and not assistant_msg.get("tool_calls"):
+                assistant_msg["content"] = (
+                    "I currently have no tools available in this session. "
+                    "Enable one or more tools in the AI Tools panel to proceed."
+                )
             new_messages.append(assistant_msg)
 
             tool_calls = assistant_msg.get("tool_calls") or []
@@ -136,19 +163,27 @@ async def send_session_message(session_id: str, body: ChatSendRequest, project_i
                 m.get("content", "") for m in new_messages if m.get("role") == "tool"
             ]
             for tc in tool_calls:
-                _t0 = _time.monotonic()
-                tool_result = await execute_tool_call(
-                    tc,
-                    project_id=project_id,
-                    session_id=session_id,
-                    recent_tool_outputs=_recent_outputs,
-                )
-                _runtime_ms = round((_time.monotonic() - _t0) * 1000)
-                tool_result = _attach_meta(tool_result, _runtime_ms)
+                fn_name = tc["function"]["name"]
+                # Enforcement: reject calls to tools that are disabled for this session.
+                # The LLM must still receive a tool message for every tool_call_id it
+                # emitted, otherwise the next API request will be rejected.
+                if fn_name not in _allowed_tool_names:
+                    tool_result = f"[FERRET] Tool '{fn_name}' is disabled for this session."
+                    tool_result = _attach_meta(tool_result, 0, exit_code=1)
+                else:
+                    _t0 = _time.monotonic()
+                    tool_result = await execute_tool_call(
+                        tc,
+                        project_id=project_id,
+                        session_id=session_id,
+                        recent_tool_outputs=_recent_outputs,
+                    )
+                    _runtime_ms = round((_time.monotonic() - _t0) * 1000)
+                    tool_result = _attach_meta(tool_result, _runtime_ms)
                 new_messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "name": tc["function"]["name"],
+                    "name": fn_name,
                     "content": tool_result,
                 })
 
@@ -212,8 +247,13 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
     _is_anthropic = _ai_cfg.get("format") == "anthropic"
 
     async def _generate():
+        # Always load enabled_tools from the session DB record — never from the
+        # request body — so the restriction cannot be bypassed by omitting the field.
+        _session_record = await deps.db_client.get_chat_session(session_id)
+        _enabled_tools_names = _session_record.get("enabled_tools") if _session_record else None
+        _tools_for_prompt = resolve_tools(_enabled_tools_names)
         history = await deps.db_client.get_chat_history(session_id)
-        or_messages = _build_or_messages(history, body.message)
+        or_messages = _build_or_messages(history, body.message, tools=_tools_for_prompt)
 
         # Persist the user message immediately so it survives a client abort.
         _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
@@ -230,7 +270,7 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             accumulated_tool_calls: Dict[int, Dict] = {}
 
             _url, _headers, _body = _build_ai_request(
-                _ai_cfg_with_key, model, or_messages + new_messages, SESSION_CHAT_TOOLS
+                _ai_cfg_with_key, model, or_messages + new_messages, _tools_for_prompt
             )
 
             if _is_anthropic:
@@ -311,10 +351,21 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                     return
 
             # Build the assistant message from accumulated data
-            assistant_msg: Dict[str, Any] = {"role": "assistant", "content": accumulated_content or None}
             tool_calls_list = list(accumulated_tool_calls.values())
+            assistant_msg: Dict[str, Any] = {"role": "assistant", "content": accumulated_content or None}
             if tool_calls_list:
                 assistant_msg["tool_calls"] = tool_calls_list
+
+            # Fallback: if the model returns empty content with no tool calls
+            # (common when all tools are disabled and the model has nothing to say),
+            # inject a notice so the user sees a meaningful response.
+            if not accumulated_content and not tool_calls_list:
+                _notice = (
+                    "I currently have no tools available in this session. "
+                    "Enable one or more tools in the AI Tools panel to proceed."
+                )
+                assistant_msg["content"] = _notice
+                yield f"data: {json.dumps({'type': 'delta', 'content': _notice})}\n\n"
 
             new_messages.append(assistant_msg)
 
@@ -326,6 +377,9 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             # before executing the tool calls, so it survives a client abort.
             await deps.db_client.append_chat_message(session_id, assistant_msg)
 
+            # Allowed tool names derived from the already-resolved tools list.
+            _allowed_tool_names = {t["function"]["name"] for t in _tools_for_prompt}
+
             # Execute tool calls — run_script/run_katana/run_ffuf stream chunks; others execute atomically
             for tc in tool_calls_list:
                 fn_name = tc["function"]["name"]
@@ -335,16 +389,28 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                     fn_args_raw = {}
                 yield f"data: {json.dumps({'type': 'tool_start', 'name': fn_name, 'args': tc['function'].get('arguments', '{}')})}\n\n"
 
-                if fn_name == "run_script":
+                # Enforcement: reject calls to tools that are disabled for this session.
+                if fn_name not in _allowed_tool_names:
+                    tool_result = f"[FERRET] Tool '{fn_name}' is disabled for this session."
+                    tool_result = _attach_meta(tool_result, 0, exit_code=1)
+                elif fn_name == "run_script":
                     _streamer = stream_run_script(fn_args_raw, project_id=project_id, session_id=session_id)
+                    tool_result = ""
+                    async for _chunk, _is_final, _final_result in _streamer:
+                        if _is_final:
+                            tool_result = _final_result or ""
+                        elif _chunk:
+                            yield f"data: {json.dumps({'type': 'tool_output_chunk', 'name': fn_name, 'chunk': _chunk})}\n\n"
                 elif fn_name == "run_katana":
                     _streamer = stream_run_katana(fn_args_raw)
+                    tool_result = ""
+                    async for _chunk, _is_final, _final_result in _streamer:
+                        if _is_final:
+                            tool_result = _final_result or ""
+                        elif _chunk:
+                            yield f"data: {json.dumps({'type': 'tool_output_chunk', 'name': fn_name, 'chunk': _chunk})}\n\n"
                 elif fn_name == "run_ffuf":
                     _streamer = stream_run_ffuf(fn_args_raw)
-                else:
-                    _streamer = None
-
-                if _streamer is not None:
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:

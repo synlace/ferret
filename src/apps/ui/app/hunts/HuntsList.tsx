@@ -73,6 +73,7 @@ export function HuntsList({
           value={wsFilter}
           onChange={e => onFilterChange(e.target.value)}
           placeholder="filter hunts..."
+          tabIndex={2}
           className="bg-transparent text-[10px] text-neutral-500 placeholder:text-neutral-700 outline-none flex-1 min-w-0"
         />
         <select

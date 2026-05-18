@@ -32,7 +32,7 @@ from typing import List
 _log = logging.getLogger(__name__)
 
 import deps
-from routers import requests, proxy, findings, chats, tests, projects, settings, workspaces, setup, plans
+from routers import requests, proxy, findings, chats, tests, projects, settings, workspaces, setup, plans, sources
 from routers import auth as auth_router
 
 
@@ -162,6 +162,16 @@ async def root():
     return {"message": "FERRET API - Forensic Analysis & Request Tracker"}
 
 
+@app.get("/api/tools")
+async def list_tools():
+    """Return the name and human-readable label of every AI tool available in session chat."""
+    from routers.chats_tools import SESSION_CHAT_TOOLS
+    return [
+        {"name": t["function"]["name"], "label": t["function"].get("label", t["function"]["name"])}
+        for t in SESSION_CHAT_TOOLS
+    ]
+
+
 @app.get("/health")
 async def health_check():
     proxy_status = await deps.mitm_manager.get_status()
@@ -231,6 +241,7 @@ app.include_router(workspaces.router)
 app.include_router(projects.router)
 app.include_router(settings.router)
 app.include_router(plans.router)
+app.include_router(sources.router)
 
 
 # ---------------------------------------------------------------------------
