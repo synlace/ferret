@@ -22,7 +22,7 @@ interface ProjectSwitcherProps {
 export default function ProjectSwitcher({ collapsed, onOpen }: ProjectSwitcherProps) {
   const { activeProject } = useProject()
 
-  const displayName  = activeProject?.name  ?? "Temporary Workspace"
+  const displayName  = activeProject?.name  ?? "Demo Project"
   const displayEmoji = activeProject?.emoji || "📁"
 
   return (
