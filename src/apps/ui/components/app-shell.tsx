@@ -7,16 +7,16 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import {
-  Globe,
+  History,
   Shield,
-  LayoutDashboard,
+  Crosshair,
   LogOut,
-  Zap,
+  Webhook,
   RefreshCw,
   FolderOpen,
   SlidersHorizontal,
   ChevronRight,
-  Target,
+  Swords,
   Radio,
   ExternalLink,
   BookOpen,
@@ -40,12 +40,12 @@ interface ProxyStatus {
 }
 
 const navItems = [
-  { href: "/history",    icon: Globe,             label: "History" },
-  { href: "/snare",      icon: Zap,               label: "Snare" },
+  { href: "/history",    icon: History,           label: "History" },
+  { href: "/snare",      icon: Webhook,           label: "Snare" },
   { href: "/gnaw",       icon: RefreshCw,         label: "Gnaw" },
-  { href: "/pounce",     icon: Target,            label: "Pounce" },
+  { href: "/pounce",     icon: Swords,            label: "Pounce" },
   { href: "/plans",      icon: BookOpen,          label: "Plans" },
-  { href: "/hunts",      icon: LayoutDashboard,   label: "Hunts" },
+  { href: "/hunts",      icon: Crosshair,         label: "Hunts" },
   { href: "/findings",   icon: Shield,            label: "Findings" },
   { href: "/projects",   icon: FolderOpen,        label: "Projects" },
   { href: "/settings",   icon: SlidersHorizontal, label: "Settings" },
