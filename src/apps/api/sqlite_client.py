@@ -367,7 +367,7 @@ class SQLiteClient(ProjectsMixin):
             """,
             (
                 "temp",
-                "Temporary Workspace",
+                "Demo Project",
                 "Default workspace for uncategorised traffic",
                 "#6b7280",
                 1,

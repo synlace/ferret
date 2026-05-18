@@ -35,7 +35,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
   const [spendLoading, setSpendLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const displayName  = activeProject?.name ?? "Temporary Workspace"
+  const displayName  = activeProject?.name ?? "Demo Project"
   const displayEmoji = activeProject?.emoji || "📁"
 
   // Fetch spend for all non-temp projects in parallel

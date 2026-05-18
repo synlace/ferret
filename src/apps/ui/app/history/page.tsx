@@ -3,7 +3,7 @@
 import { apiFetch } from "@/lib/api-fetch"
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import { useRouter, useSearchParams, usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import {
   useReactTable,
   getCoreRowModel,
@@ -14,14 +14,13 @@ import {
   type ColumnFiltersState,
 } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Download, Copy, RefreshCw, Loader2, Sparkles, Trash2,
   ChevronUp, ChevronDown, ChevronsUpDown,
-  ChevronLeft, ChevronRight, SlidersHorizontal,
-  Eye, Maximize2, MessageSquare, Zap, Terminal, Code2, Link, Filter, Highlighter, X, Clock, Ban, Check,
+  ChevronLeft, ChevronRight,
+  Maximize2,
 } from "lucide-react"
 import { useProject } from "../context/project-context"
 import {
@@ -31,6 +30,10 @@ import {
 import { parseQuery, matchesQuery } from "./parseQuery"
 import { upsertToken, isTokenActive } from "./upsertToken"
 import { useSearchHistory } from "./useSearchHistory"
+import { useSavedSearches, type SavedSearch } from "./useSavedSearches"
+import { SearchBar } from "./SearchBar"
+import { FilterPanel } from "./FilterPanel"
+import { ContextMenu, type ContextMenuState } from "./ContextMenu"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 const WS_BASE = API_BASE.replace(/^http/, "ws")
@@ -60,20 +63,30 @@ export default function HistoryPage() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
   // ── Single source of truth for all filtering ──────────────────────────────
-  const searchParams = useSearchParams()
-  const pathname = usePathname()
-  const [searchQuery, setSearchQuery] = useState(() => {
-    const fromUrl = searchParams.get("q")
-    if (fromUrl) return fromUrl
+
+  // Pills = active saved-search snippets; rawText = free-form typed portion
+  const [activePills, setActivePills] = useState<SavedSearch[]>(() => {
+    try {
+      const saved = sessionStorage.getItem("history:activePills")
+      return saved ? (JSON.parse(saved) as SavedSearch[]) : []
+    } catch { return [] }
+  })
+  const [rawText, setRawText] = useState(() => {
     try { return sessionStorage.getItem("history:lastQuery") ?? "" } catch { return "" }
   })
-  const [debouncedQuery, setDebouncedQuery] = useState(() => {
-    const fromUrl = searchParams.get("q")
-    if (fromUrl) return fromUrl
-    try { return sessionStorage.getItem("history:lastQuery") ?? "" } catch { return "" }
-  })
+
+  // Derived: the full effective query used for filtering
+  const searchQuery = useMemo(() => {
+    const parts = [...activePills.map(p => p.query), rawText].filter(Boolean)
+    return parts.join(" ")
+  }, [activePills, rawText])
+
+  const [debouncedQuery, setDebouncedQuery] = useState(searchQuery)
   const [copiedFilterUrl, setCopiedFilterUrl] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+
+  // Saved searches
+  const { savedSearches, add: addSavedSearch, remove: removeSavedSearch } = useSavedSearches()
 
   // Pagination state
   const [page, setPage] = useState(1)
@@ -101,26 +114,48 @@ export default function HistoryPage() {
   const [hostsWithTests, setHostsWithTests] = useState<Set<string>>(new Set())
 
   // Context menu state
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; req: ApiRequest } | null>(null)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [highlightedIds, setHighlightedIds] = useState<Map<string, string>>(new Map())
 
   // Search history
   const { history: searchHistory, push: pushHistory, remove: removeHistory } = useSearchHistory()
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(-1)
-  const historyPanelRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const tabResetRef = useRef<HTMLDivElement>(null)
 
-  // Filtered suggestions: when query is non-empty, show matching history; when empty show all
+  // Filtered suggestions: when rawText is non-empty, show matching history; when empty show all
   const historySuggestions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
+    const q = rawText.trim().toLowerCase()
     if (!q) return searchHistory
     return searchHistory.filter(h => h.toLowerCase().includes(q))
-  }, [searchQuery, searchHistory])
+  }, [rawText, searchHistory])
 
-  // Auto-focus search bar on mount
-  useEffect(() => { searchInputRef.current?.focus() }, [])
+  // Saved search suggestions matching rawText
+  const savedSearchSuggestions = useMemo(() => {
+    const q = rawText.trim().toLowerCase()
+    if (!q) return savedSearches
+    return savedSearches.filter(s =>
+      s.name.toLowerCase().includes(q) || s.query.toLowerCase().includes(q)
+    )
+  }, [rawText, savedSearches])
+
+  // On mount: if ?q= URL param is present, load it as rawText, clear pills, then strip from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const q = params.get("q")
+    if (q) {
+      setRawText(q)
+      setActivePills([])
+      params.delete("q")
+      const newUrl = params.size > 0
+        ? `${window.location.pathname}?${params.toString()}`
+        : window.location.pathname
+      window.history.replaceState(null, "", newUrl)
+    }
+    searchInputRef.current?.focus()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // When nav Escape fires, focus the search bar directly
   useEffect(() => {
@@ -164,7 +199,7 @@ export default function HistoryPage() {
     return () => document.removeEventListener("mousedown", handler, true)
   }, [])
 
-  // Close history dropdown on outside click
+  // Close context menu on outside click
   useEffect(() => {
     const close = () => setContextMenu(null)
     document.addEventListener("click", close)
@@ -188,19 +223,21 @@ export default function HistoryPage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  // Sync debouncedQuery → URL ?q= param (shareable) and sessionStorage (persist across navigation)
+  // Persist rawText to sessionStorage (survives navigation; cleared when empty)
+  // We persist rawText only — NOT searchQuery/debouncedQuery — so pill queries don't bleed
+  // back into rawText on the next page load.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (debouncedQuery) {
-      params.set("q", debouncedQuery)
-      try { sessionStorage.setItem("history:lastQuery", debouncedQuery) } catch { /* ignore */ }
+    if (rawText) {
+      try { sessionStorage.setItem("history:lastQuery", rawText) } catch { /* ignore */ }
     } else {
-      params.delete("q")
       try { sessionStorage.removeItem("history:lastQuery") } catch { /* ignore */ }
     }
-    const newUrl = params.size > 0 ? `${pathname}?${params.toString()}` : pathname
-    window.history.replaceState(null, "", newUrl)
-  }, [debouncedQuery, pathname])
+  }, [rawText])
+
+  // Persist active pills to sessionStorage
+  useEffect(() => {
+    try { sessionStorage.setItem("history:activePills", JSON.stringify(activePills)) } catch { /* ignore */ }
+  }, [activePills])
 
   // ------------------------------------------------------------------
   // Parsed query (derived from debouncedQuery for fetch; searchQuery for UI)
@@ -515,17 +552,26 @@ export default function HistoryPage() {
   // Filter panel helpers
   // ------------------------------------------------------------------
 
-  /** Toggle a qualifier value in the search bar */
+  /** Toggle a qualifier value in the search bar (operates on rawText) */
   const toggleFilter = (qualifier: string, value: string) => {
-    setSearchQuery(q => upsertToken(q, qualifier, value))
+    setRawText(q => upsertToken(q, qualifier, value))
   }
-
-  /** Whether a filter button should appear active */
-  const filterActive = (qualifier: string, value: string) =>
-    isTokenActive(searchQuery, qualifier, value)
 
   /** Whether any qualifier token is present (for the Filter button indicator) */
   const hasActiveFilters = /(?:^|\s)-?(?:method|status|mime|ext|source|has|size|time|host|path):/i.test(searchQuery)
+
+  // ------------------------------------------------------------------
+  // Pill management
+  // ------------------------------------------------------------------
+
+  const addPill = (s: SavedSearch) => {
+    setActivePills(prev => prev.some(p => p.name === s.name) ? prev : [...prev, s])
+    setHistoryOpen(false)
+  }
+
+  const removePill = (name: string) => {
+    setActivePills(prev => prev.filter(p => p.name !== name))
+  }
 
   // ------------------------------------------------------------------
   // Render
@@ -537,6 +583,7 @@ export default function HistoryPage() {
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Hidden sentinel: focused on Esc to reset tab sequence back to tabIndex=1 */}
       <div ref={tabResetRef} tabIndex={-1} className="sr-only" aria-hidden="true" />
+
       {/* Maximized detail overlay */}
       {maximizedRequest && (
         <div className="absolute inset-0 z-20 bg-neutral-950 flex flex-col">
@@ -572,15 +619,12 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Page header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-bold text-white">Request History</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-semibold text-white">Proxy History</h1>
           {activeProject && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-neutral-800 border border-neutral-700 text-xs">
-              <div className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: activeProject.color }} />
-              <span className="text-neutral-300">{activeProject.name}</span>
-            </div>
+            <span className="text-xs text-neutral-500">{activeProject.name}</span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -620,389 +664,57 @@ export default function HistoryPage() {
       )}
 
       {/* Search bar */}
-      <div className="flex border-b border-neutral-800 flex-shrink-0">
-        <div className="relative flex-1">
-          <Input
-            ref={searchInputRef}
-            placeholder='Search... or use qualifiers: method:GET status:4xx host:*api* mime:json -ext:js'
-            value={searchQuery}
-            tabIndex={1}
-            onChange={(e) => { setSearchQuery(e.target.value); setHistoryIndex(-1) }}
-            onKeyDown={(e) => {
-              if (historyOpen && historySuggestions.length > 0) {
-                if (e.key === "ArrowDown") { e.preventDefault(); setHistoryIndex(i => Math.min(i + 1, historySuggestions.length - 1)); return }
-                if (e.key === "ArrowUp")   { e.preventDefault(); setHistoryIndex(i => Math.max(i - 1, -1)); return }
-                if (e.key === "Enter") {
-                  e.preventDefault()
-                  if (historyIndex >= 0 && historySuggestions[historyIndex]) setSearchQuery(historySuggestions[historyIndex])
-                  else if (searchQuery.trim()) pushHistory(searchQuery)
-                  setHistoryOpen(false); setHistoryIndex(-1); return
-                }
-                if (e.key === "Escape") { setHistoryOpen(false); setHistoryIndex(-1); return }
-              } else if (e.key === "Enter" && searchQuery.trim()) {
-                pushHistory(searchQuery)
-              } else if (e.key === "Escape") {
-                searchInputRef.current?.blur()
-                tabResetRef.current?.focus()
-              }
-            }}
-            className="h-8 text-xs bg-neutral-900 border border-transparent text-white w-full rounded-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-brand-500 font-mono placeholder:font-sans placeholder:text-neutral-600 pr-7"
-          />
-          {searchQuery && (
-            <button
-              tabIndex={-1}
-              onClick={() => { setSearchQuery(""); setHistoryOpen(false) }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors"
-              title="Clear search"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <button
-          tabIndex={-1}
-          onClick={() => { setHistoryOpen(v => !v); setHistoryIndex(-1) }}
-          className={`h-8 px-2.5 flex items-center border-l border-neutral-800 transition-colors flex-shrink-0 ${
-            historyOpen ? "bg-brand-500/20 text-brand-400" : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
-          }`}
-          title="Search history"
-        >
-          <Clock className="w-3.5 h-3.5" />
-        </button>
-        {searchQuery && (
-          <button
-            tabIndex={-1}
-            onClick={() => {
-              const params = new URLSearchParams()
-              params.set("q", searchQuery)
-              const url = `${window.location.origin}${pathname}?${params.toString()}`
-              navigator.clipboard.writeText(url).catch(() => {})
-              setCopiedFilterUrl(true)
-              setTimeout(() => setCopiedFilterUrl(false), 1500)
-            }}
-            className={`h-8 px-2.5 flex items-center border-l border-neutral-800 transition-colors flex-shrink-0 ${
-              copiedFilterUrl ? "text-green-400 bg-neutral-900" : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
-            }`}
-            title="Copy shareable filter URL"
-          >
-            {copiedFilterUrl ? <Check className="w-3.5 h-3.5" /> : <Link className="w-3.5 h-3.5" />}
-          </button>
-        )}
-        <button
-          tabIndex={-1}
-          onClick={() => setFilterOpen(v => !v)}
-          className={`h-8 px-3 text-xs flex items-center gap-1.5 border-l border-neutral-800 transition-colors flex-shrink-0 ${
-            filterOpen || hasActiveFilters
-              ? "bg-brand-500/20 text-brand-400"
-              : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
-          }`}
-        >
-          <SlidersHorizontal className="w-3 h-3" />
-          Filter
-          <span className={`w-1.5 h-1.5 rounded-full bg-brand-400 ml-0.5 transition-opacity ${hasActiveFilters ? "opacity-100" : "opacity-0"}`} />
-        </button>
-      </div>
+      <SearchBar
+        rawText={rawText}
+        activePills={activePills}
+        historyOpen={historyOpen}
+        filterOpen={filterOpen}
+        hasActiveFilters={hasActiveFilters}
+        copiedFilterUrl={copiedFilterUrl}
+        savedSearches={savedSearches}
+        historyIndex={historyIndex}
+        historySuggestions={historySuggestions}
+        onRawTextChange={(v) => { setRawText(v); setHistoryIndex(-1) }}
+        onHistoryIndexChange={setHistoryIndex}
+        onSelectHistory={(entry) => { setRawText(entry); setHistoryOpen(false); setHistoryIndex(-1) }}
+        onPushHistory={pushHistory}
+        onRemovePill={removePill}
+        onAddPill={addPill}
+        onSaveSearch={(name, query) => addSavedSearch(name, query)}
+        onToggleHistory={() => { setHistoryOpen(v => !v); setHistoryIndex(-1) }}
+        onToggleFilter={() => setFilterOpen(v => !v)}
+        onCopyFilterUrl={() => {
+          const params = new URLSearchParams()
+          params.set("q", searchQuery)
+          const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`
+          navigator.clipboard.writeText(url).catch(() => {})
+          setCopiedFilterUrl(true)
+          setTimeout(() => setCopiedFilterUrl(false), 1500)
+        }}
+        onClearAll={() => { setRawText(""); setActivePills([]); setHistoryOpen(false) }}
+        searchInputRef={searchInputRef}
+        tabResetRef={tabResetRef}
+      />
 
-      {/* Combined history + filter panel — capped at 45vh so table always gets ≥55% */}
+      {/* Combined history + filter panel */}
       {(historyOpen || filterOpen) && (
-      <div className="border-b border-neutral-800 bg-neutral-950 flex-shrink-0 overflow-y-auto" style={{ maxHeight: "45vh" }}>
-
-          {/* ── History section ── */}
-          {historyOpen && (
-            <div className={filterOpen ? "border-b border-neutral-800" : ""}>
-              <div className="flex items-center justify-between px-3 pt-2 pb-1">
-                <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Search History</div>
-                {searchHistory.length > 0 && (
-                  <button
-                    onClick={() => { searchHistory.forEach(e => removeHistory(e)); setHistoryOpen(false) }}
-                    className="text-[10px] text-neutral-600 hover:text-brand-400 transition-colors"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-              {historySuggestions.length === 0 ? (
-                <div className="px-3 pb-2.5 text-[10px] text-neutral-600 italic">No history yet — press Enter after a search to save it</div>
-              ) : (
-                <div ref={historyPanelRef} className="flex flex-wrap pb-2">
-                  {(() => {
-                    const ROWS = 4
-                    const cols: string[][] = []
-                    for (let i = 0; i < historySuggestions.length; i += ROWS) cols.push(historySuggestions.slice(i, i + ROWS))
-                    return cols.map((col, ci) => (
-                      <div key={ci} className={`px-3 py-0.5 flex-shrink-0 ${ci < cols.length - 1 ? "border-r border-neutral-800" : ""}`}>
-                        {col.map((entry, rowIdx) => {
-                          const globalIdx = ci * ROWS + rowIdx
-                          return (
-                            <div
-                              key={entry}
-                              className={`flex items-center gap-2 py-0.5 cursor-pointer group rounded transition-colors ${globalIdx === historyIndex ? "bg-neutral-700/60" : ""}`}
-                              onClick={() => { setSearchQuery(entry); setHistoryOpen(false); setHistoryIndex(-1) }}
-                            >
-                              <Clock className="w-3 h-3 flex-shrink-0 text-neutral-600" />
-                              <span className="text-[11px] font-mono text-neutral-300 group-hover:text-white transition-colors truncate max-w-[200px]">{entry}</span>
-                              <button
-                                className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-white transition-all ml-auto p-0.5"
-                                title="Remove"
-                                onClick={(e) => { e.stopPropagation(); removeHistory(entry) }}
-                              >
-                                <X className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ))
-                  })()}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Filter section ── */}
-          {filterOpen && (
-          <div className="flex overflow-x-auto">
-
-          {/* ── Method col A: GET POST PUT ── */}
-          <div className="px-3 py-2.5 flex-shrink-0">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Method</div>
-            <div className="">
-              {["GET", "POST", "PUT"].map(m => (
-                <button key={m} onClick={() => toggleFilter("method", m)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Method col B: DELETE PATCH ── */}
-          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
-            <div className="">
-              {["DELETE", "PATCH"].map(m => (
-                <button key={m} onClick={() => toggleFilter("method", m)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Status ── */}
-          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Status</div>
-            <div className="">
-              {[
-                { value: "2xx", label: "2xx success" },
-                { value: "3xx", label: "3xx redirect" },
-                { value: "4xx", label: "4xx client" },
-                { value: "5xx", label: "5xx server" },
-              ].map(s => (
-                <button key={s.value} onClick={() => toggleFilter("status", s.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("status", s.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── MIME col A: JSON HTML XML CSS ── */}
-          <div className="px-3 py-2.5 flex-shrink-0">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">MIME</div>
-            <div className="">
-              {[
-                { value: "json", label: "JSON" },
-                { value: "html", label: "HTML" },
-                { value: "xml",  label: "XML" },
-                { value: "css",  label: "CSS" },
-              ].map(m => (
-                <button key={m.value} onClick={() => toggleFilter("mime", m.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── MIME col B: JS Image Plain ── */}
-          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
-            <div className="">
-              {[
-                { value: "js",    label: "JS" },
-                { value: "image", label: "Image" },
-                { value: "plain", label: "Plain" },
-              ].map(m => (
-                <button key={m.value} onClick={() => toggleFilter("mime", m.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Extension col A: .js .css .html ── */}
-          <div className="px-3 py-2.5 flex-shrink-0">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Ext</div>
-            <div className="">
-              {[
-                { value: "js",   label: ".js" },
-                { value: "css",  label: ".css" },
-                { value: "html", label: ".html" },
-              ].map(e => (
-                <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {e.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Extension col B: .json .php .png ── */}
-          <div className="px-3 py-2.5 flex-shrink-0">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
-            <div className="">
-              {[
-                { value: "json", label: ".json" },
-                { value: "php",  label: ".php" },
-                { value: "png",  label: ".png" },
-              ].map(e => (
-                <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {e.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Extension col C: .jpg .svg (none) ── */}
-          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2 invisible select-none">·</div>
-            <div className="">
-              {[
-                { value: "jpg",  label: ".jpg" },
-                { value: "svg",  label: ".svg" },
-                { value: "none", label: "(none)" },
-              ].map(e => (
-                <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {e.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Source ── */}
-          <div className="px-3 py-2.5 flex-shrink-0 border-r border-neutral-800">
-            <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Source</div>
-            <div className="">
-              {[
-                { value: "proxy", label: "👤 Human" },
-                { value: "test",  label: "🧪 Test" },
-              ].map(s => (
-                <button key={s.value} onClick={() => toggleFilter("source", s.value)}
-                  className={`block w-full text-left text-xs px-2 py-0.5 rounded transition-colors ${filterActive("source", s.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Reset + Query Reference ── */}
-          <div className="flex-1 flex flex-col px-3 py-2.5 min-w-[220px] border-l border-neutral-800">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Query Reference</div>
-              <button
-                onClick={() => setSearchQuery(q => q.replace(/(-?(?:method|status|mime|ext|source|has|size|time|host|path):[^\s]*\s*)/gi, "").trim())}
-                className="text-[10px] text-neutral-600 hover:text-brand-400 transition-colors"
-              >
-                Reset filters
-              </button>
-            </div>
-            {(() => {
-              const rows: [string, string][] = [
-                ["method:GET,POST",  "HTTP method"],
-                ["status:4xx,5xx",   "Status range"],
-                ["host:*api*",       "Host glob"],
-                ["path:/v2/*",       "Path glob"],
-                ["mime:json",        "MIME type"],
-                ["ext:js,css",       "File ext"],
-                ["source:human",     "Traffic source"],
-                ["has:annotation",   "Has AI note"],
-                ["has:body",         "Has body"],
-                ["size:>10kb",       "Response size"],
-                ["time:>500",        "Response ms"],
-                ["-ext:js,css",      "Negate with -"],
-              ]
-              const half = Math.ceil(rows.length / 2)
-              const col1 = rows.slice(0, half)
-              const col2 = rows.slice(half)
-              // Check if all values in an example token are active in the current query
-              const isRefActive = (example: string): boolean => {
-                const stripped = example.startsWith("-") ? example.slice(1) : example
-                const colonIdx = stripped.indexOf(":")
-                if (colonIdx === -1) return searchQuery.includes(stripped)
-                const qualifier = stripped.slice(0, colonIdx)
-                const values = stripped.slice(colonIdx + 1).split(",").map(v => v.trim()).filter(Boolean)
-                return values.every(v => isTokenActive(searchQuery, qualifier, v))
-              }
-
-              const renderCol = (items: [string, string][], onClick: (example: string) => void) => (
-                <div className="flex flex-col gap-0.5">
-                  {items.map(([example, desc]) => {
-                    const active = isRefActive(example)
-                    return (
-                      <button
-                        key={example}
-                        onClick={() => onClick(example)}
-                        className="flex items-baseline gap-0 text-left group"
-                        title={`Toggle: ${example}`}
-                      >
-                        <span className={`font-mono text-[10px] transition-colors whitespace-nowrap w-36 shrink-0 ${active ? "text-brand-400" : "text-brand-400/50 group-hover:text-brand-400"}`}>{example}</span>
-                        <span className={`text-[10px] whitespace-nowrap ${active ? "text-neutral-400" : "text-neutral-600"}`}>{desc}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-              // Click handler: parse "qualifier:value" from the example string and toggle it
-              const handleRefClick = (example: string) => {
-                // Strip leading - for negation detection
-                const negated = example.startsWith("-")
-                const stripped = negated ? example.slice(1) : example
-                const colonIdx = stripped.indexOf(":")
-                if (colonIdx === -1) {
-                  // No qualifier — treat as free text toggle
-                  setSearchQuery(q => {
-                    const term = stripped.trim()
-                    if (q.includes(term)) return q.replace(term, "").replace(/\s{2,}/g, " ").trim()
-                    return q.trim() ? `${q.trim()} ${term}` : term
-                  })
-                  return
-                }
-                const qualifier = stripped.slice(0, colonIdx)
-                const values = stripped.slice(colonIdx + 1).split(",").map(v => v.trim()).filter(Boolean)
-                setSearchQuery(q => {
-                  let next = q
-                  for (const v of values) next = upsertToken(next, qualifier, v, negated)
-                  return next
-                })
-              }
-
-              return (
-                <div className="flex gap-4">
-                  {renderCol(col1, handleRefClick)}
-                  {renderCol(col2, handleRefClick)}
-                </div>
-              )
-            })()}
-          </div>
-
-          </div>
-          )}
-
-      </div>
+        <FilterPanel
+          historyOpen={historyOpen}
+          filterOpen={filterOpen}
+          searchHistory={searchHistory}
+          historySuggestions={historySuggestions}
+          historyIndex={historyIndex}
+          savedSearchSuggestions={savedSearchSuggestions}
+          searchQuery={searchQuery}
+          onSelectHistory={(entry) => { setRawText(entry); setHistoryOpen(false); setHistoryIndex(-1) }}
+          onRemoveHistory={removeHistory}
+          onClearHistory={() => { searchHistory.forEach(e => removeHistory(e)) }}
+          onToggleFilter={toggleFilter}
+          onResetFilters={() => setRawText(q => q.replace(/(-?(?:method|status|mime|ext|source|has|size|time|host|path):[^\s]*\s*)/gi, "").trim())}
+          onUpdateRawText={setRawText}
+          onAddPill={addPill}
+          onRemoveSavedSearch={removeSavedSearch}
+        />
       )}
 
       {/* Stats + pagination bar */}
@@ -1182,199 +894,24 @@ export default function HistoryPage() {
       </div>
 
       {/* Right-click context menu */}
-      {contextMenu && (() => {
-        const req = contextMenu.req
-        const isHighlighted = highlightedIds.has(req.id)
-
-        const buildRawRequest = (r: ApiRequest) => {
-          const hdrs = r.headers ?? {}
-          const headerLines = Object.entries(hdrs)
-            .filter(([k]) => k.toLowerCase() !== "host")
-            .map(([k, v]) => `${k}: ${v}`)
-            .join("\n")
-          return [
-            `${r.method} ${r.path} HTTP/1.1`,
-            `Host: ${r.host}`,
-            ...(headerLines ? [headerLines] : []),
-            "",
-            r.body ?? "",
-          ].join("\n")
-        }
-
-        const sendToGnaw = async (r: ApiRequest) => {
-          const res = await apiFetch(`${API_BASE}/api/gnaw/tabs`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ raw_request: buildRawRequest(r), label: `${r.method} ${r.host}` }),
-          }).catch(() => null)
-          if (res?.ok) { const tab = await res.json(); router.push(`/gnaw?tab=${tab.id}`) }
-          else router.push("/gnaw")
-        }
-
-        type MenuItem =
-          | { type: "item"; Icon: React.ElementType; label: string; action: () => void; danger?: boolean }
-          | { type: "separator" }
-
-        const groups: MenuItem[][] = [
-          // Group 1 — Inspect
-          [
-            {
-              type: "item",
-              Icon: Eye,
-              label: "View Details",
-              action: () => { toggleExpanded(req.id); setContextMenu(null) },
-            },
-            {
-              type: "item",
-              Icon: Maximize2,
-              label: "Open Maximized",
-              action: () => { setMaximizedId(req.id); setContextMenu(null) },
-            },
-          ],
-          // Group 2 — Send / Replay
-          [
-            {
-              type: "item",
-              Icon: RefreshCw,
-              label: "Send to Gnaw",
-              action: async () => { await sendToGnaw(req); setContextMenu(null) },
-            },
-            {
-              type: "item",
-              Icon: MessageSquare,
-              label: "Send to Chat",
-              action: () => { router.push(`/chat?requestId=${req.id}&method=${req.method}&url=${encodeURIComponent(req.url)}`); setContextMenu(null) },
-            },
-            {
-              type: "item",
-              Icon: Zap,
-              label: "Send to Snare",
-              action: () => { router.push(`/snare?url=${encodeURIComponent(req.url)}&method=${req.method}`); setContextMenu(null) },
-            },
-          ],
-          // Group 3 — Copy
-          [
-            {
-              type: "item",
-              Icon: Link,
-              label: "Copy URL",
-              action: () => { navigator.clipboard.writeText(req.url).catch(() => {}); setContextMenu(null) },
-            },
-            {
-              type: "item",
-              Icon: Terminal,
-              label: "Copy as cURL",
-              action: () => {
-                const headers = Object.entries(req.headers ?? {}).map(([k, v]) => `-H '${k}: ${v}'`).join(" ")
-                const body = req.body ? `--data '${req.body}'` : ""
-                navigator.clipboard.writeText(`curl -X ${req.method} '${req.url}' ${headers} ${body}`.trim()).catch(() => {})
-                setContextMenu(null)
-              },
-            },
-            {
-              type: "item",
-              Icon: Code2,
-              label: "Copy as Python (httpx)",
-              action: () => {
-                const headers = JSON.stringify(req.headers ?? {})
-                const body = req.body ? `, content=b'${req.body}'` : ""
-                navigator.clipboard.writeText(`httpx.request('${req.method}', '${req.url}', headers=${headers}${body})`).catch(() => {})
-                setContextMenu(null)
-              },
-            },
-          ],
-          // Group 4 — Filter / Highlight
-          [
-            {
-              type: "item",
-              Icon: Filter,
-              label: `Filter by Host: ${req.host}`,
-              action: () => { setSearchQuery(q => upsertToken(q, "host", req.host)); setContextMenu(null) },
-            },
-            {
-              type: "item",
-              Icon: Ban,
-              label: `Exclude Domain: ${req.host}`,
-              action: () => { setSearchQuery(q => upsertToken(q, "host", req.host, true)); setContextMenu(null) },
-            },
-            {
-              type: "item",
-              Icon: Ban,
-              label: `Exclude Domain + Path: ${req.host}${req.path}`,
-              action: () => {
-                setSearchQuery(q => {
-                  const withHost = upsertToken(q, "host", req.host, true)
-                  return upsertToken(withHost, "path", req.path, true)
-                })
-                setContextMenu(null)
-              },
-            },
-            {
-              type: "item",
-              Icon: isHighlighted ? X : Highlighter,
-              label: isHighlighted ? "Remove Highlight" : "Highlight Row",
-              action: () => {
-                setHighlightedIds(prev => {
-                  const next = new Map(prev)
-                  if (next.has(req.id)) next.delete(req.id)
-                  else next.set(req.id, "bg-yellow-900/30")
-                  return next
-                })
-                setContextMenu(null)
-              },
-            },
-          ],
-        ]
-
-        const allItems: MenuItem[] = groups.reduce<MenuItem[]>((acc, group, i) => {
-          if (i > 0) acc.push({ type: "separator" })
-          return acc.concat(group)
-        }, [])
-
-        const MENU_WIDTH = 280
-        const ITEM_HEIGHT = 36
-        const SEPARATOR_HEIGHT = 9
-        const PADDING = 8
-        const menuEstimatedHeight = allItems.reduce((h, item) =>
-          h + (item.type === "separator" ? SEPARATOR_HEIGHT : ITEM_HEIGHT), PADDING * 2)
-
-        const spaceBelow = window.innerHeight - contextMenu.y
-        const spaceAbove = contextMenu.y
-        const flipUp = spaceBelow < menuEstimatedHeight && spaceAbove >= menuEstimatedHeight
-
-        let top: number | undefined
-        let bottom: number | undefined
-        if (flipUp) {
-          bottom = window.innerHeight - contextMenu.y
-        } else {
-          top = Math.min(contextMenu.y, window.innerHeight - menuEstimatedHeight - 8)
-          top = Math.max(top, 8)
-        }
-        const left = Math.min(contextMenu.x, window.innerWidth - MENU_WIDTH - 8)
-
-        return (
-          <div
-            className="fixed z-50 bg-neutral-800 border border-neutral-700 rounded-lg shadow-2xl py-1 min-w-[220px]"
-            style={{ top, bottom, left }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {allItems.map((item, i) =>
-              item.type === "separator" ? (
-                <div key={`sep-${i}`} className="my-1 border-t border-neutral-700" />
-              ) : (
-                <button
-                  key={item.label}
-                  onClick={item.action}
-                  className="w-full text-left px-3 py-2 flex items-center gap-3 text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors text-sm"
-                >
-                  <item.Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              )
-            )}
-          </div>
-        )
-      })()}
+      {contextMenu && (
+        <ContextMenu
+          contextMenu={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onToggleExpanded={toggleExpanded}
+          onMaximize={(id) => setMaximizedId(id)}
+          onHighlight={(id) => {
+            setHighlightedIds(prev => {
+              const next = new Map(prev)
+              if (next.has(id)) next.delete(id)
+              else next.set(id, "bg-yellow-900/30")
+              return next
+            })
+          }}
+          isHighlighted={highlightedIds.has(contextMenu.req.id)}
+          onFilterQuery={(updater) => setRawText(q => updater(q))}
+        />
+      )}
     </div>
   )
 }
