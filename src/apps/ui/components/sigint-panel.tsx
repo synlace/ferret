@@ -198,7 +198,7 @@ export default function SigintPanel({
 
         {/* Header */}
         <SheetHeader className="px-4 py-3 border-b border-neutral-800 flex-shrink-0">
-          <SheetTitle className="text-orange-500 font-bold text-sm tracking-wider">
+          <SheetTitle className="text-brand-500 font-bold text-sm tracking-wider">
             LATEST NEWS
           </SheetTitle>
         </SheetHeader>
@@ -232,7 +232,7 @@ export default function SigintPanel({
                   {/* Title — linked if url provided */}
                   <p className={`text-xs font-semibold mb-1 ${isRead ? "text-neutral-400" : "text-white"}`}>
                     {!isRead && (
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5 mb-0.5 align-middle" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-brand-500 mr-1.5 mb-0.5 align-middle" />
                     )}
                     {item.url ? (
                       <a
@@ -240,7 +240,7 @@ export default function SigintPanel({
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={() => onMarkRead(item.id)}
-                        className="inline-flex items-center gap-1 hover:text-orange-400 transition-colors"
+                        className="inline-flex items-center gap-1 hover:text-brand-400 transition-colors"
                       >
                         {item.title}
                         <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />

@@ -51,7 +51,7 @@ const MessageList = memo(function MessageList({
         if (msg.role === "notice") {
           return (
             <div key={i} className="flex flex-col items-start">
-              <div className="max-w-[80%] px-3 py-2 text-sm border bg-orange-500/10 text-orange-200 border-orange-500/30">
+              <div className="max-w-[80%] px-3 py-2 text-sm border bg-brand-500/10 text-brand-200 border-brand-500/30">
                 <MarkdownContent content={msg.content ?? ""} />
               </div>
               <div className="flex items-center gap-2 mt-0.5 px-1">
@@ -62,8 +62,8 @@ const MessageList = memo(function MessageList({
         }
         return (
           <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-            <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-orange-500/15 text-white border-orange-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
-              {msg.role === "assistant" && <div className="text-[10px] text-orange-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
+            <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-900 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
+              {msg.role === "assistant" && <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
               {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
             </div>
             <div className={`flex items-center gap-2 mt-0.5 px-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
@@ -196,7 +196,7 @@ export function ChatPanel({
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button onClick={onOpenModelPicker}
-                  className="text-[10px] text-neutral-500 hover:text-orange-400 font-mono px-1.5 py-0.5 border border-neutral-800 hover:border-neutral-700 transition-colors">
+                  className="text-[10px] text-neutral-500 hover:text-brand-400 font-mono px-1.5 py-0.5 border border-neutral-800 hover:border-neutral-700 transition-colors">
                   {modelDisplayName}
                 </button>
                 <button onClick={onExportChat} disabled={!activeSession || messages.length === 0}
@@ -204,7 +204,7 @@ export function ChatPanel({
                   <Download className="w-3 h-3" />
                 </button>
                 {!contextOpen && (
-                  <button onClick={onOpenContext} className="text-neutral-500 hover:text-orange-400 transition-colors" title="Open context">
+                  <button onClick={onOpenContext} className="text-neutral-500 hover:text-brand-400 transition-colors" title="Open context">
                     <PanelRight className="w-3 h-3" />
                   </button>
                 )}
@@ -218,14 +218,14 @@ export function ChatPanel({
                   <LayoutDashboard className="w-8 h-8 mb-2 opacity-20" />
                   <p className="text-sm mb-1">Select a hunt or start a new one</p>
                   <button onClick={onNewHunt}
-                    className="mt-2 px-4 py-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-white transition-colors flex items-center gap-1.5">
+                    className="mt-2 px-4 py-1.5 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 transition-colors flex items-center gap-1.5">
                     <Plus className="w-3 h-3" />New Hunt
                   </button>
                 </div>
               )}
               {loadingHistory && (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+                  <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
                 </div>
               )}
               <MessageList
@@ -256,9 +256,9 @@ export function ChatPanel({
               {loading && streamingContent && (
                 <div className="flex flex-col items-start">
                   <div className="max-w-[80%] px-3 py-2 text-sm bg-neutral-900 text-neutral-200 border border-neutral-800">
-                    <div className="text-[10px] text-orange-400 font-semibold mb-1 uppercase tracking-wider">AI</div>
+                    <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>
                     <MarkdownContent content={streamingContent} />
-                    <span className="inline-block w-1.5 h-4 bg-orange-400 animate-pulse ml-0.5 align-middle" />
+                    <span className="inline-block w-1.5 h-4 bg-brand-400 animate-pulse ml-0.5 align-middle" />
                   </div>
                 </div>
               )}
@@ -266,9 +266,9 @@ export function ChatPanel({
                 <div className="flex justify-start">
                   <div className="bg-neutral-900 border border-neutral-800 px-3 py-2">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 bg-orange-400 opacity-40 animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="w-1.5 h-1.5 bg-orange-400 opacity-40 animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="w-1.5 h-1.5 bg-orange-400 opacity-40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "300ms" }} />
                     </div>
                   </div>
                 </div>
@@ -282,13 +282,13 @@ export function ChatPanel({
                 <Textarea ref={chatInputRef} value={input} onChange={e => onInputChange(e.target.value)} onKeyDown={onKeyDown}
                   placeholder={activeSessionId ? "Message... (Enter to send, Shift+Enter for newline)" : "Select a hunt first"}
                   disabled={!activeSessionId || loading}
-                  className="flex-1 text-sm bg-neutral-800 border-neutral-700 text-white resize-none min-h-[40px] max-h-40 placeholder:text-neutral-600 focus-visible:ring-orange-500/50" rows={2} />
+                  className="flex-1 text-sm bg-neutral-800 border-neutral-700 text-white resize-none min-h-[40px] max-h-40 placeholder:text-neutral-600 focus-visible:ring-brand-500/50" rows={2} />
                 {loading
                   ? <button onClick={onStopStream} className="bg-neutral-700 hover:bg-red-900/60 border border-neutral-600 hover:border-red-500/50 text-neutral-300 hover:text-red-400 w-10 flex items-center justify-center flex-shrink-0 transition-colors">
                       <Square className="w-4 h-4" />
                     </button>
                   : <button onClick={onSendMessage} disabled={!activeSessionId || !input.trim()}
-                      className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white w-10 flex items-center justify-center flex-shrink-0 transition-colors">
+                      className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-neutral-900 w-10 flex items-center justify-center flex-shrink-0 transition-colors">
                       <Send className="w-4 h-4" />
                     </button>}
               </div>
@@ -301,7 +301,7 @@ export function ChatPanel({
       {/* Right context panel resize handle */}
       {contextOpen && !selectedFilePath && (
         <div
-          className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-orange-500 transition-colors cursor-col-resize z-10"
+          className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors cursor-col-resize z-10"
           onMouseDown={handleRightDragStart}
         />
       )}
@@ -321,7 +321,7 @@ export function ChatPanel({
             <span className="text-xs font-semibold text-white">Context</span>
             <div className="flex items-center gap-1">
               {activeSession && (
-                <button onClick={onOpenScopePicker} className="text-neutral-500 hover:text-orange-400 transition-colors">
+                <button onClick={onOpenScopePicker} className="text-neutral-500 hover:text-brand-400 transition-colors">
                   <Pencil className="w-3 h-3" />
                 </button>
               )}
@@ -343,7 +343,7 @@ export function ChatPanel({
                       <div className="text-xs text-neutral-200 truncate">{SCOPE_LABELS[activeSession.scope] ?? activeSession.scope}</div>
                     </div>
                     <button onClick={onOpenScopePicker}
-                      className="text-[10px] text-neutral-500 hover:text-orange-400 transition-colors flex-shrink-0 px-1.5 py-0.5 border border-neutral-700 hover:border-orange-500/40">
+                      className="text-[10px] text-neutral-500 hover:text-brand-400 transition-colors flex-shrink-0 px-1.5 py-0.5 border border-neutral-700 hover:border-brand-500/40">
                       Edit
                     </button>
                   </div>
@@ -357,7 +357,7 @@ export function ChatPanel({
                     <div>Model: <span className="text-neutral-300">{modelDisplayName}</span></div>
                     <div>Cost: {sessionSpend != null ? <span className="text-green-400 font-mono">${sessionSpend.toFixed(4)}</span> : <span className="text-neutral-600">—</span>}</div>
                     {activeSession.target_url && (
-                      <div>Target: <span className="text-orange-300 font-mono break-all">{activeSession.target_url}</span></div>
+                      <div>Target: <span className="text-brand-300 font-mono break-all">{activeSession.target_url}</span></div>
                     )}
                   </div>
                 </div>
@@ -368,7 +368,7 @@ export function ChatPanel({
                     <label className="text-[10px] text-neutral-400 flex-1">Max tool calls</label>
                     <input type="number" min={1} max={50} value={maxToolCalls}
                       onChange={e => onMaxToolCallsChange(Math.max(1, Math.min(50, Number(e.target.value))))}
-                      className="w-14 text-[10px] text-center bg-neutral-800 border border-neutral-700 px-1 py-0.5 text-neutral-200 focus:outline-none focus:border-orange-500/60" />
+                      className="w-14 text-[10px] text-center bg-neutral-800 border border-neutral-700 px-1 py-0.5 text-neutral-200 focus:outline-none focus:border-brand-500/60" />
                   </div>
                 </div>
                 {/* AI Tools */}
@@ -377,7 +377,7 @@ export function ChatPanel({
                   <div className="space-y-0.5">
                     {["search_requests","get_request_detail","http_request","create_finding","list_findings","write_test","run_test","read_test","run_script","run_ffuf"].map(tool => (
                       <div key={tool} className="flex items-center gap-2 py-0.5">
-                        <input type="checkbox" defaultChecked id={`tool-${tool}`} className="w-3 h-3 accent-orange-500 flex-shrink-0" />
+                        <input type="checkbox" defaultChecked id={`tool-${tool}`} className="w-3 h-3 accent-brand-500 flex-shrink-0" />
                         <label htmlFor={`tool-${tool}`} className="text-[10px] text-neutral-300 font-mono flex-1 truncate cursor-pointer">{tool}</label>
                       </div>
                     ))}

@@ -69,7 +69,7 @@ function getMethodColor(method: string): string {
     case "GET":    return "bg-blue-600"
     case "POST":   return "bg-green-600"
     case "PUT":    return "bg-yellow-600"
-    case "PATCH":  return "bg-orange-600"
+    case "PATCH":  return "bg-brand-600"
     case "DELETE": return "bg-red-600"
     default:       return "bg-neutral-600"
   }
@@ -77,7 +77,7 @@ function getMethodColor(method: string): string {
 
 function getStatusColor(sc: number): string {
   if (sc >= 500) return "bg-red-700"
-  if (sc >= 400) return "bg-orange-700"
+  if (sc >= 400) return "bg-brand-700"
   if (sc >= 300) return "bg-yellow-700"
   if (sc >= 200) return "bg-green-700"
   return "bg-neutral-600"
@@ -112,7 +112,7 @@ function ScopeTypeRow({
           onClick={() => onChange(s)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs border transition-colors ${
             value === s
-              ? "bg-orange-500/20 border-orange-500/50 text-orange-400"
+              ? "bg-brand-500/20 border-brand-500/50 text-brand-400"
               : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500"
           }`}
         >
@@ -364,7 +364,7 @@ export function ScopePickerModal({
                   </SelectContent>
                 </Select>
                 {scope === "selected" && selectedIds.length > 0 && (
-                  <span className="text-xs text-orange-400 whitespace-nowrap">
+                  <span className="text-xs text-brand-400 whitespace-nowrap">
                     {selectedIds.length} selected
                   </span>
                 )}
@@ -393,7 +393,7 @@ export function ScopePickerModal({
                             onClick={toggleAll}
                             className={`w-3.5 h-3.5 rounded border cursor-pointer mx-auto ${
                               sorted.every(r => selectedIds.includes(r.id))
-                                ? "bg-orange-500 border-orange-500"
+                                ? "bg-brand-500 border-brand-500"
                                 : "border-neutral-500"
                             }`}
                           />
@@ -435,18 +435,18 @@ export function ScopePickerModal({
                           key={req.id}
                           onClick={() => toggleRow(req.id)}
                           className={`border-b border-neutral-700/50 cursor-pointer transition-colors hover:bg-neutral-700/40 ${
-                            isSelected ? "bg-orange-500/10" : ""
+                            isSelected ? "bg-brand-500/10" : ""
                           }`}
                         >
                           {/* Checkbox / radio */}
                           <td className="px-3 py-2 text-center">
                             {scope === "single" ? (
                               <div className={`w-3.5 h-3.5 rounded-full border mx-auto ${
-                                isSelected ? "bg-orange-500 border-orange-500" : "border-neutral-500"
+                                isSelected ? "bg-brand-500 border-brand-500" : "border-neutral-500"
                               }`} />
                             ) : (
                               <div className={`w-3.5 h-3.5 rounded border mx-auto ${
-                                isSelected ? "bg-orange-500 border-orange-500" : "border-neutral-500"
+                                isSelected ? "bg-brand-500 border-brand-500" : "border-neutral-500"
                               }`} />
                             )}
                           </td>
@@ -556,7 +556,7 @@ export function ScopePickerModal({
             </Button>
             <Button
               size="sm"
-              className="bg-orange-500 hover:bg-orange-600 text-white text-xs"
+              className="bg-brand-500 hover:bg-brand-600 text-neutral-900 text-xs"
               disabled={
                 saving ||
                 (scope === "single" && selectedIds.length === 0) ||

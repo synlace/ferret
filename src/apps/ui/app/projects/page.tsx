@@ -38,7 +38,7 @@ function ColHeader({
       {sortKey ? (
         <button
           onClick={() => onSort(sortKey)}
-          className={`flex items-center gap-1 hover:text-neutral-400 transition-colors ${align === "right" ? "ml-auto" : ""} ${isActive ? "text-orange-400" : ""}`}
+          className={`flex items-center gap-1 hover:text-neutral-400 transition-colors ${align === "right" ? "ml-auto" : ""} ${isActive ? "text-brand-400" : ""}`}
         >
           {label}
           <span className="text-[9px] opacity-60">{isActive ? (sortDir === "asc" ? "↑" : "↓") : "↕"}</span>
@@ -256,7 +256,7 @@ export default function ProjectsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter..."
-              className="pl-6 pr-6 h-7 text-xs bg-neutral-800 border border-neutral-700 rounded text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 w-40"
+              className="pl-6 pr-6 h-7 text-xs bg-neutral-800 border border-neutral-700 rounded text-white placeholder-neutral-600 focus:outline-none focus:border-brand-500 w-40"
             />
             {searchQuery && (
               <button
@@ -280,7 +280,7 @@ export default function ProjectsPage() {
           {/* New project */}
           <button
             onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-1 h-7 px-2.5 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
+            className="flex items-center gap-1 h-7 px-2.5 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded transition-colors"
           >
             <Plus className="w-3 h-3" /> New Project
           </button>
@@ -313,7 +313,7 @@ export default function ProjectsPage() {
               <tr>
                 <td colSpan={8} className="px-4 py-16 text-center text-neutral-600 text-sm">
                   No projects yet.{" "}
-                  <button onClick={() => setShowNewModal(true)} className="text-orange-400 hover:text-orange-300 transition-colors">
+                  <button onClick={() => setShowNewModal(true)} className="text-brand-400 hover:text-brand-300 transition-colors">
                     Create one to get started.
                   </button>
                 </td>

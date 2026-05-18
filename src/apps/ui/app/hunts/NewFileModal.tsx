@@ -43,7 +43,7 @@ export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProp
           <div className="flex gap-0 mt-1.5">
             {(["scripts", "tests", "notes"] as const).map(d => (
               <button key={d} onClick={() => setSubdir(d)}
-                className={`flex-1 py-1.5 text-xs border transition-colors ${subdir === d ? "bg-orange-500/20 border-orange-500/60 text-orange-300" : "border-neutral-700 text-neutral-400 hover:border-neutral-600"}`}>
+                className={`flex-1 py-1.5 text-xs border transition-colors ${subdir === d ? "bg-brand-500/20 border-brand-500/60 text-brand-300" : "border-neutral-700 text-neutral-400 hover:border-neutral-600"}`}>
                 {d}
               </button>
             ))}
@@ -66,7 +66,7 @@ export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProp
         {/* Actions */}
         <div className="flex border-t border-neutral-700 mt-auto">
           <button onClick={handleCreate} disabled={saving || !name.trim()}
-            className="flex-1 py-2.5 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="flex-1 py-2.5 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-neutral-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Create"}
           </button>
           <button onClick={onClose}

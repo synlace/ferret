@@ -545,7 +545,7 @@ function HuntsPageInner() {
       {/* Left sidebar resize handle */}
       {sessionPanelOpen && (
         <div
-          className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-orange-500 transition-colors cursor-col-resize z-10"
+          className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors cursor-col-resize z-10"
           onMouseDown={handleLeftDragStart}
         />
       )}

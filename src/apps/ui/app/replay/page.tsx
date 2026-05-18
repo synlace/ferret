@@ -308,10 +308,10 @@ export default function ReplayPage() {
       <aside className="w-72 border-r border-neutral-700 flex flex-col bg-neutral-900 shrink-0">
         <div className="p-3 border-b border-neutral-700">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-orange-500 tracking-wider">CAPTURED REQUESTS</span>
+            <span className="text-xs font-semibold text-brand-500 tracking-wider">CAPTURED REQUESTS</span>
             <Button
               variant="ghost" size="icon"
-              className="h-6 w-6 text-neutral-400 hover:text-orange-500"
+              className="h-6 w-6 text-neutral-400 hover:text-brand-500"
               onClick={fetchRequests}
             >
               <RefreshCw className="w-3 h-3" />
@@ -341,7 +341,7 @@ export default function ReplayPage() {
         <div className="flex-1 overflow-y-auto">
           {loadingList && filteredRequests.length === 0 && (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+              <Loader2 className="w-4 h-4 animate-spin text-brand-500" />
             </div>
           )}
           {!loadingList && filteredRequests.length === 0 && (
@@ -353,7 +353,7 @@ export default function ReplayPage() {
               onClick={() => selectRequest(req)}
               className={`w-full text-left px-3 py-2.5 border-b border-neutral-800 transition-colors ${
                 selectedId === req.id
-                  ? "bg-orange-500/15 border-l-2 border-l-orange-500"
+                  ? "bg-brand-500/15 border-l-2 border-l-brand-500"
                   : "hover:bg-neutral-800"
               }`}
             >
@@ -416,7 +416,7 @@ export default function ReplayPage() {
                 size="sm"
                 onClick={sendReplay}
                 disabled={replaying || !editUrl.trim()}
-                className="bg-orange-500 hover:bg-orange-600 text-white text-xs h-8 shrink-0"
+                className="bg-brand-500 hover:bg-brand-600 text-neutral-900 text-xs h-8 shrink-0"
               >
                 {replaying ? (
                   <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -443,7 +443,7 @@ export default function ReplayPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => setChatOpen(!chatOpen)}
-                className="border-neutral-600 text-neutral-300 hover:text-orange-500 text-xs h-8 shrink-0"
+                className="border-neutral-600 text-neutral-300 hover:text-brand-500 text-xs h-8 shrink-0"
               >
                 <MessageSquare className="w-3 h-3 mr-1" />
                 AI Chat
@@ -458,7 +458,7 @@ export default function ReplayPage() {
                   onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 text-xs font-medium transition-colors capitalize ${
                     activeTab === tab
-                      ? "text-orange-500 border-b-2 border-orange-500"
+                      ? "text-brand-500 border-b-2 border-brand-500"
                       : "text-neutral-400 hover:text-white"
                   }`}
                 >
@@ -504,7 +504,7 @@ export default function ReplayPage() {
                 <div className="flex-1 flex flex-col">
                   {replaying && (
                     <div className="flex items-center justify-center flex-1 gap-2 text-neutral-500">
-                      <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+                      <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
                       <span className="text-sm">Sending request...</span>
                     </div>
                   )}
@@ -595,7 +595,7 @@ export default function ReplayPage() {
       {chatOpen && (
         <aside className="w-80 border-l border-neutral-700 flex flex-col bg-neutral-900 shrink-0">
           <div className="p-3 border-b border-neutral-700 flex items-center justify-between">
-            <span className="text-xs font-semibold text-orange-500">AI ASSISTANT</span>
+            <span className="text-xs font-semibold text-brand-500">AI ASSISTANT</span>
             <Button
               variant="ghost" size="icon"
               className="h-6 w-6 text-neutral-400"
@@ -620,7 +620,7 @@ export default function ReplayPage() {
                     : "bg-neutral-700 text-neutral-200 mr-4"
                 }`}
               >
-                <span className="font-semibold text-orange-400 block mb-1">
+                <span className="font-semibold text-brand-400 block mb-1">
                   {msg.role === "user" ? "You" : "AI"}
                 </span>
                 <span className="whitespace-pre-wrap">{msg.content}</span>
@@ -628,7 +628,7 @@ export default function ReplayPage() {
             ))}
             {chatLoading && (
               <div className="bg-neutral-700 rounded p-2 mr-4">
-                <Loader2 className="w-3 h-3 animate-spin text-orange-400" />
+                <Loader2 className="w-3 h-3 animate-spin text-brand-400" />
               </div>
             )}
           </div>
@@ -647,7 +647,7 @@ export default function ReplayPage() {
               size="icon"
               onClick={sendChat}
               disabled={chatLoading || !chatInput.trim()}
-              className="bg-orange-500 hover:bg-orange-600 self-end h-8 w-8"
+              className="bg-brand-500 hover:bg-brand-600 self-end h-8 w-8"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>

@@ -207,7 +207,7 @@ function SplitPane({
       ) : (
         <>
           <div className="overflow-hidden" style={{ width: `${splitPct}%` }}>{left(stackToggle)}</div>
-          <div className="w-px bg-neutral-700 hover:bg-orange-500/40 flex-shrink-0 transition-colors" {...dragHandleProps} />
+          <div className="w-px bg-neutral-700 hover:bg-brand-500/40 flex-shrink-0 transition-colors" {...dragHandleProps} />
           <div className="overflow-hidden flex-1">{right}</div>
         </>
       )}
@@ -653,7 +653,7 @@ export function SearchRequestsView({ result }: { result: string | null }) {
             {pageRows.map((row, i) => (
               <tr key={i} className="border-b border-neutral-800/60 hover:bg-neutral-800/30 transition-colors">
                 <td className="px-3 py-1.5">
-                  <span className={`font-mono font-bold text-[10px] ${row.method === "GET" ? "text-green-400" : row.method === "POST" ? "text-blue-400" : "text-orange-400"}`}>{row.method ?? "—"}</span>
+                  <span className={`font-mono font-bold text-[10px] ${row.method === "GET" ? "text-green-400" : row.method === "POST" ? "text-blue-400" : "text-brand-400"}`}>{row.method ?? "—"}</span>
                 </td>
                 <td className="px-3 py-1.5 max-w-[200px]">
                   <span className="text-neutral-400 truncate block font-mono text-[10px]">{row.host ?? ""}</span>
@@ -713,7 +713,7 @@ export function SearchRequestsView({ result }: { result: string | null }) {
 // Result: JSON string of the created finding, or a plain text confirmation.
 const SEVERITY_STYLES: Record<string, { bg: string; border: string; text: string; dot: string }> = {
   critical: { bg: "bg-red-950/60",    border: "border-red-700",    text: "text-red-300",    dot: "bg-red-500" },
-  high:     { bg: "bg-orange-950/60", border: "border-orange-700", text: "text-orange-300", dot: "bg-orange-500" },
+  high:     { bg: "bg-brand-950/60", border: "border-brand-700", text: "text-brand-300", dot: "bg-brand-500" },
   medium:   { bg: "bg-yellow-950/60", border: "border-yellow-700", text: "text-yellow-300", dot: "bg-yellow-500" },
   low:      { bg: "bg-blue-950/60",   border: "border-blue-700",   text: "text-blue-300",   dot: "bg-blue-500" },
   info:     { bg: "bg-neutral-900",   border: "border-neutral-700", text: "text-neutral-400", dot: "bg-neutral-500" },
@@ -815,7 +815,7 @@ export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, 
 
   // Status icon: spinner while running, green tick (exit 0), red X (exit non-0), grey terminal (no exit info)
   const statusIcon = isRunning
-    ? <Loader2 className="w-3 h-3 animate-spin text-orange-400 flex-shrink-0" />
+    ? <Loader2 className="w-3 h-3 animate-spin text-brand-400 flex-shrink-0" />
     : exitCode === 0
       ? <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
       : exitCode != null
@@ -835,7 +835,7 @@ export function ToolGroup({ toolName, toolArgs, toolArgsRaw, result, isRunning, 
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-800/40 transition-colors"
       >
         {statusIcon}
-        <span className="text-orange-300 font-mono">{toolName}</span>
+        <span className="text-brand-300 font-mono">{toolName}</span>
         <span className="text-neutral-400 truncate flex-1">{toolArgs}</span>
         {runtimeLabel && <span className="text-neutral-600 text-[10px] flex-shrink-0 font-mono">{runtimeLabel}</span>}
         {collapsed

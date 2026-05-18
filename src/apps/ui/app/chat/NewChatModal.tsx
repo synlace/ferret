@@ -154,7 +154,7 @@ export function NewChatModal({
                 <button
                   type="button"
                   onClick={() => setShowEmojiPicker(v => !v)}
-                  className="w-8 h-8 rounded bg-neutral-800 border border-neutral-700 flex items-center justify-center text-lg hover:border-orange-500 transition-colors flex-shrink-0"
+                  className="w-8 h-8 rounded bg-neutral-800 border border-neutral-700 flex items-center justify-center text-lg hover:border-brand-500 transition-colors flex-shrink-0"
                   title="Choose emoji"
                 >
                   {emoji}
@@ -203,7 +203,7 @@ export function NewChatModal({
               value={planId}
               onChange={e => setPlanId(e.target.value)}
               disabled={plansLoading}
-              className="w-full bg-neutral-800 border border-neutral-600 text-sm text-white px-2 py-1.5 focus:outline-none focus:border-orange-500/60 disabled:opacity-50"
+              className="w-full bg-neutral-800 border border-neutral-600 text-sm text-white px-2 py-1.5 focus:outline-none focus:border-brand-500/60 disabled:opacity-50"
             >
               <option value="">None (blank hunt)</option>
               {plans.map(p => (
@@ -232,7 +232,7 @@ export function NewChatModal({
             <Button
               onClick={handleCreate}
               disabled={creating}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-sm h-9"
+              className="flex-1 bg-brand-500 hover:bg-brand-600 text-neutral-900 text-sm h-9"
             >
               {creating ? "Creating..." : "Create Hunt"}
             </Button>

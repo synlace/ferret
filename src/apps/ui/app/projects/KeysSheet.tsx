@@ -70,7 +70,7 @@ function CreateKeyModal({
       <div ref={modalRef} className="bg-neutral-900 border border-neutral-700 rounded-lg w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
           <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Key className="w-3.5 h-3.5 text-orange-400" />
+            <Key className="w-3.5 h-3.5 text-brand-400" />
             {createdKey ? "Key Created" : "New API Key"}
           </h2>
           {!createdKey && (
@@ -96,7 +96,7 @@ function CreateKeyModal({
             </div>
             <button
               onClick={onClose}
-              className="w-full py-2 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
+              className="w-full py-2 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded transition-colors"
             >
               Done
             </button>
@@ -115,7 +115,7 @@ function CreateKeyModal({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Production Key"
                 autoFocus
-                className="w-full h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                className="w-full h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-brand-500"
               />
             </div>
             <div>
@@ -129,14 +129,14 @@ function CreateKeyModal({
                 value={limitStr}
                 onChange={(e) => setLimitStr(e.target.value)}
                 placeholder="e.g. 10.00"
-                className="w-full h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                className="w-full h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-brand-500"
               />
             </div>
             <div className="flex gap-2 pt-1">
               <button
                 type="submit"
                 disabled={loading || !name.trim()}
-                className="flex-1 py-2 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex-1 py-2 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {loading ? "Creating..." : "Create Key"}
               </button>
@@ -267,7 +267,7 @@ export function KeysSheet({ open, projectId, projectName, initialKeys, initialSp
         {/* Header */}
         <div className="flex items-center justify-between px-4 h-10 border-b border-neutral-800 flex-shrink-0">
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Key className="w-3.5 h-3.5 text-orange-400" />
+            <Key className="w-3.5 h-3.5 text-brand-400" />
             API Keys
             <span className="text-xs font-normal text-neutral-500 bg-neutral-800 border border-neutral-700 rounded px-1.5 py-0.5">
               {projectName}
@@ -289,7 +289,7 @@ export function KeysSheet({ open, projectId, projectName, initialKeys, initialSp
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-1 h-7 px-2.5 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors"
+              className="flex items-center gap-1 h-7 px-2.5 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded transition-colors"
             >
               <Plus className="w-3 h-3" /> New Key
             </button>
@@ -328,7 +328,7 @@ export function KeysSheet({ open, projectId, projectName, initialKeys, initialSp
                   const pct = k.limit_usd && k.usage_usd != null
                     ? Math.min(100, (k.usage_usd / k.limit_usd) * 100)
                     : 0
-                  const barColor = pct > 90 ? "bg-red-500" : pct > 70 ? "bg-orange-500" : "bg-green-500"
+                  const barColor = pct > 90 ? "bg-red-500" : pct > 70 ? "bg-brand-500" : "bg-green-500"
                   return (
                     <tr key={k.id} className="border-b border-neutral-800/50 hover:bg-neutral-800/30 transition-colors">
                       <td className="px-4 py-2.5 font-medium text-neutral-200">{k.name}</td>

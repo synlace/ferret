@@ -92,7 +92,7 @@ export function EditProjectModal({ project, onClose, onSave, onExport, onDelete 
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker(v => !v)}
-                    className="w-8 h-8 rounded bg-neutral-800 border border-neutral-700 flex items-center justify-center text-lg hover:border-orange-500 transition-colors flex-shrink-0"
+                    className="w-8 h-8 rounded bg-neutral-800 border border-neutral-700 flex items-center justify-center text-lg hover:border-brand-500 transition-colors flex-shrink-0"
                     title="Change emoji"
                   >
                     {emoji || "📁"}
@@ -103,7 +103,7 @@ export function EditProjectModal({ project, onClose, onSave, onExport, onDelete 
                   onChange={(e) => setName(e.target.value)}
                   placeholder="My Project"
                   autoFocus
-                  className="flex-1 h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                  className="flex-1 h-8 px-3 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-brand-500"
                 />
               </div>
             </div>
@@ -124,7 +124,7 @@ export function EditProjectModal({ project, onClose, onSave, onExport, onDelete 
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description..."
                 rows={2}
-                className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500 resize-none"
+                className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-brand-500 resize-none"
               />
             </div>
 
@@ -156,7 +156,7 @@ export function EditProjectModal({ project, onClose, onSave, onExport, onDelete 
                   onChange={(e) => setLabelInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLabel() } }}
                   placeholder="Add label..."
-                  className="flex-1 h-7 px-2 bg-neutral-800 border border-neutral-700 rounded text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                  className="flex-1 h-7 px-2 bg-neutral-800 border border-neutral-700 rounded text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-brand-500"
                 />
                 <button
                   type="button"
@@ -174,9 +174,9 @@ export function EditProjectModal({ project, onClose, onSave, onExport, onDelete 
               <button
                 type="button"
                 onClick={() => setShowModelPicker(true)}
-                className="w-full flex items-center gap-2 bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-xs text-white hover:border-orange-500 transition-colors text-left"
+                className="w-full flex items-center gap-2 bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-xs text-white hover:border-brand-500 transition-colors text-left"
               >
-                <Cpu className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <Cpu className="w-3.5 h-3.5 text-brand-400 shrink-0" />
                 <span className="flex-1 truncate font-mono">{modelLabel}</span>
                 <span className="text-neutral-600 text-[10px] shrink-0">change ▾</span>
               </button>
@@ -220,7 +220,7 @@ export function EditProjectModal({ project, onClose, onSave, onExport, onDelete 
               <button
                 type="submit"
                 disabled={loading || !name.trim()}
-                className="h-7 px-4 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-7 px-4 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {loading ? "Saving..." : "Save"}
               </button>

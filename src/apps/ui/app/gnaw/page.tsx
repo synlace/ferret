@@ -762,18 +762,18 @@ function GnawPageInner() {
           )}
           <div className="flex mr-1">
             <Button variant="ghost" size="sm"
-              className={`h-6 px-2 text-xs rounded-none border border-neutral-700 ${layout === "side" ? "bg-neutral-800 text-orange-400 border-orange-700" : "text-neutral-500 hover:text-neutral-300"}`}
+              className={`h-6 px-2 text-xs rounded-none border border-neutral-700 ${layout === "side" ? "bg-neutral-800 text-brand-400 border-brand-700" : "text-neutral-500 hover:text-neutral-300"}`}
               onClick={() => switchLayout("side")} title="Side by side">
               <Columns2 className="w-3 h-3" />
             </Button>
             <Button variant="ghost" size="sm"
-              className={`h-6 px-2 text-xs rounded-none border border-l-0 border-neutral-700 ${layout === "stack" ? "bg-neutral-800 text-orange-400 border-orange-700" : "text-neutral-500 hover:text-neutral-300"}`}
+              className={`h-6 px-2 text-xs rounded-none border border-l-0 border-neutral-700 ${layout === "stack" ? "bg-neutral-800 text-brand-400 border-brand-700" : "text-neutral-500 hover:text-neutral-300"}`}
               onClick={() => switchLayout("stack")} title="Stacked">
               <Rows2 className="w-3 h-3" />
             </Button>
           </div>
           <Button variant="ghost" size="sm"
-            className="h-7 text-xs text-orange-400 hover:text-orange-300 hover:bg-orange-900/20"
+            className="h-7 text-xs text-brand-400 hover:text-brand-300 hover:bg-brand-900/20"
             onClick={handleSend} disabled={sending || !url.trim()}
             title="Send (Ctrl+Enter or Ctrl+Space)">
             {sending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
@@ -809,7 +809,7 @@ function GnawPageInner() {
               <span className="text-xs font-semibold text-white">Tabs</span>
               <div className="flex items-center gap-1">
                 <button onClick={handleNewTab}
-                  className="text-neutral-500 hover:text-orange-400 transition-colors"
+                  className="text-neutral-500 hover:text-brand-400 transition-colors"
                   title="New tab">
                   <Plus className="w-3 h-3" />
                 </button>
@@ -855,10 +855,10 @@ function GnawPageInner() {
                       }`}>
                       {/* Row 1: method badge + host + delete button */}
                       <div className="flex items-center gap-1 min-w-0">
-                        <span className={`text-[9px] font-bold font-mono flex-shrink-0 ${tab.id === activeTabId ? "text-orange-400" : methodColor}`}>
+                        <span className={`text-[9px] font-bold font-mono flex-shrink-0 ${tab.id === activeTabId ? "text-brand-400" : methodColor}`}>
                           {tabMethod}
                         </span>
-                        <span className={`flex-1 text-[10px] font-mono truncate min-w-0 ${tab.id === activeTabId ? "text-orange-300" : "text-neutral-300"}`} title={tabHost}>
+                        <span className={`flex-1 text-[10px] font-mono truncate min-w-0 ${tab.id === activeTabId ? "text-brand-300" : "text-neutral-300"}`} title={tabHost}>
                           {tabHost}
                         </span>
                         <button onClick={(e) => handleDeleteTab(tab.id, e)}
@@ -891,7 +891,7 @@ function GnawPageInner() {
         {/* Sidebar resize handle — sibling to sidebar, only visible when open */}
         {sidebarOpen && (
           <div
-            className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-orange-500 transition-colors cursor-col-resize z-10"
+            className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors cursor-col-resize z-10"
             onMouseDown={handleSidebarDragStart}
           />
         )}
@@ -936,7 +936,7 @@ function GnawPageInner() {
 
           {/* Drag handle */}
           <div
-            className={`flex-shrink-0 bg-neutral-800 hover:bg-orange-500 transition-colors z-10 ${
+            className={`flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors z-10 ${
               layout === "side" ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize w-full"
             }`}
             onMouseDown={handleDragStart}

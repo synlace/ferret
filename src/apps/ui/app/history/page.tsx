@@ -295,7 +295,7 @@ export default function HistoryPage() {
         const hasQuery = (() => { try { return new URL(req.url).search.length > 1 } catch { return false } })()
         const hasBody = !!(req.body && req.body.trim().length > 0)
         return (hasQuery || hasBody) ? (
-          <span className="text-xs text-orange-400 font-mono">✓</span>
+          <span className="text-xs text-brand-400 font-mono">✓</span>
         ) : null
       },
     }),
@@ -493,11 +493,11 @@ export default function HistoryPage() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-orange-400 hover:bg-transparent" onClick={fetchRequests} disabled={loading}>
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-brand-400 hover:bg-transparent" onClick={fetchRequests} disabled={loading}>
             {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
             Refresh
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-orange-400 hover:bg-transparent">
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-neutral-400 hover:text-brand-400 hover:bg-transparent">
             <Download className="w-3 h-3 mr-1" />
             Export
           </Button>
@@ -564,7 +564,7 @@ export default function HistoryPage() {
         <button
           onClick={() => { setHistoryOpen(v => !v); setHistoryIndex(-1) }}
           className={`h-8 px-2.5 flex items-center border-l border-neutral-800 transition-colors flex-shrink-0 ${
-            historyOpen ? "bg-orange-500/20 text-orange-400" : "bg-neutral-900 text-neutral-400 hover:text-orange-400"
+            historyOpen ? "bg-brand-500/20 text-brand-400" : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
           }`}
           title="Search history"
         >
@@ -574,13 +574,13 @@ export default function HistoryPage() {
           onClick={() => setFilterOpen(v => !v)}
           className={`h-8 px-3 text-xs flex items-center gap-1.5 border-l border-neutral-800 transition-colors flex-shrink-0 ${
             filterOpen || hasActiveFilters
-              ? "bg-orange-500/20 text-orange-400"
-              : "bg-neutral-900 text-neutral-400 hover:text-orange-400"
+              ? "bg-brand-500/20 text-brand-400"
+              : "bg-neutral-900 text-neutral-400 hover:text-brand-400"
           }`}
         >
           <SlidersHorizontal className="w-3 h-3" />
           Filter
-          <span className={`w-1.5 h-1.5 rounded-full bg-orange-400 ml-0.5 transition-opacity ${hasActiveFilters ? "opacity-100" : "opacity-0"}`} />
+          <span className={`w-1.5 h-1.5 rounded-full bg-brand-400 ml-0.5 transition-opacity ${hasActiveFilters ? "opacity-100" : "opacity-0"}`} />
         </button>
       </div>
 
@@ -596,7 +596,7 @@ export default function HistoryPage() {
                 {searchHistory.length > 0 && (
                   <button
                     onClick={() => { searchHistory.forEach(e => removeHistory(e)); setHistoryOpen(false) }}
-                    className="text-[10px] text-neutral-600 hover:text-orange-400 transition-colors"
+                    className="text-[10px] text-neutral-600 hover:text-brand-400 transition-colors"
                   >
                     Clear all
                   </button>
@@ -650,7 +650,7 @@ export default function HistoryPage() {
             <div className="">
               {["GET", "POST", "PUT"].map(m => (
                 <button key={m} onClick={() => toggleFilter("method", m)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {m}
                 </button>
               ))}
@@ -663,7 +663,7 @@ export default function HistoryPage() {
             <div className="">
               {["DELETE", "PATCH"].map(m => (
                 <button key={m} onClick={() => toggleFilter("method", m)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("method", m) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {m}
                 </button>
               ))}
@@ -681,7 +681,7 @@ export default function HistoryPage() {
                 { value: "5xx", label: "5xx server" },
               ].map(s => (
                 <button key={s.value} onClick={() => toggleFilter("status", s.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("status", s.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("status", s.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {s.label}
                 </button>
               ))}
@@ -699,7 +699,7 @@ export default function HistoryPage() {
                 { value: "css",  label: "CSS" },
               ].map(m => (
                 <button key={m.value} onClick={() => toggleFilter("mime", m.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {m.label}
                 </button>
               ))}
@@ -716,7 +716,7 @@ export default function HistoryPage() {
                 { value: "plain", label: "Plain" },
               ].map(m => (
                 <button key={m.value} onClick={() => toggleFilter("mime", m.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("mime", m.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {m.label}
                 </button>
               ))}
@@ -733,7 +733,7 @@ export default function HistoryPage() {
                 { value: "html", label: ".html" },
               ].map(e => (
                 <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {e.label}
                 </button>
               ))}
@@ -750,7 +750,7 @@ export default function HistoryPage() {
                 { value: "png",  label: ".png" },
               ].map(e => (
                 <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {e.label}
                 </button>
               ))}
@@ -767,7 +767,7 @@ export default function HistoryPage() {
                 { value: "none", label: "(none)" },
               ].map(e => (
                 <button key={e.value} onClick={() => toggleFilter("ext", e.value)}
-                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs font-mono px-2 py-0.5 rounded transition-colors ${filterActive("ext", e.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {e.label}
                 </button>
               ))}
@@ -783,7 +783,7 @@ export default function HistoryPage() {
                 { value: "test",  label: "🧪 Test" },
               ].map(s => (
                 <button key={s.value} onClick={() => toggleFilter("source", s.value)}
-                  className={`block w-full text-left text-xs px-2 py-0.5 rounded transition-colors ${filterActive("source", s.value) ? "bg-orange-500/20 text-orange-400" : "text-neutral-400 hover:text-orange-400 hover:bg-neutral-800"}`}>
+                  className={`block w-full text-left text-xs px-2 py-0.5 rounded transition-colors ${filterActive("source", s.value) ? "bg-brand-500/20 text-brand-400" : "text-neutral-400 hover:text-brand-400 hover:bg-neutral-800"}`}>
                   {s.label}
                 </button>
               ))}
@@ -796,7 +796,7 @@ export default function HistoryPage() {
               <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Query Reference</div>
               <button
                 onClick={() => setSearchQuery(q => q.replace(/(-?(?:method|status|mime|ext|source|has|size|time|host|path):[^\s]*\s*)/gi, "").trim())}
-                className="text-[10px] text-neutral-600 hover:text-orange-400 transition-colors"
+                className="text-[10px] text-neutral-600 hover:text-brand-400 transition-colors"
               >
                 Reset filters
               </button>
@@ -840,7 +840,7 @@ export default function HistoryPage() {
                         className="flex items-baseline gap-0 text-left group"
                         title={`Toggle: ${example}`}
                       >
-                        <span className={`font-mono text-[10px] transition-colors whitespace-nowrap w-36 shrink-0 ${active ? "text-orange-400" : "text-orange-400/50 group-hover:text-orange-400"}`}>{example}</span>
+                        <span className={`font-mono text-[10px] transition-colors whitespace-nowrap w-36 shrink-0 ${active ? "text-brand-400" : "text-brand-400/50 group-hover:text-brand-400"}`}>{example}</span>
                         <span className={`text-[10px] whitespace-nowrap ${active ? "text-neutral-400" : "text-neutral-600"}`}>{desc}</span>
                       </button>
                     )
@@ -941,7 +941,7 @@ export default function HistoryPage() {
             <div className="flex flex-col items-center justify-center py-16 text-neutral-500 space-y-4">
               <div className="text-center">
                 No requests captured yet. Configure your browser to use proxy{" "}
-                <span className="font-mono text-orange-400 mx-1">127.0.0.1:1337</span>.
+                <span className="font-mono text-brand-400 mx-1">127.0.0.1:1337</span>.
               </div>
               <div className="flex gap-2">
                 <Button

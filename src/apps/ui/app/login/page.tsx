@@ -147,14 +147,14 @@ export default function LoginPage() {
         <div className="flex flex-col items-center mb-8 gap-3">
           <Image
             src="/ferret.png"
-            alt="FERRET"
+            alt="Ferret"
             width={48}
             height={48}
             className="rounded-lg"
             priority
           />
           <div className="text-center">
-            <h1 className="text-orange-500 font-bold text-xl tracking-wider">FERRET</h1>
+            <h1 className="text-brand-500 font-bold text-xl tracking-wider">Ferret</h1>
             <p className="text-neutral-500 text-xs mt-0.5">Forensic Analysis &amp; Request Tracker</p>
           </div>
         </div>
@@ -184,7 +184,7 @@ export default function LoginPage() {
                     disabled={loading}
                     className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
                                text-neutral-100 text-sm placeholder-neutral-600
-                               focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500
+                               focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500
                                disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <button
@@ -206,7 +206,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading || !password}
-                className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600
+                className="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600
                            disabled:opacity-50 disabled:cursor-not-allowed
                            text-white text-sm font-medium rounded-lg py-2.5 transition-colors"
               >
@@ -227,7 +227,7 @@ export default function LoginPage() {
         {mfaRequired && (
           <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-xl">
             <div className="flex items-center gap-2 mb-1">
-              <ShieldCheck className="w-4 h-4 text-orange-400" />
+              <ShieldCheck className="w-4 h-4 text-brand-400" />
               <h2 className="text-neutral-200 font-semibold text-sm">Two-factor authentication</h2>
             </div>
             <p className="text-neutral-500 text-xs mb-5">
@@ -253,7 +253,7 @@ export default function LoginPage() {
                   disabled={otpLoading}
                   className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5
                              text-neutral-100 text-sm text-center tracking-[0.4em] placeholder-neutral-600
-                             focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500
+                             focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500
                              disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
@@ -265,7 +265,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={otpLoading || otpCode.length !== 6}
-                className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600
+                className="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600
                            disabled:opacity-50 disabled:cursor-not-allowed
                            text-white text-sm font-medium rounded-lg py-2.5 transition-colors"
               >

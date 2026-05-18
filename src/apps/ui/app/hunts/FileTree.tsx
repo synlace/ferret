@@ -4,7 +4,7 @@ import React, { useState } from "react"
 import { Plus, RefreshCw, Terminal, FileCode, FileText, FolderOpen, FolderClosed } from "lucide-react"
 
 const SUBDIR_ICONS: Record<string, React.ReactNode> = {
-  scripts: <Terminal className="w-3 h-3 text-orange-400" />,
+  scripts: <Terminal className="w-3 h-3 text-brand-400" />,
   tests: <FileCode className="w-3 h-3 text-blue-400" />,
   notes: <FileText className="w-3 h-3 text-green-400" />,
 }
@@ -28,7 +28,7 @@ export function FileTree({ files, selectedPath, onSelectFile, onRefresh, onNewFi
       <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0">
         <span className="text-[10px] text-neutral-500 uppercase tracking-wider font-medium">Files</span>
         <div className="flex items-center gap-1">
-          <button onClick={onNewFile} className="text-neutral-500 hover:text-orange-400 transition-colors" title="New file"><Plus className="w-3 h-3" /></button>
+          <button onClick={onNewFile} className="text-neutral-500 hover:text-brand-400 transition-colors" title="New file"><Plus className="w-3 h-3" /></button>
           <button onClick={onRefresh} className="text-neutral-500 hover:text-neutral-300 transition-colors" title="Refresh"><RefreshCw className="w-3 h-3" /></button>
         </div>
       </div>
@@ -47,7 +47,7 @@ export function FileTree({ files, selectedPath, onSelectFile, onRefresh, onNewFi
               </button>
               {isOpen && dirFiles.map(f => (
                 <button key={f.path} onClick={() => onSelectFile(f.path)}
-                  className={`w-full flex items-center gap-1.5 pl-7 pr-3 py-0.5 text-left transition-colors text-xs truncate ${selectedPath === f.path ? "bg-orange-500/20 text-orange-300" : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"}`}
+                  className={`w-full flex items-center gap-1.5 pl-7 pr-3 py-0.5 text-left transition-colors text-xs truncate ${selectedPath === f.path ? "bg-brand-500/20 text-brand-300" : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"}`}
                   title={f.name}>
                   <FileCode className="w-3 h-3 flex-shrink-0 text-neutral-600" />
                   <span className="truncate">{f.name}</span>

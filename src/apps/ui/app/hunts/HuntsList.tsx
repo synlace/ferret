@@ -56,7 +56,7 @@ export function HuntsList({
         <span className="text-xs font-semibold text-white">Hunts</span>
         <div className="flex items-center gap-1">
           <button onClick={onNewHunt} title="New hunt"
-            className="text-neutral-500 hover:text-orange-400 transition-colors">
+            className="text-neutral-500 hover:text-brand-400 transition-colors">
             <Plus className="w-3 h-3" />
           </button>
         </div>
@@ -128,11 +128,11 @@ export function HuntsList({
                 {/* Row 1: hunt_status dot + name + delete */}
                 <div className="flex items-center gap-1 min-w-0">
                   {session.hunt_status === "running" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse flex-shrink-0" title="Hunt running" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse flex-shrink-0" title="Hunt running" />
                   )}
                   <span
                     className={`flex-1 text-[10px] font-mono truncate min-w-0 ${
-                      isActive ? "text-orange-300" : "text-neutral-300"
+                      isActive ? "text-brand-300" : "text-neutral-300"
                     }`}
                     title={session.name}
                   >
@@ -211,7 +211,7 @@ export function HuntsList({
       <div className="border-t border-neutral-800/60 px-2.5 py-2 flex-shrink-0">
         <button
           onClick={onNewHunt}
-          className="w-full border border-dashed border-neutral-800 hover:border-orange-500/30 text-neutral-600 hover:text-orange-400 text-[10px] font-sans flex items-center gap-1.5 px-2 py-1.5 transition-colors"
+          className="w-full border border-dashed border-neutral-800 hover:border-brand-500/30 text-neutral-600 hover:text-brand-400 text-[10px] font-sans flex items-center gap-1.5 px-2 py-1.5 transition-colors"
         >
           <Plus className="w-2.5 h-2.5 flex-shrink-0" />
           New hunt

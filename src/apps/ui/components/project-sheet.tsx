@@ -99,7 +99,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
       >
         {/* Header — active project */}
         <SheetHeader className="px-4 py-3 border-b border-neutral-800 flex-shrink-0">
-          <SheetTitle className="text-orange-500 font-bold text-sm tracking-wider">
+          <SheetTitle className="text-brand-500 font-bold text-sm tracking-wider">
             PROJECTS
           </SheetTitle>
           {/* Active project summary */}
@@ -119,7 +119,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === "Escape" && setQuery("")}
               placeholder="Filter projects..."
-              className="w-full bg-neutral-800 border border-neutral-700 text-xs text-white placeholder-neutral-500 pl-7 pr-3 py-1.5 focus:outline-none focus:border-orange-500 transition-colors"
+              className="w-full bg-neutral-800 border border-neutral-700 text-xs text-white placeholder-neutral-500 pl-7 pr-3 py-1.5 focus:outline-none focus:border-brand-500 transition-colors"
             />
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
                   onClick={() => switchProject(p.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors text-left border-b border-neutral-800/60 ${
                     isActive
-                      ? "bg-orange-500/10 text-orange-400 border-l-2 border-l-orange-500"
+                      ? "bg-brand-500/10 text-brand-400 border-l-2 border-l-brand-500"
                       : "text-neutral-300 hover:bg-neutral-800 hover:text-white"
                   }`}
                 >
@@ -150,7 +150,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
                   {/* Spend badge — only for non-temp projects */}
                   {!p.is_temp && (
                     <span className={`text-[10px] tabular-nums flex-shrink-0 ${
-                      isActive ? "text-orange-400/70" : "text-neutral-500"
+                      isActive ? "text-brand-400/70" : "text-neutral-500"
                     }`}>
                       {spendLoading && spend === undefined
                         ? "..."
@@ -160,7 +160,7 @@ export default function ProjectSheet({ open, onOpenChange }: ProjectSheetProps) 
                     </span>
                   )}
                   {isActive && (
-                    <Check className="w-3.5 h-3.5 text-orange-500 flex-shrink-0" />
+                    <Check className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" />
                   )}
                 </button>
               )

@@ -72,7 +72,7 @@ function CreateKeyModal({
       <div ref={modalRef} className="bg-neutral-900 border border-neutral-700 rounded-lg p-6 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white font-semibold text-lg flex items-center gap-2">
-            <Key className="w-4 h-4 text-orange-400" />
+            <Key className="w-4 h-4 text-brand-400" />
             {createdKey ? "Key Created" : "Create API Key"}
           </h2>
           {!createdKey && (
@@ -91,7 +91,7 @@ function CreateKeyModal({
                 </button>
               </div>
             </div>
-            <Button onClick={onClose} className="w-full bg-orange-500 hover:bg-orange-600 text-white">Done</Button>
+            <Button onClick={onClose} className="w-full bg-brand-500 hover:bg-brand-600 text-neutral-900">Done</Button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -104,7 +104,7 @@ function CreateKeyModal({
               <label className="text-xs text-neutral-400 block mb-1">Key Name *</label>
               <Input value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
                 placeholder="e.g. Production Key"
-                className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-orange-500" autoFocus />
+                className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-brand-500" autoFocus />
             </div>
             <div>
               <label className="text-xs text-neutral-400 block mb-1">
@@ -113,11 +113,11 @@ function CreateKeyModal({
               <Input type="number" min="0" step="0.01" value={limitStr}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLimitStr(e.target.value)}
                 placeholder="e.g. 10.00"
-                className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-orange-500" />
+                className="bg-neutral-800 border-neutral-600 text-white placeholder-neutral-500 focus:border-brand-500" />
             </div>
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={loading || !name.trim()}
-                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50">
+                className="flex-1 bg-brand-500 hover:bg-brand-600 text-neutral-900 disabled:opacity-50">
                 {loading ? "Creating..." : "Create Key"}
               </Button>
               <Button type="button" variant="outline" onClick={onClose}
@@ -203,7 +203,7 @@ export function KeysPanel({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-neutral-400 uppercase tracking-wider">API Keys ({keys.length})</span>
           <button onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 transition-colors">
+            className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors">
             <Plus className="w-3 h-3" /> Create Key
           </button>
         </div>

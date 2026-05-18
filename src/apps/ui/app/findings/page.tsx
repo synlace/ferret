@@ -38,7 +38,7 @@ interface ChatMsg {
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "bg-red-600 text-white",
-  high: "bg-orange-500 text-white",
+  high: "bg-brand-500 text-neutral-900",
   medium: "bg-yellow-500 text-black",
   low: "bg-blue-500 text-white",
   info: "bg-neutral-500 text-white",
@@ -46,7 +46,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = {
   open: "text-red-400",
-  confirmed: "text-orange-400",
+  confirmed: "text-brand-400",
   false_positive: "text-neutral-400",
   fixed: "text-green-400",
 }
@@ -242,13 +242,13 @@ export default function FindingsPage() {
             onClick={() => setFilterOpen(v => !v)}
             className={`h-8 px-3 text-xs flex items-center gap-1.5 border-l border-neutral-800 transition-colors ${
               filterOpen || hasFilters
-                ? "bg-orange-500/20 text-orange-400"
+                ? "bg-brand-500/20 text-brand-400"
                 : "bg-neutral-900 text-neutral-400 hover:text-white"
             }`}
           >
             <SlidersHorizontal className="w-3 h-3" />
             Filter
-            {hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-orange-400 ml-0.5" />}
+            {hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-brand-400 ml-0.5" />}
           </button>
 
           {/* Filter popup */}
@@ -258,7 +258,7 @@ export default function FindingsPage() {
                 <span className="text-xs font-semibold text-neutral-300">Filters</span>
                 <button
                   onClick={() => { setSeverityFilters(new Set()); setStatusFilters(new Set()) }}
-                  className="text-xs text-neutral-500 hover:text-orange-400"
+                  className="text-xs text-neutral-500 hover:text-brand-400"
                 >
                   Reset all
                 </button>
@@ -277,9 +277,9 @@ export default function FindingsPage() {
                           next.has(s) ? next.delete(s) : next.add(s)
                           return next
                         })}
-                        className="accent-orange-500"
+                        className="accent-brand-500"
                       />
-                      <span className={`text-xs ${severityFilters.has(s) ? "text-orange-400" : "text-neutral-300 group-hover:text-white"}`}>
+                      <span className={`text-xs ${severityFilters.has(s) ? "text-brand-400" : "text-neutral-300 group-hover:text-white"}`}>
                         {s.toUpperCase()}
                         <span className="ml-1 text-neutral-500 font-mono">{counts[s as keyof typeof counts] ?? 0}</span>
                       </span>
@@ -304,9 +304,9 @@ export default function FindingsPage() {
                           next.has(s.value) ? next.delete(s.value) : next.add(s.value)
                           return next
                         })}
-                        className="accent-orange-500"
+                        className="accent-brand-500"
                       />
-                      <span className={`text-xs ${statusFilters.has(s.value) ? "text-orange-400" : "text-neutral-300 group-hover:text-white"}`}>{s.label}</span>
+                      <span className={`text-xs ${statusFilters.has(s.value) ? "text-brand-400" : "text-neutral-300 group-hover:text-white"}`}>{s.label}</span>
                     </label>
                   ))}
                 </div>
@@ -320,7 +320,7 @@ export default function FindingsPage() {
           {(["critical", "high", "medium", "low", "info"] as const).map((sev, i) => (
             <div key={sev} className={`flex items-center gap-1.5 px-3 py-1.5 ${i > 0 ? "border-l border-neutral-800" : ""}`}>
               <span className="text-neutral-500">{sev.charAt(0).toUpperCase() + sev.slice(1)}:</span>
-              <span className={`font-mono font-semibold ${SEVERITY_COLORS[sev]?.includes("red") ? "text-red-400" : sev === "high" ? "text-orange-400" : sev === "medium" ? "text-yellow-400" : sev === "low" ? "text-blue-400" : "text-neutral-400"}`}>
+              <span className={`font-mono font-semibold ${SEVERITY_COLORS[sev]?.includes("red") ? "text-red-400" : sev === "high" ? "text-brand-400" : sev === "medium" ? "text-yellow-400" : sev === "low" ? "text-blue-400" : "text-neutral-400"}`}>
                 {counts[sev]}
               </span>
             </div>
@@ -346,7 +346,7 @@ export default function FindingsPage() {
         <div className="flex-1 overflow-y-auto min-h-0">
           {loading && findings.length === 0 && (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
+              <Loader2 className="w-6 h-6 animate-spin text-brand-500" />
             </div>
           )}
           {!loading && findings.length === 0 && (
@@ -361,7 +361,7 @@ export default function FindingsPage() {
               <p className="text-sm">No findings match the current filters</p>
               <button
                 onClick={() => { setSeverityFilters(new Set()); setStatusFilters(new Set()); setSearch("") }}
-                className="text-xs text-orange-400 hover:text-orange-300 mt-2"
+                className="text-xs text-brand-400 hover:text-brand-300 mt-2"
               >
                 Clear filters
               </button>
@@ -442,7 +442,7 @@ export default function FindingsPage() {
                             <div className="flex gap-4 text-xs text-neutral-400">
                               <span>Source: <span className="text-white">{finding.source}</span></span>
                               {finding.request_id && (
-                                <span>Request: <span className="text-orange-400 font-mono">{finding.request_id.slice(0, 8)}...</span></span>
+                                <span>Request: <span className="text-brand-400 font-mono">{finding.request_id.slice(0, 8)}...</span></span>
                               )}
                               <span>Created: <span className="text-white font-mono">{new Date(finding.created_at).toLocaleString()}</span></span>
                             </div>
@@ -478,7 +478,7 @@ export default function FindingsPage() {
       {chatOpen && (
         <aside className="w-80 border-l border-neutral-800 flex flex-col bg-neutral-900 flex-shrink-0">
           <div className="px-3 py-2 border-b border-neutral-800 flex items-center justify-between">
-            <span className="text-xs font-semibold text-orange-500">AI SECURITY ANALYST</span>
+            <span className="text-xs font-semibold text-brand-500">AI SECURITY ANALYST</span>
             <Button variant="ghost" size="icon" className="h-6 w-6 text-neutral-400 hover:text-white" onClick={() => setChatOpen(false)}>
               <X className="w-3 h-3" />
             </Button>
@@ -489,13 +489,13 @@ export default function FindingsPage() {
             )}
             {chatMessages.map((msg, i) => (
               <div key={i} className={`text-xs p-2 border ${msg.role === "user" ? "bg-neutral-800 border-neutral-700 text-white ml-4" : "bg-neutral-800/40 border-neutral-800 text-neutral-200 mr-4"}`}>
-                <span className="font-semibold text-orange-400 block mb-1">{msg.role === "user" ? "You" : "AI"}</span>
+                <span className="font-semibold text-brand-400 block mb-1">{msg.role === "user" ? "You" : "AI"}</span>
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               </div>
             ))}
             {chatLoading && (
               <div className="bg-neutral-800/40 border border-neutral-800 p-2 mr-4">
-                <Loader2 className="w-3 h-3 animate-spin text-orange-400" />
+                <Loader2 className="w-3 h-3 animate-spin text-brand-400" />
               </div>
             )}
           </div>
@@ -511,7 +511,7 @@ export default function FindingsPage() {
               size="icon"
               onClick={sendChat}
               disabled={chatLoading || !chatInput.trim()}
-              className="bg-orange-500 hover:bg-orange-600 self-end h-8 w-8 rounded-none"
+              className="bg-brand-500 hover:bg-brand-600 self-end h-8 w-8 rounded-none"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
