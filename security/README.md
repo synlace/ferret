@@ -12,7 +12,7 @@ For the full disclosure policy and how to report a new vulnerability, see [`.git
 
 | ID | Title | Severity | Disclosed |
 |---|---|---|---|
-| — | No disclosures yet | — | — |
+| [DISC-2026-001](DISC-2026-001.md) | Unauthenticated RCE via SSRF + docker-socket-proxy misconfiguration (host compromise) | Critical | 2026-05-20 |
 
 ---
 
