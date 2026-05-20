@@ -21,6 +21,8 @@
   ·
   <a href="#configuration">Configuration</a>
   ·
+  <a href="#security">Security</a>
+  ·
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -330,7 +332,7 @@ just test ui
 
 ---
 
-## Security notes
+## Security
 
 Ferret is intended for local security testing workflows.
 
@@ -342,6 +344,16 @@ Before exposing Ferret outside localhost, make sure you understand the risks:
 * API keys and AI provider credentials should be treated as secrets.
 
 Use strong passwords and enable 2FA where appropriate.
+
+### Reporting a vulnerability
+
+**Do not open a public issue for security vulnerabilities.**
+
+See [`.github/SECURITY.md`](.github/SECURITY.md) for the full disclosure policy and how to report.
+
+### Disclosed reports
+
+Past disclosures are published in [`security/`](security/README.md) after fixes are available.
 
 ---
 
