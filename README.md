@@ -355,6 +355,14 @@ See [`.github/SECURITY.md`](.github/SECURITY.md) for the full disclosure policy 
 
 Past disclosures are published in [`security/`](security/README.md) after fixes are available.
 
+### Acknowledgements
+
+Thanks to the following researchers for responsibly disclosing security issues:
+
+| Researcher | Issue | Year |
+|---|---|---|
+| Trent ([@AzureADTrent](https://github.com/AzureADTrent)) | [DISC-2026-001](security/DISC-2026-001.md) — Unauthenticated RCE via SSRF + docker-socket-proxy misconfiguration | 2026 |
+
 ---
 
 ## Contributing
