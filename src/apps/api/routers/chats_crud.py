@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 
 import deps
 from models import ChatSession, ChatSessionCreate, ChatSessionUpdate
+from chats_ai import clean_messages_for_display
 
 _log = logging.getLogger(__name__)
 
@@ -294,6 +295,6 @@ async def get_session_messages(session_id: str):
     """Get messages for a chat session."""
     try:
         msgs = await deps.db_client.get_chat_history(session_id)
-        return {"messages": msgs}
+        return {"messages": clean_messages_for_display(msgs)}
     except Exception as e:
         raise deps.server_error(e)

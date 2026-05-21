@@ -105,10 +105,12 @@ const PROVIDERS: Provider[] = [
   {
     key: "ollama",
     name: "Ollama",
-    tag: "localhost:11434",
+    tag: "host-gateway:11434",
     icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/ollama.png",
     local: true,
-    defaultBaseUrl: "http://localhost:11434/v1",
+    // host-gateway resolves to the Docker host IP inside containers (via extra_hosts).
+    // Using localhost here would point at the container itself, not the host machine.
+    defaultBaseUrl: "http://host-gateway:11434/v1",
     defaultModel: "llama3.3",
     models: [
       { id: "llama3.3",       label: "Llama 3.3",       note: "Recommended" },
@@ -120,10 +122,12 @@ const PROVIDERS: Provider[] = [
   {
     key: "lmstudio",
     name: "LM Studio",
-    tag: "localhost:1234",
+    tag: "host-gateway:1234",
     icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/lmstudio.png",
     local: true,
-    defaultBaseUrl: "http://localhost:1234/v1",
+    // host-gateway resolves to the Docker host IP inside containers (via extra_hosts).
+    // Using localhost here would point at the container itself, not the host machine.
+    defaultBaseUrl: "http://host-gateway:1234/v1",
     defaultModel: "local-model",
     models: [
       { id: "local-model", label: "Active model in LM Studio", note: "Recommended" },
@@ -195,54 +199,22 @@ export default function SetupPage() {
   // Live model fetching — key is already validated before Step 3 is reached
   // ---------------------------------------------------------------------------
 
+  // Fetch the model list via the API container (POST /api/setup/models) so that:
+  // - Local providers (Ollama, LM Studio) are reachable via host-gateway.
+  // - API keys are never sent as query-string parameters.
   const getModelsForProvider = useCallback(async (): Promise<{ id: string; name: string }[]> => {
-    const resolvedBase = baseUrl || provider.defaultBaseUrl || ""
-
-    // OpenRouter: public endpoint, no key needed
-    if (provider.key === "openrouter") {
-      const r = await apiFetch("https://openrouter.ai/api/v1/models")
-      if (!r.ok) throw new Error(`OpenRouter returned ${r.status}`)
-      const d = await r.json()
-      return (d.data ?? []).map((m: { id: string; name: string }) => ({ id: m.id, name: m.name }))
-    }
-
-    // Ollama: GET {base}/api/tags (no key)
-    if (provider.key === "ollama") {
-      const tagsUrl = resolvedBase.replace(/\/v1\/?$/, "") + "/api/tags"
-      const r = await apiFetch(tagsUrl)
-      if (!r.ok) throw new Error(`Ollama returned ${r.status}`)
-      const d = await r.json()
-      return (d.models ?? []).map((m: { name: string }) => ({ id: m.name, name: m.name }))
-    }
-
-    // LM Studio: GET {base}/models (no key)
-    if (provider.key === "lmstudio") {
-      const r = await apiFetch(`${resolvedBase}/models`)
-      if (!r.ok) throw new Error(`LM Studio returned ${r.status}`)
-      const d = await r.json()
-      return (d.data ?? []).map((m: { id: string }) => ({ id: m.id, name: m.id }))
-    }
-
-    // Anthropic: uses x-api-key header and returns display_name
-    if (provider.key === "anthropic") {
-      const r = await apiFetch("https://api.anthropic.com/v1/models", {
-        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      })
-      if (!r.ok) throw new Error(`Anthropic returned ${r.status}`)
-      const d = await r.json()
-      return (d.data ?? []).map((m: { id: string; display_name?: string }) => ({
-        id: m.id,
-        name: m.display_name || m.id,
-      }))
-    }
-
-    // All other OpenAI-compatible cloud providers (openai, gemini, deepseek, mistral)
-    const r = await apiFetch(`${resolvedBase}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    const r = await apiFetch(`${API_BASE}/api/setup/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: provider.key,
+        api_key: apiKey || undefined,
+        base_url: baseUrl || undefined,
+      }),
     })
-    if (!r.ok) throw new Error(`${provider.name} returned ${r.status}`)
+    if (!r.ok) throw new Error(`Model list fetch returned ${r.status}`)
     const d = await r.json()
-    return (d.data ?? []).map((m: { id: string }) => ({ id: m.id, name: m.id }))
+    return (d.models ?? []) as { id: string; name: string }[]
   }, [provider, apiKey, baseUrl])
 
   async function testConnection() {

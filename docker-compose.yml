@@ -42,6 +42,11 @@ services:
     networks:
       - default
       - docker-internal
+    # Allow the api container to reach local AI providers (Ollama, LM Studio)
+    # running on the host machine.  Docker resolves "host-gateway" to the host's
+    # gateway IP automatically — no hardcoded IPs required.
+    extra_hosts:
+      - "host-gateway:host-gateway"
     depends_on:
       - docker-shim
     healthcheck:
@@ -87,6 +92,10 @@ services:
       - NET_ADMIN
       - NET_RAW
       - SYS_PTRACE
+    # Allow scripts running inside the lab sandbox to reach local AI providers
+    # on the host machine via the same host-gateway hostname.
+    extra_hosts:
+      - "host-gateway:host-gateway"
     restart: unless-stopped
     depends_on:
       - api

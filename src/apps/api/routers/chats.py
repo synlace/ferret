@@ -32,6 +32,8 @@ from chats_ai import (
     _resolve_project_and_key,
     _build_or_messages,
     _NO_KEY_NOTICE,
+    _extract_thinking,
+    clean_messages_for_display,
 )
 from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana
 from chats_execute import execute_tool_call
@@ -292,14 +294,14 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                 text = assistant_msg.get("content") or ""
                 if text:
                     accumulated_content = text
-                    yield f"data: {json.dumps({'type': 'delta', 'content': text})}\n\n"
                 # Collect tool calls from parsed message
                 for tc in (assistant_msg.get("tool_calls") or []):
                     idx = len(accumulated_tool_calls)
                     accumulated_tool_calls[idx] = tc
 
             else:
-                # OpenAI-compatible SSE streaming
+                # OpenAI-compatible SSE streaming — buffer silently; emit replace after [DONE]
+                # so thinking blocks and tool_code tags never appear raw in the UI.
                 _body["stream"] = True
                 try:
                     async with httpx.AsyncClient(timeout=90.0) as client:
@@ -318,11 +320,10 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
 
                                 delta = chunk.get("choices", [{}])[0].get("delta", {})
 
-                                # Text delta
+                                # Accumulate text silently — no delta events yet
                                 text = delta.get("content") or ""
                                 if text:
                                     accumulated_content += text
-                                    yield f"data: {json.dumps({'type': 'delta', 'content': text})}\n\n"
 
                                 # Tool call deltas
                                 for tc_delta in (delta.get("tool_calls") or []):
@@ -350,22 +351,83 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                     yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
                     return
 
+            # Post-process: extract thinking blocks and strip tool_code tags
+            if accumulated_content:
+                _clean_content, _thinking = _extract_thinking(accumulated_content)
+                accumulated_content = _clean_content
+                # Emit replace event so the UI swaps in the clean version
+                _replace_evt: Dict[str, Any] = {"type": "replace", "content": _clean_content}
+                if _thinking:
+                    _replace_evt["thinking"] = _thinking
+                yield f"data: {json.dumps(_replace_evt)}\n\n"
+            else:
+                _thinking = None
+
             # Build the assistant message from accumulated data
             tool_calls_list = list(accumulated_tool_calls.values())
             assistant_msg: Dict[str, Any] = {"role": "assistant", "content": accumulated_content or None}
             if tool_calls_list:
                 assistant_msg["tool_calls"] = tool_calls_list
+            # Store thinking on the message so it persists in DB and is returned in done
+            if _thinking:
+                assistant_msg["thinking"] = _thinking
 
-            # Fallback: if the model returns empty content with no tool calls
-            # (common when all tools are disabled and the model has nothing to say),
-            # inject a notice so the user sees a meaningful response.
+            # Fallback: if the model returns empty content with no tool calls,
+            # this usually means the model doesn't support function calling and
+            # silently dropped the response when tools were included.  Retry
+            # without tools so the model can respond as plain chat.
             if not accumulated_content and not tool_calls_list:
-                _notice = (
-                    "I currently have no tools available in this session. "
-                    "Enable one or more tools in the AI Tools panel to proceed."
-                )
-                assistant_msg["content"] = _notice
-                yield f"data: {json.dumps({'type': 'delta', 'content': _notice})}\n\n"
+                if _tools_for_prompt:
+                    # Retry without tools — model likely doesn't support function calling.
+                    # Buffer silently then emit replace (same pattern as main path).
+                    _url_nt, _headers_nt, _body_nt = _build_ai_request(
+                        _ai_cfg_with_key, model, or_messages + new_messages, []
+                    )
+                    _body_nt["stream"] = True
+                    _retry_content = ""
+                    try:
+                        async with httpx.AsyncClient(timeout=90.0) as client:
+                            async with client.stream("POST", _url_nt, headers=_headers_nt, json=_body_nt) as resp_nt:
+                                resp_nt.raise_for_status()
+                                async for line_nt in resp_nt.aiter_lines():
+                                    if not line_nt.startswith("data: "):
+                                        continue
+                                    raw_nt = line_nt[6:]
+                                    if raw_nt.strip() == "[DONE]":
+                                        break
+                                    try:
+                                        chunk_nt = json.loads(raw_nt)
+                                    except json.JSONDecodeError:
+                                        continue
+                                    text_nt = chunk_nt.get("choices", [{}])[0].get("delta", {}).get("content") or ""
+                                    if text_nt:
+                                        _retry_content += text_nt
+                    except Exception:
+                        pass  # fall through to the notice below if retry also fails
+                    if _retry_content:
+                        _retry_clean, _retry_thinking = _extract_thinking(_retry_content)
+                        accumulated_content = _retry_clean
+                        assistant_msg["content"] = _retry_clean
+                        if _retry_thinking:
+                            assistant_msg["thinking"] = _retry_thinking
+                        _retry_replace: Dict[str, Any] = {"type": "replace", "content": _retry_clean}
+                        if _retry_thinking:
+                            _retry_replace["thinking"] = _retry_thinking
+                        yield f"data: {json.dumps(_retry_replace)}\n\n"
+                    else:
+                        _notice = (
+                            "I currently have no tools available in this session. "
+                            "Enable one or more tools in the AI Tools panel to proceed."
+                        )
+                        assistant_msg["content"] = _notice
+                        yield f"data: {json.dumps({'type': 'replace', 'content': _notice})}\n\n"
+                else:
+                    _notice = (
+                        "I currently have no tools available in this session. "
+                        "Enable one or more tools in the AI Tools panel to proceed."
+                    )
+                    assistant_msg["content"] = _notice
+                    yield f"data: {json.dumps({'type': 'replace', 'content': _notice})}\n\n"
 
             new_messages.append(assistant_msg)
 
@@ -452,6 +514,6 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             await deps.db_client.append_chat_message(session_id, new_messages[-1])
 
         updated = await deps.db_client.get_chat_history(session_id)
-        yield f"data: {json.dumps({'type': 'done', 'messages': updated})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'messages': clean_messages_for_display(updated)})}\n\n"
 
     return StreamingResponse(_generate(), media_type="text/event-stream")

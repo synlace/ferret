@@ -18,7 +18,6 @@ import type { WorkspaceFile } from "./FileTree"
 import type { WorkspaceSession, ChatMsg, LiveToolCall } from "./types"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-const DEFAULT_CHAT_MODEL = "google/gemini-3-flash-preview"
 const lastSessionKey = (projectId: string) => `ferret_last_chat_session:${projectId}`
 
 function HuntsPageInner() {
@@ -35,7 +34,12 @@ function HuntsPageInner() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [streamingContent, setStreamingContent] = useState("")
   const [liveToolCalls, setLiveToolCalls] = useState<LiveToolCall[]>([])
-  const [model, setModel] = useState(DEFAULT_CHAT_MODEL)
+  // model is seeded from GET /api/setup on mount so it reflects the configured
+  // provider (e.g. "local-model" for LM Studio, not the hardcoded gemini default).
+  // Falls back to "" which the API resolves server-side via the setup config.
+  const [model, setModel] = useState("")
+  const [streamingThinking, setStreamingThinking] = useState("")
+  const streamingThinkingRef = useRef("")
   const [maxToolCalls, setMaxToolCalls] = useState(() => {
     if (typeof window === "undefined") return 10
     const saved = localStorage.getItem("ferret_max_tool_calls")
@@ -123,8 +127,21 @@ function HuntsPageInner() {
     const next = !prev; localStorage.setItem("ferret_hunt_panel_open", String(next)); return next
   })
 
-  const modelDisplayName = model.includes("/") ? model.split("/").pop()! : model
+  const modelDisplayName = model ? (model.includes("/") ? model.split("/").pop()! : model) : "…"
   const userOverrodeModel = useRef(false)
+
+  // Seed the model from the setup config on mount (once, before any project override).
+  // This ensures local providers (LM Studio, Ollama) show their configured model
+  // rather than the hardcoded gemini fallback.
+  useEffect(() => {
+    apiFetch(`${API_BASE}/api/setup`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.model && !userOverrodeModel.current) setModel(d.model)
+      })
+      .catch(() => { /* non-fatal — model stays "" and API resolves server-side */ })
+  }, [])
+
   useEffect(() => {
     if (!userOverrodeModel.current && activeProject?.default_model) setModel(activeProject.default_model)
     userOverrodeModel.current = false
@@ -390,6 +407,14 @@ function HuntsPageInner() {
               liveToolCallsRef.current = prev.map((e, i) => i === realIdx ? { ...e, result: evt.content ?? "" } : e)
               setLiveToolCalls(liveToolCallsRef.current)
             }
+          } else if (evt.type === "replace") {
+            // Post-processed content: swap in clean version (thinking blocks extracted)
+            streamingContentRef.current = evt.content ?? ""
+            setStreamingContent(streamingContentRef.current)
+            if (evt.thinking) {
+              streamingThinkingRef.current = evt.thinking
+              setStreamingThinking(streamingThinkingRef.current)
+            }
           } else if (evt.type === "delta") {
             streamingContentRef.current += evt.content ?? ""
             setStreamingContent(streamingContentRef.current)
@@ -402,6 +427,7 @@ function HuntsPageInner() {
               tool_call_id: typeof m.tool_call_id === "string" ? m.tool_call_id : undefined,
               tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls as ChatMsg["tool_calls"] : undefined,
               timestamp: typeof m.timestamp === "string" ? m.timestamp : undefined,
+              thinking: typeof m.thinking === "string" ? m.thinking : undefined,
             }))
             if (activeSessionId) {
               const lastUserIdx = rawMsgs.reduce((acc, m, i) => m.role === "user" ? i : acc, -1)
@@ -422,6 +448,7 @@ function HuntsPageInner() {
             }
             setMessages(annotateToolArgs(rawMsgs))
             setStreamingContent(""); streamingContentRef.current = ""
+            setStreamingThinking(""); streamingThinkingRef.current = ""
             setLiveToolCalls([]); liveToolCallsRef.current = []
             setLoading(false)
             fetchWorkspaceFiles(activeSessionId)
@@ -439,6 +466,7 @@ function HuntsPageInner() {
             const role: ChatMsg["role"] = isNoKey ? "notice" : "assistant"
             setMessages(prev => [...prev, { role, content, timestamp: nowTs() }])
             setStreamingContent(""); streamingContentRef.current = ""
+            setStreamingThinking(""); streamingThinkingRef.current = ""
             setLiveToolCalls([]); liveToolCallsRef.current = []
             setLoading(false)
           }
@@ -454,6 +482,7 @@ function HuntsPageInner() {
       if (buffer) processLine(buffer)
       if (!streamDoneReceived.current) {
         setStreamingContent(""); streamingContentRef.current = ""
+        setStreamingThinking(""); streamingThinkingRef.current = ""
         setLiveToolCalls([]); liveToolCallsRef.current = []
         setLoading(false)
       }
@@ -470,6 +499,7 @@ function HuntsPageInner() {
       if (promotedMsgs.length > 0) setMessages(prev => [...prev, ...promotedMsgs])
       setLiveToolCalls([]); liveToolCallsRef.current = []
       setStreamingContent(""); streamingContentRef.current = ""
+      setStreamingThinking(""); streamingThinkingRef.current = ""
       setLoading(false)
     } finally { abortControllerRef.current = null }
   }
@@ -603,6 +633,7 @@ function HuntsPageInner() {
         loading={loading}
         loadingHistory={loadingHistory}
         streamingContent={streamingContent}
+        streamingThinking={streamingThinking}
         liveToolCalls={liveToolCalls}
         model={model}
         modelDisplayName={modelDisplayName}
