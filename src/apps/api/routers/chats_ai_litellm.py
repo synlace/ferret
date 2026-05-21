@@ -57,6 +57,16 @@ _PROVIDER_PREFIX: Dict[str, str] = {
 
 _LOCAL_PROVIDERS = frozenset({"ollama", "lmstudio"})
 
+# Default base URLs for local providers — used as a fallback when the stored
+# ai_base_url is empty (e.g. the session was created before setup was run, or
+# the user accepted the default during setup and the value was never persisted).
+# Without api_base, LiteLLM routes "openai/..." to api.openai.com and demands
+# an OPENAI_API_KEY even though the provider is a local LM Studio instance.
+_LOCAL_PROVIDER_BASE_URLS: Dict[str, str] = {
+    "ollama":   "http://host-gateway:11434/v1",
+    "lmstudio": "http://host-gateway:1234/v1",
+}
+
 
 def _litellm_model(ai_cfg: dict, model: str) -> str:
     """Return the LiteLLM model string for the given provider config and model name.
@@ -80,16 +90,30 @@ def _litellm_kwargs(ai_cfg: dict, api_key: str) -> Dict[str, Any]:
     - api_key injection
     - api_base override (for local providers and custom endpoints)
     - OpenRouter-specific headers
+
+    For local providers (Ollama, LM Studio) api_base is *required* — without it
+    LiteLLM falls back to routing the "openai/…" prefixed model string to
+    api.openai.com and raises an AuthenticationError demanding OPENAI_API_KEY.
+    If the caller did not supply a base_url (e.g. the DB value is empty because
+    the user accepted the default during setup), we fall back to the well-known
+    host-gateway address for that provider.
     """
     provider = ai_cfg.get("provider", "openrouter")
-    base_url = ai_cfg.get("base_url", "")
+    base_url = ai_cfg.get("base_url", "") or ""
     kwargs: Dict[str, Any] = {}
 
-    if api_key:
-        kwargs["api_key"] = api_key
+    # LiteLLM requires a non-empty api_key even for local providers — if none is
+    # supplied it falls back to checking OPENAI_API_KEY and raises an
+    # AuthenticationError.  Use a dummy sentinel value for local providers so
+    # the request is forwarded to the local server without credential checks.
+    effective_key = api_key or ("lm-studio" if provider in _LOCAL_PROVIDERS else "")
+    if effective_key:
+        kwargs["api_key"] = effective_key
 
-    if base_url:
-        kwargs["api_base"] = base_url
+    # Resolve api_base: explicit value wins; local providers fall back to default.
+    resolved_base = base_url or _LOCAL_PROVIDER_BASE_URLS.get(provider, "")
+    if resolved_base:
+        kwargs["api_base"] = resolved_base
 
     # OpenRouter requires extra headers for attribution / routing
     if provider == "openrouter":
