@@ -1,3 +1,6 @@
+# Development compose file — builds images from source.
+# Used by: just dev, just build, just test
+# For production (pre-built GHCR images), use: just up  (docker-compose.prod.yml)
 services:
   # ── Docker exec shim ───────────────────────────────────────────────────────
   # Custom Python HTTP proxy that allows ONLY the Docker API calls required
@@ -39,6 +42,17 @@ services:
       DOCKER_HOST: tcp://docker-shim:2375
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
+      # Mount source over the built image so Python changes are picked up
+      # without rebuilding. watchfiles (below) auto-restarts uvicorn on change.
+      - ./src/apps/api:/app
+    # Use watchfiles to restart uvicorn when source files change.
+    # This avoids the --reload fork that breaks Docker port mapping.
+    command:
+      - python
+      - -m
+      - watchfiles
+      - "uvicorn main:app --host 0.0.0.0 --port 8000"
+      - /app
     networks:
       - default
       - docker-internal

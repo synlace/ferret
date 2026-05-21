@@ -5,6 +5,7 @@ Provider-aware AI call helpers and system prompt builder.
 import json
 import logging
 import re
+import uuid
 from typing import List, Dict, Any, Optional, Tuple
 
 import httpx
@@ -19,20 +20,117 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _THINKING_RE = re.compile(r"<\|channel>thought\n(.*?)\n<channel\|>", re.DOTALL)
+# Also handle the variant without a trailing newline before the closing tag
+_THINKING_RE2 = re.compile(r"<\|channel>thought\n(.*?)<channel\|>", re.DOTALL)
 _TOOL_CODE_RE = re.compile(r"<tool_code>.*?</tool_code>", re.DOTALL)
+
+# Non-standard tool call syntax emitted by some local models:
+#
+#   Kimi/Moonshot (closed tag):
+#     <|tool_call>call:name{key:"value",...}<tool_call|>
+#
+#   Gemma 4 (no closing tag, terminated by [END_TOOL_REQUEST] or end-of-string):
+#     <|tool_call>call:name{key:<|"|>value<|"|>,...}
+#     [END_TOOL_REQUEST]
+#
+# We parse these into proper OpenAI tool_calls dicts so the agentic loop can
+# execute them normally.
+#
+# The regex matches either form: closed by <tool_call|>, by [END_TOOL_REQUEST],
+# or by end-of-string.
+_TOOL_CALL_TAG_RE = re.compile(
+    r"<\|tool_call>(.*?)(?:<tool_call\|>|\[END_TOOL_REQUEST\]|$)",
+    re.DOTALL,
+)
+
+# Hallucinated tool result blocks some models inject inline:
+#   [TOOL_RESULT]\n...\n[END_TOOL_RESULT]
+_TOOL_RESULT_BLOCK_RE = re.compile(r"\[TOOL_RESULT\].*?\[END_TOOL_RESULT\]", re.DOTALL)
+
+# Stray [END_TOOL_REQUEST] markers left after stripping <|tool_call> blocks
+_END_TOOL_REQUEST_RE = re.compile(r"\[END_TOOL_REQUEST\]", re.DOTALL)
+
+# call:name{...} inside a <|tool_call> block
+_TOOL_CALL_BODY_RE = re.compile(r"call:(\w+)\{(.*)\}", re.DOTALL)
+
+
+def _parse_nonstandard_tool_calls(raw_body: str) -> Optional[Dict[str, Any]]:
+    """Parse a single <|tool_call> body into an OpenAI tool_call dict.
+
+    Handles the ``call:name{key:"value",...}`` format emitted by some local
+    models.  Returns None if the body cannot be parsed.
+    """
+    m = _TOOL_CALL_BODY_RE.match(raw_body.strip())
+    if not m:
+        return None
+    fn_name = m.group(1)
+    args_raw = m.group(2).strip()
+
+    # The args may use bare keys or single-quoted strings — try JSON first,
+    # then fall back to a best-effort key:value extraction.
+    # Normalise <|"|> quote escapes used by some models.
+    args_raw = args_raw.replace("<|\"|>", '"')
+    try:
+        args_dict = json.loads("{" + args_raw + "}")
+    except json.JSONDecodeError:
+        # Best-effort: extract key:"value" pairs
+        pairs = re.findall(r'(\w+)\s*:\s*"((?:[^"\\]|\\.)*)"', args_raw)
+        args_dict = {k: v for k, v in pairs} if pairs else {}
+
+    return {
+        "id": str(uuid.uuid4())[:8],
+        "type": "function",
+        "function": {
+            "name": fn_name,
+            "arguments": json.dumps(args_dict),
+        },
+    }
 
 
 def _extract_thinking(content: str) -> Tuple[str, Optional[str]]:
     """Return (clean_content, thinking_text_or_None).
 
     Extracts <|channel>thought...<channel|> blocks into a separate string and
-    strips <tool_code> blocks (Ferret handles tool execution natively).
+    strips <tool_code>, hallucinated [TOOL_RESULT] blocks, and non-standard
+    <|tool_call> blocks (Ferret handles tool execution natively via the OpenAI
+    tool_calls schema).
+
+    Each thinking block is separated by a horizontal rule so the UI can render
+    them as distinct segments within the single collapsible ThinkingBlock.
     """
+    # Try strict pattern first (newline before closing tag), then relaxed
     thinking_parts = _THINKING_RE.findall(content)
-    thinking: Optional[str] = "\n\n".join(thinking_parts) if thinking_parts else None
+    if not thinking_parts:
+        thinking_parts = _THINKING_RE2.findall(content)
+
+    thinking: Optional[str] = "\n\n---\n\n".join(p.strip() for p in thinking_parts) if thinking_parts else None
+
+    # Remove thinking blocks from visible content
     clean = _THINKING_RE.sub("", content)
+    clean = _THINKING_RE2.sub("", clean)
+    # Strip non-standard tool call tags (closed or open/Gemma-style)
+    clean = _TOOL_CALL_TAG_RE.sub("", clean)
+    # Strip any stray [END_TOOL_REQUEST] markers left after tag removal
+    clean = _END_TOOL_REQUEST_RE.sub("", clean)
+    # Strip hallucinated tool result blocks
+    clean = _TOOL_RESULT_BLOCK_RE.sub("", clean)
     clean = _TOOL_CODE_RE.sub("", clean).strip()
     return clean, thinking
+
+
+def extract_nonstandard_tool_calls(content: str) -> List[Dict[str, Any]]:
+    """Extract <|tool_call>...<tool_call|> blocks from content and return them
+    as a list of OpenAI-format tool_call dicts.
+
+    Called by the streaming loop when the model emits tool calls as text
+    instead of via the proper function-calling schema.
+    """
+    tool_calls = []
+    for m in _TOOL_CALL_TAG_RE.finditer(content):
+        tc = _parse_nonstandard_tool_calls(m.group(1))
+        if tc:
+            tool_calls.append(tc)
+    return tool_calls
 
 
 def clean_messages_for_display(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

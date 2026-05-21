@@ -142,6 +142,7 @@ class SQLiteClient(ProjectsMixin):
                 tool_call_id TEXT,
                 name         TEXT,
                 tool_calls   TEXT,
+                thinking     TEXT,
                 created_at   TEXT NOT NULL
             );
 
@@ -362,6 +363,15 @@ class SQLiteClient(ProjectsMixin):
                 await self._db.commit()
             except Exception:
                 pass  # column already exists
+
+        # Migration: add thinking column to chat_messages (stores extracted CoT)
+        try:
+            await self._db.execute(
+                "ALTER TABLE chat_messages ADD COLUMN thinking TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
 
         # Seed built-in plans (idempotent)
         await self._seed_builtin_plans()
@@ -653,12 +663,13 @@ class SQLiteClient(ProjectsMixin):
                 m.get("tool_call_id"),
                 m.get("name"),
                 json.dumps(m["tool_calls"]) if m.get("tool_calls") else None,
+                m.get("thinking"),
                 now,
             ))
         await self._db.executemany(
             """
-            INSERT INTO chat_messages (id, request_id, role, content, tool_call_id, name, tool_calls, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chat_messages (id, request_id, role, content, tool_call_id, name, tool_calls, thinking, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -667,7 +678,7 @@ class SQLiteClient(ProjectsMixin):
     async def get_chat_messages(self, request_id: str) -> List[Dict[str, Any]]:
         """Return all chat messages for a request, ordered by creation time."""
         async with self._db.execute(
-            "SELECT role, content, tool_call_id, name, tool_calls, created_at FROM chat_messages "
+            "SELECT role, content, tool_call_id, name, tool_calls, thinking, created_at FROM chat_messages "
             "WHERE request_id = ? ORDER BY created_at ASC",
             (request_id,),
         ) as cur:
@@ -681,6 +692,8 @@ class SQLiteClient(ProjectsMixin):
                 msg["name"] = row["name"]
             if row["tool_calls"]:
                 msg["tool_calls"] = json.loads(row["tool_calls"])
+            if row["thinking"]:
+                msg["thinking"] = row["thinking"]
             # Expose created_at as timestamp so the UI can display it on reload.
             # Format: "YYYY-MM-DD HH:MM" (strip seconds/microseconds if present).
             if row["created_at"]:

@@ -33,6 +33,7 @@ from chats_ai import (
     _build_or_messages,
     _NO_KEY_NOTICE,
     _extract_thinking,
+    extract_nonstandard_tool_calls,
     clean_messages_for_display,
 )
 from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana
@@ -265,6 +266,8 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
 
         new_messages: List[Dict[str, Any]] = []
         max_iterations = max(1, min(50, body.max_tool_calls or 10))
+        _hit_limit = False
+        _total_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
         for iteration in range(max_iterations):
             # Stream the completion (OpenAI-compat SSE) or fall back to non-streaming (Anthropic)
@@ -318,6 +321,13 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
                                 except json.JSONDecodeError:
                                     continue
 
+                                # Capture usage from the final chunk (some providers send it)
+                                _chunk_usage = chunk.get("usage")
+                                if _chunk_usage:
+                                    _total_usage["prompt_tokens"] += _chunk_usage.get("prompt_tokens", 0)
+                                    _total_usage["completion_tokens"] += _chunk_usage.get("completion_tokens", 0)
+                                    _total_usage["total_tokens"] += _chunk_usage.get("total_tokens", 0)
+
                                 delta = chunk.get("choices", [{}])[0].get("delta", {})
 
                                 # Accumulate text silently — no delta events yet
@@ -354,6 +364,13 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             # Post-process: extract thinking blocks and strip tool_code tags
             if accumulated_content:
                 _clean_content, _thinking = _extract_thinking(accumulated_content)
+                # Fallback: if the model emitted tool calls as non-standard text tags
+                # (e.g. <|tool_call>call:name{...}<tool_call|>) parse them out now.
+                # Only do this when the provider returned no structured tool_calls.
+                if not accumulated_tool_calls:
+                    _ns_tool_calls = extract_nonstandard_tool_calls(accumulated_content)
+                    for _ns_tc in _ns_tool_calls:
+                        accumulated_tool_calls[len(accumulated_tool_calls)] = _ns_tc
                 accumulated_content = _clean_content
                 # Emit replace event so the UI swaps in the clean version
                 _replace_evt: Dict[str, Any] = {"type": "replace", "content": _clean_content}
@@ -434,6 +451,9 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
             # If no tool calls, we're done
             if not tool_calls_list:
                 break
+        else:
+            # Loop exhausted all iterations without a natural break — limit was hit
+            _hit_limit = True
 
             # Persist the assistant message (with tool_calls) once per iteration,
             # before executing the tool calls, so it survives a client abort.
@@ -513,7 +533,19 @@ async def stream_session_message(session_id: str, body: ChatSendRequest, project
         if new_messages and new_messages[-1].get("role") == "assistant" and not new_messages[-1].get("tool_calls"):
             await deps.db_client.append_chat_message(session_id, new_messages[-1])
 
+        if _hit_limit:
+            _limit_notice = (
+                f"⚠️ **Tool call limit reached** ({max_iterations} calls). "
+                "The agent stopped here. Increase the limit or send a follow-up message to continue."
+            )
+            _notice_msg: Dict[str, Any] = {"role": "notice", "content": _limit_notice}
+            await deps.db_client.append_chat_message(session_id, _notice_msg)
+            yield f"data: {json.dumps({'type': 'notice', 'content': _limit_notice})}\n\n"
+
         updated = await deps.db_client.get_chat_history(session_id)
-        yield f"data: {json.dumps({'type': 'done', 'messages': clean_messages_for_display(updated)})}\n\n"
+        _done_evt: Dict[str, Any] = {"type": "done", "messages": clean_messages_for_display(updated)}
+        if _total_usage["total_tokens"] > 0:
+            _done_evt["usage"] = _total_usage
+        yield f"data: {json.dumps(_done_evt)}\n\n"
 
     return StreamingResponse(_generate(), media_type="text/event-stream")
