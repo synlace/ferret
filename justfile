@@ -73,7 +73,7 @@ test component:
         docker compose build api
         docker compose run --rm -w /app api python -m pytest \
           test_api_v2.py \
-          test_api_chat_sessions.py \
+          test_api_chat_litellm.py \
           test_api_chat_tools.py \
           test_api_gnaw.py \
           test_api_snare.py \

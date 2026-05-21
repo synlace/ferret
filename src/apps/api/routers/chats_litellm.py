@@ -42,7 +42,7 @@ from chats_ai import (
     _build_or_messages,
     clean_messages_for_display,
 )
-from chats_ai_v2 import (
+from chats_ai_litellm import (
     _resolve_project_and_key,
     stream_ai_completion,
 )
@@ -227,9 +227,14 @@ async def stream_session_message_v2(
             # No tool calls → done
             if not accumulated_tool_calls:
                 break
-        else:
-            # Loop exhausted all iterations without a natural break — limit was hit
-            _hit_limit = True
+
+            # ----------------------------------------------------------------
+            # Tool calls present — check iteration limit before executing
+            # ----------------------------------------------------------------
+            if _iteration == max_iterations - 1:
+                # Last allowed iteration and still has tool calls — limit hit
+                _hit_limit = True
+                break
 
             # Persist assistant message (with tool_calls) before executing tools
             await deps.db_client.append_chat_message(session_id, assistant_msg)

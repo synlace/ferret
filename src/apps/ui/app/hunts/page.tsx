@@ -434,6 +434,7 @@ function HuntsPageInner() {
             setStreamingThinking(""); streamingThinkingRef.current = ""
             setLiveToolCalls([]); liveToolCallsRef.current = []
             setLoading(false)
+            setTimeout(() => { chatInputRef.current?.focus() }, 0)
             fetchWorkspaceFiles(activeSessionId)
             if (activeProjectId) {
               apiFetch(`${API_BASE}/api/projects/${activeProjectId}/spend`).then(r => r.ok ? r.json() : null)
@@ -455,6 +456,7 @@ function HuntsPageInner() {
             setStreamingThinking(""); streamingThinkingRef.current = ""
             setLiveToolCalls([]); liveToolCallsRef.current = []
             setLoading(false)
+            setTimeout(() => { chatInputRef.current?.focus() }, 0)
           }
         } catch { /**/ }
       }
@@ -471,6 +473,7 @@ function HuntsPageInner() {
         setStreamingThinking(""); streamingThinkingRef.current = ""
         setLiveToolCalls([]); liveToolCallsRef.current = []
         setLoading(false)
+        setTimeout(() => { chatInputRef.current?.focus() }, 0)
       }
     } catch {
       const snapshot = liveToolCallsRef.current
@@ -487,6 +490,7 @@ function HuntsPageInner() {
       setStreamingContent(""); streamingContentRef.current = ""
       setStreamingThinking(""); streamingThinkingRef.current = ""
       setLoading(false)
+      setTimeout(() => { chatInputRef.current?.focus() }, 0)
     } finally { abortControllerRef.current = null }
   }
 

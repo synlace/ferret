@@ -1,5 +1,5 @@
 """
-LiteLLM-backed AI call helpers — v2 replacement for chats_ai._build_ai_request.
+LiteLLM-backed AI call helpers — replaces the raw httpx provider layer in chats_ai.py.
 
 Key differences from chats_ai.py:
 - Uses litellm.acompletion() instead of raw httpx calls.
@@ -36,6 +36,9 @@ _log = logging.getLogger(__name__)
 # Silence LiteLLM's verbose startup banner and per-request logs unless DEBUG.
 litellm.suppress_debug_info = True
 litellm.set_verbose = False
+# Silently drop unsupported parameters (e.g. tool_choice for Gemini via OpenRouter)
+# instead of forwarding them and getting a broken/empty response.
+litellm.drop_params = True
 
 # ---------------------------------------------------------------------------
 # Provider → LiteLLM model prefix mapping

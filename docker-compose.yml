@@ -40,12 +40,19 @@ services:
       FERRET_SANDBOX_CONTAINER: ferret-lab
       # Route Docker CLI calls through the exec shim instead of the raw socket.
       DOCKER_HOST: tcp://docker-shim:2375
+      # Use stat()-based polling instead of inotify so watchfiles detects changes
+      # on Docker bind mounts where host inotify events are not propagated into
+      # the container (common on Linux with overlayfs).
+      WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       # Mount source over the built image so Python changes are picked up
       # without rebuilding. watchfiles (below) auto-restarts uvicorn on change.
       - ./src/apps/api:/app
     # Use watchfiles to restart uvicorn when source files change.
+    # WATCHFILES_FORCE_POLLING=true uses stat() instead of inotify so it works
+    # reliably across Docker bind mounts where the host does not propagate inotify
+    # events into the container (the common case on Linux with overlayfs/bind mounts).
     # This avoids the --reload fork that breaks Docker port mapping.
     command:
       - python

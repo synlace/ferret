@@ -366,7 +366,7 @@ def _build_or_messages(
         step += 1
     if "search_requests" in _active:
         workflow_steps.append(
-            f"{step}. ALWAYS call search_requests to understand what traffic has already been "
+            f"{step}. Call search_requests to understand what traffic has already been "
             "captured by the proxy. The target host and scope come from this data — never "
             "assume or guess a target."
         )
@@ -386,7 +386,14 @@ def _build_or_messages(
         step += 1
 
     if workflow_steps:
-        system_prompt += "Workflow order (MANDATORY — follow this sequence every time):\n"
+        system_prompt += (
+            "Workflow order (ONLY follow this sequence when the user explicitly asks you "
+            "to start an investigation, analyse traffic, test a target, or perform a "
+            "security task. Do NOT call any tools in response to greetings (e.g. 'Hello', "
+            "'Hi', 'Hey'), questions about your capabilities, or any message that does not "
+            "contain a clear security testing request. For such messages, respond with "
+            "plain text only):\n"
+        )
         system_prompt += "\n".join(workflow_steps) + "\n\n"
 
     # ---------------------------------------------------------------------------
