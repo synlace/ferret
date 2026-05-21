@@ -214,7 +214,7 @@ class SQLiteClient(ProjectsMixin):
                 color         TEXT DEFAULT '#f97316',
                 emoji         TEXT DEFAULT '',
                 labels        TEXT DEFAULT '[]',
-                default_model TEXT DEFAULT 'google/gemini-3-flash-preview',
+                default_model TEXT DEFAULT NULL,
                 is_temp       INTEGER DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
@@ -315,6 +315,20 @@ class SQLiteClient(ProjectsMixin):
                 await self._db.commit()
             except Exception:
                 pass  # column already exists
+
+        # Migration: clear the old factory-default model so resolution falls
+        # through to the setup-wizard config (ai_model setting).  Rows that
+        # still carry the hardcoded gemini default from before this change are
+        # treated as "no preference" — NULL — so the chat router picks up
+        # whatever the user configured in the setup wizard instead.
+        try:
+            await self._db.execute(
+                "UPDATE projects SET default_model = NULL "
+                "WHERE default_model = 'google/gemini-3-flash-preview'"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
 
         # Migration: add workspace_dir to chat_sessions
         try:

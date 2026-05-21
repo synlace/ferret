@@ -46,8 +46,11 @@ _PROVIDER_BASE_URLS = {
     "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai",
     "deepseek":   "https://api.deepseek.com/v1",
     "mistral":    "https://api.mistral.ai/v1",
-    "ollama":     "http://localhost:11434/v1",
-    "lmstudio":   "http://localhost:1234/v1",
+    # Local providers: use host-gateway so the api container can reach services
+    # running on the host machine.  docker-compose.yml adds extra_hosts so that
+    # "host-gateway" resolves to the host's gateway IP inside every container.
+    "ollama":     "http://host-gateway:11434/v1",
+    "lmstudio":   "http://host-gateway:1234/v1",
 }
 
 _PROVIDER_FORMAT = {
@@ -349,6 +352,102 @@ async def _test_anthropic(api_key: str, base_url: str) -> dict:
         return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/setup/models  (server-side model list proxy)
+# ---------------------------------------------------------------------------
+
+@router.post("/api/setup/models")
+async def list_models(body: SetupConfig):
+    """
+    Fetch the available model list for a provider, server-side.
+
+    The request is proxied through the API container so that:
+    - Local providers (Ollama, LM Studio) are reachable via host-gateway.
+    - API keys are never sent as query-string parameters (no browser/log exposure).
+
+    Returns { models: [{ id: str, name: str }] } on success.
+    Returns { models: [] } on any connectivity or auth failure (non-fatal —
+    the UI falls back to the static model list baked into the provider config).
+    """
+    try:
+        provider = body.provider.lower()
+        _validate_base_url(body.base_url or "", provider)
+        base_url = (body.base_url or _PROVIDER_BASE_URLS.get(provider, "")).rstrip("/")
+        api_key  = body.api_key or ""
+
+        models: list[dict] = []
+
+        if provider == "openrouter":
+            # Public endpoint — no key required for the model list
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+                )
+            if r.status_code == 200:
+                models = [
+                    {"id": m["id"], "name": m.get("name", m["id"])}
+                    for m in r.json().get("data", [])
+                ]
+
+        elif provider == "ollama":
+            # Ollama uses /api/tags (not /v1/models)
+            tags_url = base_url.rstrip("/v1").rstrip("/") + "/api/tags"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(tags_url)
+            if r.status_code == 200:
+                models = [
+                    {"id": m["name"], "name": m["name"]}
+                    for m in r.json().get("models", [])
+                ]
+
+        elif provider == "lmstudio":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(f"{base_url}/models")
+            if r.status_code == 200:
+                models = [
+                    {"id": m["id"], "name": m["id"]}
+                    for m in r.json().get("data", [])
+                ]
+
+        elif provider == "anthropic":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{base_url}/models",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                    },
+                )
+            if r.status_code == 200:
+                models = [
+                    {"id": m["id"], "name": m.get("display_name", m["id"])}
+                    for m in r.json().get("data", [])
+                ]
+
+        else:
+            # All other OpenAI-compatible providers (openai, gemini, deepseek, mistral)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            if r.status_code == 200:
+                models = [
+                    {"id": m["id"], "name": m["id"]}
+                    for m in r.json().get("data", [])
+                ]
+
+        return {"models": models}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log.warning("Model list fetch failed for provider=%s: %s", body.provider, e)
+        # Non-fatal — UI falls back to static model list
+        return {"models": []}
 
 
 # ---------------------------------------------------------------------------

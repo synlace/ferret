@@ -259,7 +259,7 @@ class Project(BaseModel):
     color: str = "#f97316"
     emoji: str = ""
     labels: List[str] = Field(default_factory=list)
-    default_model: str = "google/gemini-3-flash-preview"
+    default_model: Optional[str] = None  # None → resolved server-side from setup config
     is_temp: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -274,7 +274,7 @@ class ProjectCreate(BaseModel):
     color: str = "#f97316"
     emoji: str = ""
     labels: List[str] = Field(default_factory=list)
-    default_model: str = "google/gemini-3-flash-preview"
+    default_model: Optional[str] = None  # None → resolved server-side from setup config
     provision_key: bool = True  # auto-provision an OR key on creation
 
 
@@ -339,7 +339,7 @@ class SetupConfig(BaseModel):
     api_key: Optional[str] = Field(None, description="API key for cloud providers")
     provisioning_key: Optional[str] = Field(None, description="OpenRouter provisioning key (optional — enables per-project sub-key creation)")
     base_url: Optional[str] = Field(None, description="Base URL for local providers (Ollama, LM Studio)")
-    model: str = Field(..., description="Default model identifier")
+    model: str = Field("", description="Default model identifier (required for POST /api/setup; ignored by /api/setup/test and /api/setup/models)")
 
 
 class SetupStatus(BaseModel):

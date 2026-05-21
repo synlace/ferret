@@ -19,6 +19,22 @@ import { apiFetch } from "@/lib/api-fetch"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+// ── ThinkingBlock — collapsible chain-of-thought reasoning block ──
+function ThinkingBlock({ content }: { content: string }) {
+  return (
+    <details className="my-1.5 rounded border border-neutral-700/60 bg-neutral-900/60 text-xs">
+      <summary className="cursor-pointer select-none px-3 py-1.5 text-neutral-500 hover:text-neutral-400 list-none flex items-center gap-1.5">
+        <span className="text-[10px]">💭</span>
+        <span className="font-medium tracking-wide uppercase text-[10px]">Thinking</span>
+        <span className="ml-auto text-[10px] text-neutral-600">[expand]</span>
+      </summary>
+      <div className="px-3 pb-2 pt-1 text-neutral-500 whitespace-pre-wrap font-mono leading-relaxed border-t border-neutral-700/40">
+        {content}
+      </div>
+    </details>
+  )
+}
+
 // ── MessageList — memoized so it does NOT re-render on every streaming delta ──
 // Only re-renders when `messages`, `activeSessionId`, or the collapse helpers change.
 interface MessageListProps {
@@ -50,7 +66,7 @@ const MessageList = memo(function MessageList({
               rationale={msg.rationale} />
           )
         }
-        if (msg.role === "assistant" && !(msg.content ?? "").trim()) return null
+        if (msg.role === "assistant" && !(msg.content ?? "").trim() && !msg.thinking) return null
         if (msg.role === "notice") {
           return (
             <div key={i} className="flex flex-col items-start">
@@ -67,6 +83,7 @@ const MessageList = memo(function MessageList({
           <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
             <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-100 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
               {msg.role === "assistant" && <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
+              {msg.role === "assistant" && msg.thinking && <ThinkingBlock content={msg.thinking} />}
               {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
             </div>
             <div className={`flex items-center gap-2 mt-0.5 px-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
@@ -93,6 +110,7 @@ interface ChatPanelProps {
   loading: boolean
   loadingHistory: boolean
   streamingContent: string
+  streamingThinking: string
   liveToolCalls: LiveToolCall[]
   model: string
   modelDisplayName: string
@@ -143,6 +161,7 @@ export function ChatPanel({
   loading,
   loadingHistory,
   streamingContent,
+  streamingThinking,
   liveToolCalls,
   model,
   modelDisplayName,
@@ -280,16 +299,28 @@ export function ChatPanel({
                   })}
                 </div>
               )}
-              {loading && streamingContent && (
+              {loading && (streamingContent || streamingThinking) && (
                 <div className="flex flex-col items-start">
                   <div className="max-w-[80%] px-3 py-2 text-sm bg-neutral-900 text-neutral-200 border border-neutral-800">
                     <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>
-                    <MarkdownContent content={streamingContent} />
-                    <span className="inline-block w-1.5 h-4 bg-brand-400 animate-pulse ml-0.5 align-middle" />
+                    {streamingThinking && <ThinkingBlock content={streamingThinking} />}
+                    {streamingContent && (
+                      <>
+                        <MarkdownContent content={streamingContent} />
+                        <span className="inline-block w-1.5 h-4 bg-brand-400 animate-pulse ml-0.5 align-middle" />
+                      </>
+                    )}
+                    {!streamingContent && (
+                      <div className="flex items-center gap-1.5 py-1">
+                        <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
-              {loading && !streamingContent && liveToolCalls.length === 0 && (
+              {loading && !streamingContent && !streamingThinking && liveToolCalls.length === 0 && (
                 <div className="flex justify-start">
                   <div className="bg-neutral-900 border border-neutral-800 px-3 py-2">
                     <div className="flex items-center gap-1.5">

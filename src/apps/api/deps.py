@@ -60,8 +60,11 @@ _PROVIDER_BASE_URLS = {
     "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai",
     "deepseek":   "https://api.deepseek.com/v1",
     "mistral":    "https://api.mistral.ai/v1",
-    "ollama":     "http://localhost:11434/v1",
-    "lmstudio":   "http://localhost:1234/v1",
+    # Local providers: use host-gateway so the api container can reach services
+    # running on the host machine.  docker-compose.yml adds extra_hosts so that
+    # "host-gateway" resolves to the host's gateway IP inside every container.
+    "ollama":     "http://host-gateway:11434/v1",
+    "lmstudio":   "http://host-gateway:1234/v1",
 }
 
 _PROVIDER_FORMAT = {

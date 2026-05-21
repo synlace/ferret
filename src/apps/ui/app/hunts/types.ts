@@ -23,6 +23,8 @@ export interface ChatMsg {
   exitCode?: number | null
   runtimeMs?: number | null
   rationale?: string
+  /** Chain-of-thought reasoning extracted from <|channel>thought...<channel|> blocks */
+  thinking?: string
 }
 
 export interface LiveToolCall {

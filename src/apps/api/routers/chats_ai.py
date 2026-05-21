@@ -4,7 +4,8 @@ Provider-aware AI call helpers and system prompt builder.
 
 import json
 import logging
-from typing import List, Dict, Any
+import re
+from typing import List, Dict, Any, Optional, Tuple
 
 import httpx
 from fastapi import HTTPException
@@ -12,6 +13,46 @@ from fastapi import HTTPException
 import deps
 
 _log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Thinking-block extraction (shared with chats.py and chats_crud.py)
+# ---------------------------------------------------------------------------
+
+_THINKING_RE = re.compile(r"<\|channel>thought\n(.*?)\n<channel\|>", re.DOTALL)
+_TOOL_CODE_RE = re.compile(r"<tool_code>.*?</tool_code>", re.DOTALL)
+
+
+def _extract_thinking(content: str) -> Tuple[str, Optional[str]]:
+    """Return (clean_content, thinking_text_or_None).
+
+    Extracts <|channel>thought...<channel|> blocks into a separate string and
+    strips <tool_code> blocks (Ferret handles tool execution natively).
+    """
+    thinking_parts = _THINKING_RE.findall(content)
+    thinking: Optional[str] = "\n\n".join(thinking_parts) if thinking_parts else None
+    clean = _THINKING_RE.sub("", content)
+    clean = _TOOL_CODE_RE.sub("", clean).strip()
+    return clean, thinking
+
+
+def clean_messages_for_display(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Retroactively clean assistant messages that still have raw thinking/tool_code tags.
+
+    Applied when reading history from the DB so old messages stored before the
+    extraction was added are cleaned on-the-fly without modifying the DB.
+    """
+    cleaned: List[Dict[str, Any]] = []
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("content") and not msg.get("thinking"):
+            raw_content = msg["content"]
+            clean_content, thinking = _extract_thinking(raw_content)
+            if thinking or clean_content != raw_content:
+                msg = {**msg, "content": clean_content}
+                if thinking:
+                    msg["thinking"] = thinking
+        cleaned.append(msg)
+    return cleaned
+
 
 _NO_KEY_NOTICE = (
     "**No API key configured for this project.**\n\n"
@@ -97,13 +138,17 @@ def _parse_ai_response(ai_cfg: dict, data: dict) -> dict:
         return data["choices"][0]["message"]
 
 
+_LOCAL_PROVIDERS = frozenset({"ollama", "lmstudio"})
+
+
 async def _resolve_project_and_key(session_id: str, fallback_project_id: str):
     """Return (project_id, api_key, ai_config, project_row) for a session.
 
     Key resolution order (see deps.get_key_for_project):
     1. Provisioned per-project sub-key (OpenRouter provisioning flow).
     2. Global API key saved by the setup wizard.
-    3. Raises 503 if neither is available.
+    3. Raises 503 if neither is available — unless the provider is local
+       (ollama / lmstudio), which requires no API key.
 
     The returned ``ai_config`` dict contains the active provider, base_url,
     format, and model so callers can route to the correct endpoint.
@@ -112,17 +157,19 @@ async def _resolve_project_and_key(session_id: str, fallback_project_id: str):
     project_id = ((_session.get("project_id") if _session else None) or fallback_project_id)
     _log.info("[chat] session=%s resolved project_id=%s", session_id, project_id)
 
+    ai_cfg = deps.get_ai_config()
+    provider = ai_cfg.get("provider", "")
+
     api_key = await deps.get_key_for_project(project_id)
-    if not api_key:
+    if not api_key and provider not in _LOCAL_PROVIDERS:
         raise HTTPException(
             503,
             f"No provisioned key for project '{project_id}'. "
             "Configure a provider via Setup, or add a provisioned key via Projects → Keys."
         )
 
-    ai_cfg = deps.get_ai_config()
     _log.info("[chat] using key prefix=%s... for project=%s provider=%s",
-              (api_key[:16] if api_key else "NONE"), project_id, ai_cfg.get("provider"))
+              (api_key[:16] if api_key else "NONE"), project_id, provider)
     project = await deps.db_client.get_project(project_id)
     return project_id, api_key, ai_cfg, project
 
