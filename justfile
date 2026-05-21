@@ -39,7 +39,11 @@ dev:
     echo ""
     echo "Press Ctrl+C to stop the UI. Run 'just down' to stop API containers."
     echo ""
-    APP_VERSION=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "dev")
+    # Only show a version tag when HEAD is exactly on a release tag.
+    # Any other state (untagged commit, dirty tree) shows "dev" so the nav
+    # always reads "dev" during local development.
+    EXACT_TAG=$(git describe --exact-match --tags HEAD 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+    APP_VERSION="${EXACT_TAG:-dev}"
     cd src/apps/ui && NEXT_PUBLIC_API_URL=http://localhost:8000 NEXT_PUBLIC_APP_VERSION="$APP_VERSION" npm run dev
 
 # Stop and remove all services (works for both prod and dev)
