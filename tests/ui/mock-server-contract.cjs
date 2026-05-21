@@ -43,6 +43,26 @@ const CONTRACT = [
     fixedValues: { status: 'ok' },
   },
 
+  // ── Auth ─────────────────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    path: '/api/auth/me',
+    status: 200,
+    contentType: 'application/json',
+    requiredFields: ['authenticated'],
+    fixedValues: {},
+  },
+
+  // ── Setup ────────────────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    path: '/api/setup',
+    status: 200,
+    contentType: 'application/json',
+    requiredFields: ['setup_complete'],
+    fixedValues: { setup_complete: true },
+  },
+
   // ── Proxy ───────────────────────────────────────────────────────────────────
   {
     method: 'GET',
@@ -86,6 +106,26 @@ const CONTRACT = [
     fixedValues: {},
   },
 
+  // ── Plans ────────────────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    path: '/api/plans',
+    status: 200,
+    contentType: 'application/json',
+    // Array response — may be empty
+    requiredFields: [],
+    fixedValues: {},
+  },
+
+  {
+    method: 'POST',
+    path: '/api/plans',
+    status: 201,
+    contentType: 'application/json',
+    requiredFields: ['id', 'name', 'tool', 'prompt', 'max_tool_calls', 'is_builtin', 'created_at'],
+    fixedValues: {},
+  },
+
   // ── Settings / CA cert ───────────────────────────────────────────────────────
   {
     method: 'GET',
@@ -119,7 +159,7 @@ const CONTRACT = [
   // ── Workspaces ───────────────────────────────────────────────────────────────
   {
     method: 'GET',
-    path: '/api/workspaces/session-seeded-001/files',
+    path: '/api/hunts/session-seeded-001/files',
     status: 200,
     contentType: 'application/json',
     requiredFields: ['session_id', 'files'],
@@ -128,7 +168,7 @@ const CONTRACT = [
 
   {
     method: 'PUT',
-    path: '/api/workspaces/session-seeded-001/files/scripts/run.sh',
+    path: '/api/hunts/session-seeded-001/files/scripts/run.sh',
     status: 200,
     contentType: 'application/json',
     requiredFields: ['path', 'size', 'modified_at'],
@@ -137,7 +177,7 @@ const CONTRACT = [
 
   {
     method: 'GET',
-    path: '/api/workspaces/session-seeded-001/files/scripts/run.sh',
+    path: '/api/hunts/session-seeded-001/files/scripts/run.sh',
     status: 200,
     contentType: 'application/json',
     requiredFields: ['path', 'content', 'size', 'modified_at'],
@@ -146,11 +186,61 @@ const CONTRACT = [
 
   {
     method: 'DELETE',
-    path: '/api/workspaces/session-seeded-001/files/scripts/run.sh',
+    path: '/api/hunts/session-seeded-001/files/scripts/run.sh',
     status: 200,
     contentType: 'application/json',
     requiredFields: ['deleted'],
     fixedValues: { deleted: 'scripts/run.sh' },
+  },
+
+  // ── Gnaw tabs ────────────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    path: '/api/gnaw/tabs',
+    status: 200,
+    contentType: 'application/json',
+    // Array response — may be empty
+    requiredFields: [],
+    fixedValues: {},
+  },
+
+  {
+    method: 'POST',
+    path: '/api/gnaw/tabs',
+    status: 201,
+    contentType: 'application/json',
+    requiredFields: ['id', 'label', 'position', 'created_at'],
+    fixedValues: {},
+  },
+
+  // ── Snare rules ──────────────────────────────────────────────────────────────
+  {
+    method: 'GET',
+    path: '/api/snare/rules',
+    status: 200,
+    contentType: 'application/json',
+    // Array response — may be empty
+    requiredFields: [],
+    fixedValues: {},
+  },
+
+  {
+    method: 'POST',
+    path: '/api/snare/rules',
+    status: 201,
+    contentType: 'application/json',
+    requiredFields: ['id', 'name', 'enabled'],
+    fixedValues: {},
+  },
+
+  // ── Snare intercepted queue ───────────────────────────────────────────────────
+  {
+    method: 'GET',
+    path: '/api/snare/intercepted',
+    status: 200,
+    contentType: 'application/json',
+    requiredFields: [],
+    fixedValues: {},
   },
 ];
 

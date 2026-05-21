@@ -51,8 +51,8 @@ test.describe('Projects page — structure', () => {
   });
 
   test('filter input is present', async ({ page }) => {
-    // The projects page uses "Filter projects…" as the placeholder
-    const input = page.locator('input[placeholder="Filter projects…"]');
+    // The projects page uses "Filter..." as the placeholder
+    const input = page.locator('input[placeholder="Filter..."]');
     await expect(input).toBeVisible({ timeout: 5000 });
   });
 });

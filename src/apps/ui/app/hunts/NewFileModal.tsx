@@ -19,7 +19,7 @@ export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProp
     setSaving(true)
     try {
       const path = `${subdir}/${name.trim()}`
-      await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files/${path}`, {
+      await apiFetch(`${API_BASE}/api/hunts/${sessionId}/files/${path}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "" }),
       })
       onCreated(path)
