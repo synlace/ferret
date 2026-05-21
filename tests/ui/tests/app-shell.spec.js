@@ -5,12 +5,12 @@
  *
  * Checks:
  *   1. Ferret branding ("Ferret" heading) is visible in the sidebar.
- *   2. Version/subtitle text is present.
+ *   2. "by Synlace" subtitle link is present.
  *   3. All 9 nav items are rendered.
- *   4. The collapse/expand toggle button is present.
- *   5. Sidebar collapses when the toggle is clicked.
- *   6. Sidebar expands again when the toggle is clicked a second time.
- *   7. ProjectSwitcher is rendered inside the sidebar.
+ *   4. Nav items include the expected labels.
+ *   5. The collapse/expand toggle button is present.
+ *   6. Sidebar collapses when the toggle is clicked.
+ *   7. Sidebar expands again when the toggle is clicked a second time.
  */
 
 import { test, expect } from './fixtures.js';
@@ -19,28 +19,26 @@ test.describe('App shell — sidebar structure', () => {
   test('Ferret branding is visible', async ({ page }) => {
     const heading = page.locator('aside h1');
     await expect(heading).toBeVisible({ timeout: 5000 });
-    await expect(heading).toHaveText('Ferret');
+    await expect(heading).toContainText('Ferret');
   });
 
-  test('version subtitle is visible', async ({ page }) => {
-    // "v2.0 MITM PROXY" subtitle
-    const subtitle = page.locator('aside p').first();
+  test('"by Synlace" subtitle is visible', async ({ page }) => {
+    // The sidebar header contains an "by Synlace" link below the Ferret heading.
+    const subtitle = page.locator('aside a:has-text("by Synlace")');
     await expect(subtitle).toBeVisible({ timeout: 5000 });
-    await expect(subtitle).toContainText('MITM PROXY');
   });
 
-  test('sidebar contains all 8 nav items', async ({ page }) => {
-    // After the Workspaces rebrand, Chat and Tests were merged into Workspaces,
-    // so the nav has 8 items instead of 9.
+  test('sidebar contains all 9 nav items', async ({ page }) => {
+    // Current navItems: History, Snare, Gnaw, Pounce, Plans, Hunts, Findings, Projects, Settings
     const navLinks = page.locator('aside nav a');
-    await expect(navLinks).toHaveCount(8, { timeout: 5000 });
+    await expect(navLinks).toHaveCount(9, { timeout: 5000 });
   });
 
   test('nav items include expected labels', async ({ page }) => {
-    // Chat and Tests are now merged into Workspaces.
+    // Current nav as defined in app-shell.tsx navItems array.
     const expectedLabels = [
-      'History', 'Findings', 'Workspaces',
-      'Intercept', 'Repeater', 'Proxy', 'Projects', 'Settings',
+      'History', 'Snare', 'Gnaw', 'Pounce', 'Plans',
+      'Hunts', 'Findings', 'Projects', 'Settings',
     ];
     for (const label of expectedLabels) {
       const link = page.locator(`aside nav a:has-text("${label}")`);
@@ -58,7 +56,7 @@ test.describe('App shell — sidebar structure', () => {
     const toggle = page.locator('aside button[title="Collapse sidebar"]');
     await toggle.click();
 
-    // After collapse, the Ferret heading should be hidden
+    // After collapse, the Ferret heading should be hidden (opacity-0 / pointer-events-none)
     const heading = page.locator('aside h1');
     await expect(heading).toBeHidden({ timeout: 3000 });
   });
@@ -73,5 +71,22 @@ test.describe('App shell — sidebar structure', () => {
     const expandBtn = page.locator('aside button[title="Expand sidebar"]');
     await expandBtn.click();
     await expect(page.locator('aside h1')).toBeVisible({ timeout: 3000 });
+  });
+
+  test('"Latest News" bell button is present in sidebar', async ({ page }) => {
+    const bell = page.locator('aside button[title="Latest News"]');
+    await expect(bell).toBeVisible({ timeout: 5000 });
+  });
+
+  test('"Sign out" button is present in sidebar', async ({ page }) => {
+    const signOut = page.locator('aside button[title="Sign out"]');
+    await expect(signOut).toBeVisible({ timeout: 5000 });
+  });
+
+  test('proxy status indicator is present in sidebar', async ({ page }) => {
+    // The proxy dot (green/red circle) is always rendered at the bottom of the sidebar.
+    // The listen address text is also shown when expanded.
+    const proxyDot = page.locator('aside div[title="Proxy active"], aside div[title="Proxy stopped"]');
+    await expect(proxyDot).toBeVisible({ timeout: 5000 });
   });
 });

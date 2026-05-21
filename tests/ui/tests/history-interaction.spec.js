@@ -4,171 +4,91 @@
  * Tests for the History page DetailPanel and row interactions.
  *
  * Checks:
- *  29. Clicking the Eye icon expands the DetailPanel.
- *  30. "Raw" tab shows request and response textareas.
- *  31. "Annotation" tab shows "No annotation yet." when empty.
- *  32. "Send to Chat" button navigates to /chat?requestId=...
- *  33. "Repeater" button in the DetailPanel navigates to /repeater.
- *  34. Clicking the same Eye icon again collapses the DetailPanel.
+ *  1. Clicking a table row expands the DetailPanel inline.
+ *  2. DetailPanel shows "Request" and "Response" pane headers.
+ *  3. DetailPanel has a "Send to Gnaw" icon button.
+ *  4. DetailPanel has a "Maximize" icon button.
+ *  5. Clicking the same row again collapses the DetailPanel.
  *
  * Strategy:
- *   - Intercept GET /api/requests to return a single seeded request row.
- *   - Intercept GET /api/requests/:id to return the full request object.
- *   - All other API calls fall through to the mock server.
+ *   - The mock server returns two seeded rows by default — no page.route needed.
+ *   - Rows expand on click (no separate eye button in the new UI).
+ *   - DetailPanel renders CodeMirror editors for request/response.
  */
 
 import { test, expect } from './fixtures.js';
 
-const SEEDED_REQUEST = {
-  seq: 1,
-  id: 'req-seeded-001',
-  timestamp: '2024-06-01T10:00:00Z',
-  method: 'GET',
-  url: 'https://example.com/api/users',
-  host: 'example.com',
-  path: '/api/users',
-  status_code: 200,
-  response_time: 42,
-  response_size: 512,
-  headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
-  body: null,
-  response_headers: { 'Content-Type': 'application/json' },
-  response_body: '{"users":[]}',
-  annotation: null,
-  source: 'proxy',
-};
-
-async function gotoWithOneRequest(page) {
-  // Return one seeded request from the list endpoint
-  await page.route('**/api/requests*', async (route) => {
-    const url = new URL(route.request().url());
-    const method = route.request().method();
-
-    // Individual request detail
-    if (method === 'GET' && url.pathname.match(/\/api\/requests\/[^/]+$/)) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(SEEDED_REQUEST),
-      });
-      return;
-    }
-
-    // List endpoint
-    if (method === 'GET' && url.pathname === '/api/requests') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'X-Total-Count': '1' },
-        body: JSON.stringify([SEEDED_REQUEST]),
-      });
-      return;
-    }
-
-    await route.continue();
-  });
-
+async function gotoHistory(page) {
   await page.goto('/history', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('h1', { timeout: 10000 });
-
-  // Wait for the request row to appear
+  // Wait for at least one row to appear
   await page.waitForSelector('tbody tr', { timeout: 10000 });
+  await page.waitForTimeout(200);
 }
 
 test.describe('History page — DetailPanel interactions', () => {
-  test('clicking the Eye icon expands the DetailPanel', async ({ page }) => {
-    await gotoWithOneRequest(page);
+  test('clicking a table row expands the DetailPanel', async ({ page }) => {
+    await gotoHistory(page);
 
-    // Click the Eye (View details) button in the actions column
-    const eyeBtn = page.locator('button[title="View details"]').first();
-    await expect(eyeBtn).toBeVisible({ timeout: 5000 });
-    await eyeBtn.click();
+    // Click the first row to expand the DetailPanel
+    const row = page.locator('tbody tr').first();
+    await row.click();
 
-    // DetailPanel should appear — it contains "Raw" and "Annotation" tab buttons
-    const rawTab = page.locator('button:has-text("Raw")').first();
-    await expect(rawTab).toBeVisible({ timeout: 5000 });
+    // DetailPanel shows "Request" and "Response" pane headers
+    const requestHeader = page.locator('text=Request').first();
+    await expect(requestHeader).toBeVisible({ timeout: 5000 });
 
-    const annotationTab = page.locator('button:has-text("Annotation")').first();
-    await expect(annotationTab).toBeVisible({ timeout: 5000 });
+    const responseHeader = page.locator('text=Response').first();
+    await expect(responseHeader).toBeVisible({ timeout: 5000 });
   });
 
-  test('"Raw" tab shows request and response textareas', async ({ page }) => {
-    await gotoWithOneRequest(page);
+  test('DetailPanel shows request content in CodeMirror editor', async ({ page }) => {
+    await gotoHistory(page);
 
-    const eyeBtn = page.locator('button[title="View details"]').first();
-    await eyeBtn.click();
+    const row = page.locator('tbody tr').first();
+    await row.click();
 
-    // The Raw tab is active by default — two textareas should be visible
-    const textareas = page.locator('textarea[readonly]');
-    await expect(textareas).toHaveCount(2, { timeout: 5000 });
-
-    // First textarea (request) should contain the method and path
-    const requestTextarea = textareas.first();
-    const requestContent = await requestTextarea.inputValue();
-    expect(requestContent).toContain('GET');
-    expect(requestContent).toContain('example.com');
+    // CodeMirror renders content in .cm-content divs
+    const cmContent = page.locator('.cm-content').first();
+    await expect(cmContent).toBeVisible({ timeout: 5000 });
+    // The first row is POST api.target.com/login (newest first)
+    await expect(cmContent).toContainText('POST', { timeout: 5000 });
   });
 
-  test('"Annotation" tab shows "No annotation yet." when empty', async ({ page }) => {
-    await gotoWithOneRequest(page);
+  test('DetailPanel has a "Send to Gnaw" icon button', async ({ page }) => {
+    await gotoHistory(page);
 
-    const eyeBtn = page.locator('button[title="View details"]').first();
-    await eyeBtn.click();
+    const row = page.locator('tbody tr').first();
+    await row.click();
 
-    // Switch to the Annotation tab
-    const annotationTab = page.locator('button:has-text("Annotation")').first();
-    await annotationTab.click();
-
-    // Should show the empty state message
-    const emptyMsg = page.locator('text=No annotation yet.');
-    await expect(emptyMsg).toBeVisible({ timeout: 5000 });
+    // The action sidebar has a "Send to Gnaw" button
+    const gnawBtn = page.locator('button[title="Send to Gnaw"]');
+    await expect(gnawBtn).toBeVisible({ timeout: 5000 });
   });
 
-  test('"Send to Chat" button navigates to /chat with requestId param', async ({ page }) => {
-    await gotoWithOneRequest(page);
+  test('DetailPanel has a Maximize button', async ({ page }) => {
+    await gotoHistory(page);
 
-    const eyeBtn = page.locator('button[title="View details"]').first();
-    await eyeBtn.click();
+    const row = page.locator('tbody tr').first();
+    await row.click();
 
-    // Click "Send to Chat" in the DetailPanel header
-    const sendToChatBtn = page.locator('button:has-text("Send to Chat")').first();
-    await expect(sendToChatBtn).toBeVisible({ timeout: 5000 });
-    await sendToChatBtn.click();
-
-    // URL should change to /chat?requestId=...
-    await page.waitForURL(/\/chat\?requestId=/, { timeout: 5000 });
-    expect(page.url()).toContain('/chat');
-    expect(page.url()).toContain('requestId=');
+    // The action sidebar has a Maximize button
+    const maxBtn = page.locator('button[title="Maximize"]');
+    await expect(maxBtn).toBeVisible({ timeout: 5000 });
   });
 
-  test('"Repeater" button in the DetailPanel navigates to /repeater', async ({ page }) => {
-    await gotoWithOneRequest(page);
+  test('clicking the same row again collapses the DetailPanel', async ({ page }) => {
+    await gotoHistory(page);
 
-    const eyeBtn = page.locator('button[title="View details"]').first();
-    await eyeBtn.click();
-
-    // Click the "Repeater" button in the DetailPanel header
-    const repeaterBtn = page.locator('button:has-text("Repeater")').first();
-    await expect(repeaterBtn).toBeVisible({ timeout: 5000 });
-    await repeaterBtn.click();
-
-    // URL should change to /repeater
-    await page.waitForURL(/\/repeater/, { timeout: 5000 });
-    expect(page.url()).toContain('/repeater');
-  });
-
-  test('clicking the same Eye icon again collapses the DetailPanel', async ({ page }) => {
-    await gotoWithOneRequest(page);
-
-    const eyeBtn = page.locator('button[title="View details"]').first();
+    const row = page.locator('tbody tr').first();
 
     // Expand
-    await eyeBtn.click();
-    const rawTab = page.locator('button:has-text("Raw")').first();
-    await expect(rawTab).toBeVisible({ timeout: 5000 });
+    await row.click();
+    const gnawBtn = page.locator('button[title="Send to Gnaw"]');
+    await expect(gnawBtn).toBeVisible({ timeout: 5000 });
 
-    // Collapse — click the same Eye button again
-    await eyeBtn.click();
-    await expect(rawTab).toHaveCount(0, { timeout: 3000 });
+    // Collapse — click the same row again
+    await row.click();
+    await expect(page.locator('button[title="Send to Gnaw"]')).toHaveCount(0, { timeout: 3000 });
   });
 });

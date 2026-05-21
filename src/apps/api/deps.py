@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import HTTPException, Request
+from starlette.requests import HTTPConnection
 from sqlite_client import SQLiteClient
 from mitmproxy_manager import MitmproxyManager
 
@@ -274,7 +275,7 @@ PENDING_COOKIE = "ferret_pending"
 PENDING_TTL = timedelta(minutes=5)
 
 
-async def require_auth(request: Request) -> None:
+async def require_auth(request: HTTPConnection) -> None:
     """Global FastAPI dependency that enforces authentication on every request.
 
     Accepts either:
@@ -282,6 +283,10 @@ async def require_auth(request: Request) -> None:
     - A valid ``Authorization: Bearer <FERRET_API_KEY>`` header (programmatic flow).
 
     Paths listed in ``_AUTH_EXEMPT_PATHS`` bypass this check entirely.
+
+    Uses ``HTTPConnection`` (the common base of ``Request`` and ``WebSocket``) so
+    that this dependency works correctly when applied globally to both HTTP and
+    WebSocket routes.
 
     In tests, patch this dependency to a no-op via::
 

@@ -180,7 +180,7 @@ function HuntsPageInner() {
 
   const fetchWorkspaceFiles = useCallback(async (sessionId: string) => {
     try {
-      const res = await apiFetch(`${API_BASE}/api/workspaces/${sessionId}/files`)
+      const res = await apiFetch(`${API_BASE}/api/hunts/${sessionId}/files`)
       const data = await res.json()
       const files: WorkspaceFile[] = data.files ?? []
       setWorkspaceFiles(files)
@@ -198,7 +198,7 @@ function HuntsPageInner() {
   const fetchAllFileCounts = useCallback(async (sessionList: WorkspaceSession[]) => {
     await Promise.all(sessionList.map(async s => {
       try {
-        const res = await apiFetch(`${API_BASE}/api/workspaces/${s.id}/files`)
+        const res = await apiFetch(`${API_BASE}/api/hunts/${s.id}/files`)
         const data = await res.json()
         const files: WorkspaceFile[] = data.files ?? []
         setSessionFileCounts(prev => ({

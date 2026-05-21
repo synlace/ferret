@@ -62,13 +62,30 @@ status:
 
 # Run tests for a component.
 # Usage:
+#   just test       — show this help
+#   just test all   — run all test suites (api, ui, shim) in sequence
 #   just test api   — run API unit tests inside the running api container
 #   just test ui    — run Playwright UI tests (auto-starts Next.js dev server + mock API)
 #   just test shim  — run docker-shim allow/block unit tests (stdlib, no Docker needed)
-test component:
+test component="":
     #!/usr/bin/env bash
     set -euo pipefail
     case "{{component}}" in
+      "")
+        echo "Usage: just test <component>"
+        echo ""
+        echo "Available components:"
+        echo "  all   — run all test suites (api, ui, shim) in sequence"
+        echo "  api   — run API unit tests inside the running api container"
+        echo "  ui    — run Playwright UI tests (auto-starts Next.js dev server + mock API)"
+        echo "  shim  — run docker-shim allow/block unit tests (stdlib, no Docker needed)"
+        exit 0
+        ;;
+      all)
+        just test api
+        just test ui
+        just test shim
+        ;;
       api)
         docker compose build api
         docker compose run --rm -w /app api python -m pytest \

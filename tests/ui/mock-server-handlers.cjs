@@ -47,8 +47,32 @@ iQKBgQC7fake+test+cert+data+for+ferret+ui+tests+only==
 // In-memory chat session store (reset per server start)
 const chatSessions = new Map();
 
-// In-memory workspace file store: Map<sessionId, Map<filePath, {content, size, modified_at}>>
+// In-memory hunt file store: Map<sessionId, Map<filePath, {content, size, modified_at}>>
 const workspaceFiles = new Map();
+// Pre-seed the seeded session with a known file so contract tests can GET/DELETE it
+workspaceFiles.set('session-seeded-001', new Map([
+  ['scripts/run.sh', { content: '#!/bin/bash\necho hello', size: 21, modified_at: '2024-06-01T00:00:00Z' }],
+]));
+
+// In-memory gnaw tab store (reset per server start)
+const gnawTabs = new Map([
+  ['tab-default-001', {
+    id: 'tab-default-001',
+    project_id: 'temp',
+    label: 'GET example.com',
+    position: 0,
+    raw_request: 'GET / HTTP/1.1\nHost: example.com\n\n',
+    response: null,
+    status_code: null,
+    response_time: null,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  }],
+]);
+
+// In-memory snare rule store (reset per server start)
+const snareRules = new Map();
+let snaring = false;
 
 // A seeded session used by tests that need a pre-existing session
 const SEEDED_SESSION = {
@@ -112,7 +136,11 @@ function handleRequest(req, res) {
   const method = req.method.toUpperCase();
 
   // ── CORS preflight ──────────────────────────────────────────────────────────
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Must reflect the exact requesting origin (not '*') when credentials are
+  // included, otherwise the browser rejects the response.
+  const origin = req.headers.origin || 'http://localhost:3000';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Expose-Headers', 'X-Total-Count');
@@ -126,6 +154,44 @@ function handleRequest(req, res) {
   // ── Health ──────────────────────────────────────────────────────────────────
   if (method === 'GET' && path === '/health') {
     return json(res, 200, { status: 'ok' });
+  }
+
+  // ── Auth ─────────────────────────────────────────────────────────────────────
+  if (method === 'GET' && path === '/api/auth/me') {
+    return json(res, 200, { authenticated: true, id: 'user-001', email: 'test@ferret.local' });
+  }
+
+  if (method === 'POST' && path === '/api/auth/login') {
+    return withBody(req, () => json(res, 200, { authenticated: true }));
+  }
+
+  if (method === 'POST' && path === '/api/auth/logout') {
+    return json(res, 200, { message: 'Logged out' });
+  }
+
+  if (method === 'GET' && path === '/api/auth/mfa/status') {
+    return json(res, 200, { mfa_enabled: false });
+  }
+
+  // ── Setup ────────────────────────────────────────────────────────────────────
+  if (method === 'GET' && path === '/api/setup') {
+    return json(res, 200, {
+      setup_complete: true,
+      provider: 'openrouter',
+      model: 'google/gemini-flash-1.5',
+      base_url: null,
+    });
+  }
+
+  if (method === 'POST' && path === '/api/setup') {
+    return withBody(req, () => json(res, 201, { setup_complete: true }));
+  }
+
+  if (method === 'POST' && path === '/api/setup/models') {
+    return json(res, 200, [
+      { id: 'google/gemini-flash-1.5', name: 'Gemini Flash 1.5' },
+      { id: 'openai/gpt-4o', name: 'GPT-4o' },
+    ]);
   }
 
   // ── Proxy status ────────────────────────────────────────────────────────────
@@ -204,18 +270,16 @@ function handleRequest(req, res) {
 
   // ── Requests (HTTP history) ──────────────────────────────────────────────────
   if (method === 'GET' && path === '/api/requests') {
-    // Check for ?seeded=true query param to return test data
+    // Default: always return two seeded requests so history tests see rows.
+    // Tests that need a specific count can use ?seeded= param.
     const seeded = url.searchParams.get('seeded');
-    if (seeded === 'two') {
-      res.setHeader('X-Total-Count', '2');
-      return json(res, 200, [SEEDED_REQUEST_2, SEEDED_REQUEST]);
-    }
     if (seeded === 'one') {
       res.setHeader('X-Total-Count', '1');
       return json(res, 200, [SEEDED_REQUEST]);
     }
-    res.setHeader('X-Total-Count', '0');
-    return json(res, 200, []);
+    // Default (including seeded=two): return both rows, newest first
+    res.setHeader('X-Total-Count', '2');
+    return json(res, 200, [SEEDED_REQUEST_2, SEEDED_REQUEST]);
   }
 
   if (method === 'DELETE' && path === '/api/requests') {
@@ -249,7 +313,120 @@ function handleRequest(req, res) {
 
   // ── Findings ─────────────────────────────────────────────────────────────────
   if (method === 'GET' && path === '/api/findings') {
+    const seeded = url.searchParams.get('seeded');
+    if (seeded === 'one') {
+      return json(res, 200, [{
+        id: 'finding-seeded-001',
+        title: 'SQL Injection in /api/users',
+        severity: 'high',
+        type: 'injection',
+        host: 'api.target.com',
+        request_id: 'req-seeded-001',
+        source: 'hunt',
+        status: 'open',
+        description: 'The /api/users endpoint is vulnerable to SQL injection.',
+        evidence: "' OR 1=1 --",
+        created_at: '2024-06-01T10:00:00Z',
+      }]);
+    }
     return json(res, 200, []);
+  }
+
+  if (method === 'POST' && path === '/api/findings') {
+    return withBody(req, (body) => {
+      json(res, 201, {
+        id: 'finding-' + Date.now(),
+        title: body.title || 'New Finding',
+        severity: body.severity || 'info',
+        type: body.type || 'other',
+        host: body.host || '',
+        request_id: body.request_id ?? null,
+        source: body.source || 'manual',
+        status: 'open',
+        description: body.description ?? null,
+        evidence: body.evidence ?? null,
+        created_at: new Date().toISOString(),
+      });
+    });
+  }
+
+  const findingMatch = path.match(/^\/api\/findings\/([^/]+)$/);
+  if (findingMatch) {
+    const id = findingMatch[1];
+    if (method === 'PATCH') {
+      return withBody(req, (body) => json(res, 200, { id, ...body }));
+    }
+    if (method === 'DELETE') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+  }
+
+  if (method === 'POST' && path === '/api/findings/chat') {
+    return withBody(req, () => json(res, 200, { reply: 'Mock AI findings analysis.' }));
+  }
+
+  // ── Plans ─────────────────────────────────────────────────────────────────────
+
+  // In-memory plan store (reset per server start)
+  // Note: plans are stored in module scope so they persist across requests in one test run.
+
+  if (method === 'GET' && path === '/api/plans') {
+    return json(res, 200, [
+      {
+        id: 'plan-builtin-001',
+        name: 'OWASP Top 10 Hunt',
+        description: 'Runs a comprehensive OWASP Top 10 scan against the target.',
+        tool: 'hunt',
+        prompt: 'You are a security researcher...',
+        max_tool_calls: 20,
+        is_builtin: true,
+        created_at: '2024-01-01T00:00:00Z',
+      },
+    ]);
+  }
+
+  if (method === 'POST' && path === '/api/plans') {
+    return withBody(req, (body) => {
+      json(res, 201, {
+        id: 'plan-' + Date.now(),
+        name: body.name || 'New Plan',
+        description: body.description || '',
+        tool: body.tool || 'hunt',
+        prompt: body.prompt || '',
+        max_tool_calls: body.max_tool_calls ?? 20,
+        is_builtin: false,
+        created_at: new Date().toISOString(),
+      });
+    });
+  }
+
+  const planCloneMatch = path.match(/^\/api\/plans\/([^/]+)\/clone$/);
+  if (planCloneMatch && method === 'POST') {
+    return json(res, 201, {
+      id: 'plan-clone-' + Date.now(),
+      name: 'Copy of Plan',
+      description: '',
+      tool: 'hunt',
+      prompt: '',
+      max_tool_calls: 20,
+      is_builtin: false,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  const planMatch = path.match(/^\/api\/plans\/([^/]+)$/);
+  if (planMatch) {
+    const id = planMatch[1];
+    if (method === 'PUT') {
+      return withBody(req, (body) => json(res, 200, { id, ...body, is_builtin: false }));
+    }
+    if (method === 'DELETE') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
   }
 
   // ── Tests ────────────────────────────────────────────────────────────────────
@@ -365,14 +542,14 @@ function handleRequest(req, res) {
     return;
   }
 
-  // ── Workspaces ────────────────────────────────────────────────────────────────
+  // ── Hunts (file workspace) ────────────────────────────────────────────────────
 
-  // GET /api/workspaces/{sessionId}/files — list file tree
-  const workspaceFilesMatch = path.match(/^\/api\/workspaces\/([^/]+)\/files$/);
+  // GET /api/hunts/{sessionId}/files — list file tree
+  const workspaceFilesMatch = path.match(/^\/api\/hunts\/([^/]+)\/files$/);
   if (workspaceFilesMatch && method === 'GET') {
     const sessionId = workspaceFilesMatch[1];
     const isKnown = sessionId === SEEDED_SESSION.id || chatSessions.has(sessionId);
-    if (!isKnown) return json(res, 404, { detail: 'Workspace not found' });
+    if (!isKnown) return json(res, 404, { detail: 'Hunt not found' });
 
     const files = workspaceFiles.get(sessionId) || new Map();
     const entries = Array.from(files.entries()).map(([filePath, meta]) => ({
@@ -385,15 +562,15 @@ function handleRequest(req, res) {
     return json(res, 200, { session_id: sessionId, files: entries });
   }
 
-  // Workspace file operations: read, write, delete, run
-  // Match /api/workspaces/{sessionId}/files/{filePath...}
-  // and optionally /api/workspaces/{sessionId}/files/{filePath...}/run
-  const workspaceFileRunMatch = path.match(/^\/api\/workspaces\/([^/]+)\/files\/(.+)\/run$/);
+  // Hunt file operations: read, write, delete, run
+  // Match /api/hunts/{sessionId}/files/{filePath...}
+  // and optionally /api/hunts/{sessionId}/files/{filePath...}/run
+  const workspaceFileRunMatch = path.match(/^\/api\/hunts\/([^/]+)\/files\/(.+)\/run$/);
   if (workspaceFileRunMatch && method === 'POST') {
     const sessionId = workspaceFileRunMatch[1];
     const filePath = workspaceFileRunMatch[2];
     const isKnown = sessionId === SEEDED_SESSION.id || chatSessions.has(sessionId);
-    if (!isKnown) return json(res, 404, { detail: 'Workspace not found' });
+    if (!isKnown) return json(res, 404, { detail: 'Hunt not found' });
 
     const files = workspaceFiles.get(sessionId) || new Map();
     if (!files.has(filePath)) return json(res, 404, { detail: 'File not found' });
@@ -414,12 +591,12 @@ function handleRequest(req, res) {
     return;
   }
 
-  const workspaceFileMatch = path.match(/^\/api\/workspaces\/([^/]+)\/files\/(.+)$/);
+  const workspaceFileMatch = path.match(/^\/api\/hunts\/([^/]+)\/files\/(.+)$/);
   if (workspaceFileMatch) {
     const sessionId = workspaceFileMatch[1];
     const filePath = workspaceFileMatch[2];
     const isKnown = sessionId === SEEDED_SESSION.id || chatSessions.has(sessionId);
-    if (!isKnown) return json(res, 404, { detail: 'Workspace not found' });
+    if (!isKnown) return json(res, 404, { detail: 'Hunt not found' });
 
     // Ensure the session has a file store
     if (!workspaceFiles.has(sessionId)) workspaceFiles.set(sessionId, new Map());
@@ -455,6 +632,195 @@ function handleRequest(req, res) {
       files.delete(filePath);
       return json(res, 200, { deleted: filePath });
     }
+  }
+
+  // ── v2 LiteLLM stream endpoint ────────────────────────────────────────────────
+  const v2StreamMatch = path.match(/^\/api\/v2\/chats\/([^/]+)\/messages\/stream$/);
+  if (v2StreamMatch && method === 'POST') {
+    return withBody(req, (body) => {
+      const userContent = body.message || 'Hello';
+      const assistantReply = `Mock v2 reply to: "${userContent}"`;
+      const donePayload = {
+        type: 'done',
+        messages: [
+          { role: 'user', content: userContent },
+          { role: 'assistant', content: assistantReply },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      };
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.writeHead(200);
+      res.write(`data: ${JSON.stringify({ type: 'delta', content: assistantReply })}\n\n`);
+      res.write(`data: ${JSON.stringify(donePayload)}\n\n`);
+      res.end();
+    });
+  }
+
+  // ── Gnaw tabs ─────────────────────────────────────────────────────────────────
+
+  if (method === 'GET' && path === '/api/gnaw/tabs') {
+    return json(res, 200, Array.from(gnawTabs.values()));
+  }
+
+  if (method === 'POST' && path === '/api/gnaw/tabs') {
+    return withBody(req, (body) => {
+      const id = 'tab-' + Date.now();
+      const tab = {
+        id,
+        project_id: body.project_id || 'temp',
+        label: body.label || 'GET example.com',
+        position: gnawTabs.size,
+        raw_request: body.raw_request || 'GET / HTTP/1.1\nHost: example.com\n\n',
+        response: null,
+        status_code: null,
+        response_time: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      gnawTabs.set(id, tab);
+      json(res, 201, tab);
+    });
+  }
+
+  const gnawTabSendMatch = path.match(/^\/api\/gnaw\/tabs\/([^/]+)\/send$/);
+  if (gnawTabSendMatch && method === 'POST') {
+    return withBody(req, () => {
+      json(res, 200, {
+        status_code: 200,
+        response_headers: { 'Content-Type': 'text/html' },
+        response_body: '<html><body>Mock response</body></html>',
+        response_time: 42,
+      });
+    });
+  }
+
+  const gnawTabMatch = path.match(/^\/api\/gnaw\/tabs\/([^/]+)$/);
+  if (gnawTabMatch) {
+    const tabId = gnawTabMatch[1];
+    if (method === 'GET') {
+      const tab = gnawTabs.get(tabId);
+      if (!tab) return json(res, 404, { detail: 'Tab not found' });
+      return json(res, 200, tab);
+    }
+    if (method === 'PUT') {
+      return withBody(req, (body) => {
+        const existing = gnawTabs.get(tabId) || {};
+        const updated = { ...existing, ...body, id: tabId, updated_at: new Date().toISOString() };
+        gnawTabs.set(tabId, updated);
+        json(res, 200, updated);
+      });
+    }
+    if (method === 'DELETE') {
+      gnawTabs.delete(tabId);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+  }
+
+  if (method === 'POST' && path === '/api/gnaw/send') {
+    return withBody(req, () => {
+      json(res, 200, {
+        status_code: 200,
+        response_headers: { 'Content-Type': 'text/html' },
+        response_body: '<html><body>Mock response</body></html>',
+        response_time: 42,
+      });
+    });
+  }
+
+  if (method === 'GET' && path === '/api/gnaw/current') {
+    return json(res, 404, { detail: 'No current request' });
+  }
+
+  // ── Snare ─────────────────────────────────────────────────────────────────────
+
+  if (method === 'GET' && path === '/api/snare/rules') {
+    return json(res, 200, Array.from(snareRules.values()));
+  }
+
+  if (method === 'POST' && path === '/api/snare/rules') {
+    return withBody(req, (body) => {
+      const id = 'rule-' + Date.now();
+      const rule = {
+        id,
+        name: body.name || 'New Rule',
+        host: body.host || '',
+        path: body.path || '',
+        method: body.method || '',
+        enabled: true,
+      };
+      snareRules.set(id, rule);
+      json(res, 201, rule);
+    });
+  }
+
+  const snareRuleMatch = path.match(/^\/api\/snare\/rules\/([^/]+)$/);
+  if (snareRuleMatch && method === 'DELETE') {
+    snareRules.delete(snareRuleMatch[1]);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/snare/start') {
+    snaring = true;
+    return json(res, 200, { snaring: true });
+  }
+
+  if (method === 'POST' && path === '/api/snare/stop') {
+    snaring = false;
+    return json(res, 200, { snaring: false });
+  }
+
+  if (method === 'GET' && path === '/api/snare/intercepted') {
+    return json(res, 200, []);
+  }
+
+  const snareForwardMatch = path.match(/^\/api\/snare\/intercepted\/([^/]+)\/forward$/);
+  if (snareForwardMatch && method === 'POST') {
+    return json(res, 200, { message: 'Forwarded' });
+  }
+
+  const snareDropMatch = path.match(/^\/api\/snare\/intercepted\/([^/]+)\/drop$/);
+  if (snareDropMatch && method === 'POST') {
+    return json(res, 200, { message: 'Dropped' });
+  }
+
+  const snareRespForwardMatch = path.match(/^\/api\/snare\/response\/([^/]+)\/forward$/);
+  if (snareRespForwardMatch && method === 'POST') {
+    return json(res, 200, { message: 'Response forwarded' });
+  }
+
+  const snareRespDropMatch = path.match(/^\/api\/snare\/response\/([^/]+)\/drop$/);
+  if (snareRespDropMatch && method === 'POST') {
+    return json(res, 200, { message: 'Response dropped' });
+  }
+
+  // ── Tools list ────────────────────────────────────────────────────────────────
+  if (method === 'GET' && path === '/api/tools') {
+    return json(res, 200, [
+      { name: 'search_requests' },
+      { name: 'get_request' },
+      { name: 'run_script' },
+      { name: 'run_tests' },
+    ]);
+  }
+
+  // ── SIGINT / Latest News ──────────────────────────────────────────────────────
+  if (method === 'GET' && path === '/api/sigint') {
+    return json(res, 200, []);
+  }
+
+  // ── Settings ──────────────────────────────────────────────────────────────────
+  if (method === 'GET' && path === '/api/settings/active-project') {
+    return json(res, 200, { project_id: 'temp' });
+  }
+
+  if (method === 'PUT' && path === '/api/settings/active-project') {
+    return withBody(req, (body) => json(res, 200, { project_id: body.project_id || 'temp' }));
   }
 
   // ── Fallback ─────────────────────────────────────────────────────────────────
