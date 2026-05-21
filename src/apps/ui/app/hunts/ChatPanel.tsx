@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Loader2, Download, Send, Square,
   PanelLeftClose, PanelLeftOpen, PanelRight,
-  LayoutDashboard, Plus, Pencil, ChevronRight,
+  LayoutDashboard, Plus, Pencil, ChevronRight, ChevronDown, MessageCircle,
 } from "lucide-react"
 import { SCOPE_LABELS } from "../chat/NewChatModal"
 import { ToolGroup, formatTs } from "./tool-views"
@@ -21,17 +21,26 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 // ── ThinkingBlock — collapsible chain-of-thought reasoning block ──
 function ThinkingBlock({ content }: { content: string }) {
+  const [collapsed, setCollapsed] = useState(true)
   return (
-    <details className="my-1.5 rounded border border-neutral-700/60 bg-neutral-900/60 text-xs">
-      <summary className="cursor-pointer select-none px-3 py-1.5 text-neutral-500 hover:text-neutral-400 list-none flex items-center gap-1.5">
-        <span className="text-[10px]">💭</span>
-        <span className="font-medium tracking-wide uppercase text-[10px]">Thinking</span>
-        <span className="ml-auto text-[10px] text-neutral-600">[expand]</span>
-      </summary>
-      <div className="px-3 pb-2 pt-1 text-neutral-500 whitespace-pre-wrap font-mono leading-relaxed border-t border-neutral-700/40">
-        {content}
-      </div>
-    </details>
+    <div className="border border-neutral-700 rounded bg-neutral-900/60 text-xs my-1">
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-800/40 transition-colors"
+      >
+        <MessageCircle className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+        <span className="text-neutral-300 font-mono">thinking</span>
+        <span className="flex-1" />
+        {collapsed
+          ? <ChevronRight className="w-3 h-3 text-neutral-600 flex-shrink-0" />
+          : <ChevronDown className="w-3 h-3 text-neutral-600 flex-shrink-0" />}
+      </button>
+      {!collapsed && (
+        <div className="border-t border-neutral-700/60 px-3 py-2 text-neutral-400 whitespace-pre-wrap font-mono leading-relaxed text-[11px] max-h-64 overflow-y-auto bg-neutral-950">
+          {content}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -79,18 +88,24 @@ const MessageList = memo(function MessageList({
             </div>
           )
         }
+        // Thinking-only assistant message (content was fully extracted into thinking)
+        if (msg.role === "assistant" && !(msg.content ?? "").trim() && msg.thinking) {
+          return <ThinkingBlock key={i} content={msg.thinking} />
+        }
         return (
-          <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-            <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-100 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
-              {msg.role === "assistant" && <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
-              {msg.role === "assistant" && msg.thinking && <ThinkingBlock content={msg.thinking} />}
-              {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
+          <React.Fragment key={i}>
+            {msg.role === "assistant" && msg.thinking && <ThinkingBlock content={msg.thinking} />}
+            <div className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+              <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-100 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
+                {msg.role === "assistant" && <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
+                {msg.role === "assistant" ? <MarkdownContent content={msg.content ?? ""} /> : <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>}
+              </div>
+              <div className={`flex items-center gap-2 mt-0.5 px-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
+                <CopyButton text={msg.content ?? ""} />
+              </div>
             </div>
-            <div className={`flex items-center gap-2 mt-0.5 px-1 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-              <span className="text-[10px] text-neutral-700">{msg.timestamp ?? ""}</span>
-              <CopyButton text={msg.content ?? ""} />
-            </div>
-          </div>
+          </React.Fragment>
         )
       })}
     </>
@@ -118,6 +133,7 @@ interface ChatPanelProps {
   /** null = all tools enabled; string[] = only these names are enabled */
   enabledTools: string[] | null
   sessionSpend: number | null
+  lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null
   sessionPanelOpen: boolean
   contextOpen: boolean
   rightWidth: number
@@ -168,6 +184,7 @@ export function ChatPanel({
   maxToolCalls,
   enabledTools,
   sessionSpend,
+  lastUsage,
   sessionPanelOpen,
   contextOpen,
   rightWidth,
@@ -300,25 +317,27 @@ export function ChatPanel({
                 </div>
               )}
               {loading && (streamingContent || streamingThinking) && (
-                <div className="flex flex-col items-start">
-                  <div className="max-w-[80%] px-3 py-2 text-sm bg-neutral-900 text-neutral-200 border border-neutral-800">
-                    <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>
-                    {streamingThinking && <ThinkingBlock content={streamingThinking} />}
-                    {streamingContent && (
-                      <>
-                        <MarkdownContent content={streamingContent} />
-                        <span className="inline-block w-1.5 h-4 bg-brand-400 animate-pulse ml-0.5 align-middle" />
-                      </>
-                    )}
-                    {!streamingContent && (
-                      <div className="flex items-center gap-1.5 py-1">
-                        <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "300ms" }} />
-                      </div>
-                    )}
+                <>
+                  {streamingThinking && <ThinkingBlock content={streamingThinking} />}
+                  <div className="flex flex-col items-start">
+                    <div className="max-w-[80%] px-3 py-2 text-sm bg-neutral-900 text-neutral-200 border border-neutral-800">
+                      <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>
+                      {streamingContent && (
+                        <>
+                          <MarkdownContent content={streamingContent} />
+                          <span className="inline-block w-1.5 h-4 bg-brand-400 animate-pulse ml-0.5 align-middle" />
+                        </>
+                      )}
+                      {!streamingContent && (
+                        <div className="flex items-center gap-1.5 py-1">
+                          <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <span className="w-1.5 h-1.5 bg-brand-400 opacity-40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
               {loading && !streamingContent && !streamingThinking && liveToolCalls.length === 0 && (
                 <div className="flex justify-start">
@@ -415,6 +434,12 @@ export function ChatPanel({
                     <div>Messages: <span className="text-neutral-300">{messages.length}</span></div>
                     <div>Model: <span className="text-neutral-300">{modelDisplayName}</span></div>
                     <div>Cost: {sessionSpend != null ? <span className="text-green-400 font-mono">${sessionSpend.toFixed(4)}</span> : <span className="text-neutral-600">—</span>}</div>
+                    {lastUsage && (
+                      <div className="flex items-center gap-1">
+                        <span>Tokens:</span>
+                        <span className="text-neutral-300 font-mono">↑{lastUsage.prompt_tokens.toLocaleString()} ↓{lastUsage.completion_tokens.toLocaleString()}</span>
+                      </div>
+                    )}
                     {activeSession.target_url && (
                       <div>Target: <span className="text-brand-300 font-mono break-all">{activeSession.target_url}</span></div>
                     )}

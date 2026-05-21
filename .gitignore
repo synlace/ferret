@@ -8,3 +8,8 @@ data/
 
 # Design mockups — not part of the shipped product
 mockups/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo

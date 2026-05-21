@@ -114,6 +114,29 @@ async def get_setup_status():
             return SetupStatus(setup_complete=False)
         provider = await deps.db_client.get_setting(_KEY_AI_PROVIDER)
         model    = await deps.db_client.get_setting(_KEY_AI_MODEL)
+
+        # For local providers using the generic "local-model" placeholder, resolve
+        # the actual loaded model by querying the provider's model list endpoint.
+        # This ensures the UI shows the real model name (e.g. "gemma-3-4b-it-qat")
+        # rather than the opaque placeholder.
+        if provider in _LOCAL_PROVIDERS and model == "local-model":
+            base_url = await deps.db_client.get_setting(_KEY_AI_BASE_URL) or _PROVIDER_BASE_URLS.get(provider, "")
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    if provider == "ollama":
+                        tags_url = base_url.rstrip("/v1").rstrip("/") + "/api/tags"
+                        r = await client.get(tags_url)
+                        if r.status_code == 200:
+                            first = (r.json().get("models") or [{}])[0]
+                            model = first.get("name", model)
+                    else:  # lmstudio
+                        r = await client.get(f"{base_url}/models")
+                        if r.status_code == 200:
+                            first = (r.json().get("data") or [{}])[0]
+                            model = first.get("id", model)
+            except Exception:
+                pass  # non-fatal — fall back to stored placeholder
+
         return SetupStatus(setup_complete=True, provider=provider, model=model)
     except Exception as e:
         raise deps.server_error(e)
@@ -372,10 +395,16 @@ async def list_models(body: SetupConfig):
     the UI falls back to the static model list baked into the provider config).
     """
     try:
-        provider = body.provider.lower()
-        _validate_base_url(body.base_url or "", provider)
-        base_url = (body.base_url or _PROVIDER_BASE_URLS.get(provider, "")).rstrip("/")
-        api_key  = body.api_key or ""
+        if not body.provider:
+            # No provider supplied — use the stored active config (called from hunts page)
+            provider = (await deps.db_client.get_setting(_KEY_AI_PROVIDER)) or ""
+            api_key  = (await deps.db_client.get_setting(_KEY_AI_API_KEY)) or ""
+            base_url = ((await deps.db_client.get_setting(_KEY_AI_BASE_URL)) or _PROVIDER_BASE_URLS.get(provider, "")).rstrip("/")
+        else:
+            provider = body.provider.lower()
+            _validate_base_url(body.base_url or "", provider)
+            base_url = (body.base_url or _PROVIDER_BASE_URLS.get(provider, "")).rstrip("/")
+            api_key  = body.api_key or ""
 
         models: list[dict] = []
 

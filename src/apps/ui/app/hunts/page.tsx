@@ -1,7 +1,5 @@
 "use client"
 
-import { apiFetch } from "@/lib/api-fetch"
-
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
@@ -16,8 +14,13 @@ import { annotateToolArgs, formatToolArgs, extractRationale } from "./helpers"
 import { nowTs } from "./tool-views"
 import type { WorkspaceFile } from "./FileTree"
 import type { WorkspaceSession, ChatMsg, LiveToolCall } from "./types"
+import { apiFetch } from "@/lib/api-fetch"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+
+// LiteLLM-backed stream endpoint
+const STREAM_PATH = "v2/chats"
+
 const lastSessionKey = (projectId: string) => `ferret_last_chat_session:${projectId}`
 
 function HuntsPageInner() {
@@ -34,18 +37,17 @@ function HuntsPageInner() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [streamingContent, setStreamingContent] = useState("")
   const [liveToolCalls, setLiveToolCalls] = useState<LiveToolCall[]>([])
-  // model is seeded from GET /api/setup on mount so it reflects the configured
-  // provider (e.g. "local-model" for LM Studio, not the hardcoded gemini default).
-  // Falls back to "" which the API resolves server-side via the setup config.
   const [model, setModel] = useState("")
+  const [provider, setProvider] = useState("")
   const [streamingThinking, setStreamingThinking] = useState("")
   const streamingThinkingRef = useRef("")
   const [maxToolCalls, setMaxToolCalls] = useState(() => {
-    if (typeof window === "undefined") return 10
+    if (typeof window === "undefined") return 20
     const saved = localStorage.getItem("ferret_max_tool_calls")
-    return saved !== null ? Number(saved) : 10
+    return saved !== null ? Number(saved) : 20
   })
   const [sessionSpend, setSessionSpend] = useState<number | null>(null)
+  const [lastUsage, setLastUsage] = useState<{ prompt_tokens: number; completion_tokens: number; total_tokens: number } | null>(null)
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const liveToolCallsRef = useRef<LiveToolCall[]>([])
@@ -53,7 +55,6 @@ function HuntsPageInner() {
   const pendingNoticeRef = useRef<ChatMsg | null>(null)
   const toolGroupCollapsed = useRef<Map<string, boolean>>(new Map())
   const [, forceToolGroupRender] = useState(0)
-  // Debounce timer for scroll-position localStorage writes
   const scrollSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleToolGroupToggle = (key: string, collapsed: boolean) => {
@@ -130,16 +131,14 @@ function HuntsPageInner() {
   const modelDisplayName = model ? (model.includes("/") ? model.split("/").pop()! : model) : "…"
   const userOverrodeModel = useRef(false)
 
-  // Seed the model from the setup config on mount (once, before any project override).
-  // This ensures local providers (LM Studio, Ollama) show their configured model
-  // rather than the hardcoded gemini fallback.
   useEffect(() => {
     apiFetch(`${API_BASE}/api/setup`)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.model && !userOverrodeModel.current) setModel(d.model)
+        if (d?.provider) setProvider(d.provider)
       })
-      .catch(() => { /* non-fatal — model stays "" and API resolves server-side */ })
+      .catch(() => { /* non-fatal */ })
   }, [])
 
   useEffect(() => {
@@ -147,6 +146,18 @@ function HuntsPageInner() {
     userOverrodeModel.current = false
   }, [activeProject?.default_model])
   const handleModelSelect = (id: string) => { userOverrodeModel.current = true; setModel(id) }
+
+  // Fetch models scoped to the configured provider (not OpenRouter by default)
+  const getModels = useCallback(async (): Promise<{ id: string; name: string }[]> => {
+    const r = await apiFetch(`${API_BASE}/api/setup/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    if (!r.ok) throw new Error(`Model list fetch returned ${r.status}`)
+    const d = await r.json()
+    return (d.models ?? []) as { id: string; name: string }[]
+  }, [])
 
   const [initialScope] = useState(() => searchParams.get("requestId") ? "single" : "blank")
   const [initialSelectedIds] = useState(() => { const r = searchParams.get("requestId"); return r ? [r] : [] })
@@ -210,8 +221,6 @@ function HuntsPageInner() {
       const sid = activeSessionId
       const top = el.scrollTop
       scrollPositions.current.set(sid, top)
-      // Debounce the synchronous localStorage write to avoid blocking the main
-      // thread on every scroll frame (especially during auto-scroll streaming).
       if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current)
       scrollSaveTimerRef.current = setTimeout(() => {
         localStorage.setItem(`ferret_scroll:${sid}`, String(top))
@@ -252,8 +261,6 @@ function HuntsPageInner() {
       pendingNoticeRef.current = (last?.role === "notice") ? last : null
       return prev
     })
-    // Clear the collapse-state Map when switching sessions so stale entries from
-    // previous sessions don't accumulate and cause unbounded localStorage reads.
     toolGroupCollapsed.current.clear()
     setActiveSessionId(sessionId); setSelectedFilePath(null)
     if (activeProjectId) localStorage.setItem(lastSessionKey(activeProjectId), sessionId)
@@ -279,46 +286,26 @@ function HuntsPageInner() {
     })
   }, [activeProjectId, fetchSessions, loadSession, fetchAllFileCounts])
 
-  // ---------------------------------------------------------------------------
-  // Focus management: keep the chat textarea focused at all times, except when
-  // the user explicitly clicks an input that needs keyboard focus (filter hunts,
-  // max tool calls, sort select, CodeMirror editor).  All other clicks —
-  // session rows, checkboxes, buttons, the app-shell nav, etc. — must not
-  // steal focus from the textarea.
-  //
-  // Strategy: "focus-restore" — on mousedown, schedule a setTimeout(0) to
-  // return focus to the textarea after the browser processes the click.  This
-  // allows checkboxes to toggle, links to navigate, etc., while keeping the
-  // caret in the chat input.  We do NOT call preventDefault() because that
-  // breaks checkbox toggle behaviour in some browsers.
-  // ---------------------------------------------------------------------------
   useEffect(() => {
-    // Selectors for elements that legitimately need keyboard focus themselves.
     const FOCUS_SELECTORS = [
       'textarea',
       'input[type="text"]',
       'input[type="number"]',
       'select',
-      '[contenteditable]',  // CodeMirror editor
+      '[contenteditable]',
     ]
     const handler = (e: MouseEvent) => {
       const textarea = chatInputRef.current
       if (!textarea) return
       const target = e.target as HTMLElement
-      // If the click is on an element that needs its own focus, leave it alone.
       const needsOwnFocus = FOCUS_SELECTORS.some(sel => target.closest(sel))
       if (needsOwnFocus) return
-      // After the browser finishes processing this click (checkbox toggle,
-      // link activation, React state updates, etc.), restore focus.
       setTimeout(() => { chatInputRef.current?.focus() }, 0)
     }
     document.addEventListener("mousedown", handler, true)
     return () => document.removeEventListener("mousedown", handler, true)
   }, [])
 
-  // Focus the textarea whenever a session becomes active (initial load, session
-  // switch, or new session creation).  setTimeout(0) lets React finish rendering
-  // the textarea before we try to focus it.
   useEffect(() => {
     if (activeSessionId) {
       setTimeout(() => { chatInputRef.current?.focus() }, 0)
@@ -351,7 +338,7 @@ function HuntsPageInner() {
 
     const abort = new AbortController(); abortControllerRef.current = abort
     try {
-      const res = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}/messages/stream`, {
+      const res = await apiFetch(`${API_BASE}/api/${STREAM_PATH}/${activeSessionId}/messages/stream`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: userMsg.content,
@@ -383,8 +370,6 @@ function HuntsPageInner() {
             const newEntry: LiveToolCall = {
               name: evt.name, toolArgsRaw: evt.args as string | undefined,
               result: null, startedAt: Date.now(),
-              // onLiveChunk is set imperatively by XTermView via registerWriter;
-              // no array accumulation needed — avoids O(n) copies per chunk.
               onLiveChunk: undefined,
               rationale: extractRationale(evt.args as string | undefined),
             }
@@ -395,8 +380,6 @@ function HuntsPageInner() {
             const idx = [...prev].reverse().findIndex(e => e.name === evt.name && e.result === null)
             if (idx !== -1) {
               const realIdx = prev.length - 1 - idx
-              // Write directly to the xterm instance via the registered callback.
-              // No React state update needed — xterm manages its own display.
               prev[realIdx].onLiveChunk?.(evt.chunk as string)
             }
           } else if (evt.type === "tool_result") {
@@ -408,7 +391,6 @@ function HuntsPageInner() {
               setLiveToolCalls(liveToolCallsRef.current)
             }
           } else if (evt.type === "replace") {
-            // Post-processed content: swap in clean version (thinking blocks extracted)
             streamingContentRef.current = evt.content ?? ""
             setStreamingContent(streamingContentRef.current)
             if (evt.thinking) {
@@ -419,6 +401,7 @@ function HuntsPageInner() {
             streamingContentRef.current += evt.content ?? ""
             setStreamingContent(streamingContentRef.current)
           } else if (evt.type === "done") {
+            if (evt.usage) setLastUsage(evt.usage)
             streamDoneReceived.current = true
             const rawMsgs: ChatMsg[] = (evt.messages ?? []).map((m: Record<string, unknown>) => ({
               role: m.role as ChatMsg["role"],
@@ -451,11 +434,15 @@ function HuntsPageInner() {
             setStreamingThinking(""); streamingThinkingRef.current = ""
             setLiveToolCalls([]); liveToolCallsRef.current = []
             setLoading(false)
+            setTimeout(() => { chatInputRef.current?.focus() }, 0)
             fetchWorkspaceFiles(activeSessionId)
             if (activeProjectId) {
               apiFetch(`${API_BASE}/api/projects/${activeProjectId}/spend`).then(r => r.ok ? r.json() : null)
                 .then(d => { if (d) setSessionSpend(d.total_usd ?? null) }).catch(() => {})
             }
+          } else if (evt.type === "notice") {
+            // Server-side notice (e.g. tool call limit reached) — append immediately
+            setMessages(prev => [...prev, { role: "notice" as const, content: evt.content ?? "", timestamp: nowTs() }])
           } else if (evt.type === "error") {
             streamDoneReceived.current = true
             const detail: string = evt.detail ?? evt.message ?? "Unknown error"
@@ -469,6 +456,7 @@ function HuntsPageInner() {
             setStreamingThinking(""); streamingThinkingRef.current = ""
             setLiveToolCalls([]); liveToolCallsRef.current = []
             setLoading(false)
+            setTimeout(() => { chatInputRef.current?.focus() }, 0)
           }
         } catch { /**/ }
       }
@@ -485,6 +473,7 @@ function HuntsPageInner() {
         setStreamingThinking(""); streamingThinkingRef.current = ""
         setLiveToolCalls([]); liveToolCallsRef.current = []
         setLoading(false)
+        setTimeout(() => { chatInputRef.current?.focus() }, 0)
       }
     } catch {
       const snapshot = liveToolCallsRef.current
@@ -501,21 +490,19 @@ function HuntsPageInner() {
       setStreamingContent(""); streamingContentRef.current = ""
       setStreamingThinking(""); streamingThinkingRef.current = ""
       setLoading(false)
+      setTimeout(() => { chatInputRef.current?.focus() }, 0)
     } finally { abortControllerRef.current = null }
   }
 
   const stopStream = () => { abortControllerRef.current?.abort() }
 
-  // Called by XTermView (via ToolGroup → renderBody) once the terminal is ready.
-  // Stores the write function directly on the live ref entry so incoming chunks
-  // can be pushed imperatively without any React state update.
   const handleRegisterLiveWriter = useCallback((idx: number, write: (chunk: string) => void) => {
     const entry = liveToolCallsRef.current[idx]
     if (entry) entry.onLiveChunk = write
   }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Escape") { e.preventDefault(); return }  // keep focus in textarea
+    if (e.key === "Escape") { e.preventDefault(); return }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); return }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       const history = inputHistoryRef.current; if (history.length === 0) return
@@ -537,7 +524,7 @@ function HuntsPageInner() {
 
   const exportChat = () => {
     if (!activeSession || messages.length === 0) return
-    const blob = new Blob([JSON.stringify({ session: activeSession, model, exported_at: new Date().toISOString(), messages }, null, 2)], { type: "application/json" })
+    const blob = new Blob([JSON.stringify({ session: activeSession, provider, model, exported_at: new Date().toISOString(), messages }, null, 2)], { type: "application/json" })
     const url = URL.createObjectURL(blob); const a = document.createElement("a")
     a.href = url; a.download = `hunt-${activeSession.name.replace(/[^a-z0-9]/gi, "_")}-${Date.now()}.json`
     a.click(); URL.revokeObjectURL(url)
@@ -640,6 +627,7 @@ function HuntsPageInner() {
         maxToolCalls={maxToolCalls}
         enabledTools={activeSession?.enabled_tools ?? null}
         sessionSpend={sessionSpend}
+        lastUsage={lastUsage}
         sessionPanelOpen={sessionPanelOpen}
         contextOpen={contextOpen}
         rightWidth={rightWidth}
@@ -668,18 +656,13 @@ function HuntsPageInner() {
         onFileDeleted={() => { setSelectedFilePath(null); if (activeSessionId) fetchWorkspaceFiles(activeSessionId) }}
         onToolToggle={async (name, enabled) => {
           if (!activeSessionId) return
-          // Compute the new enabled_tools list:
-          // null = all enabled; string[] = explicit list
           const current = activeSession?.enabled_tools ?? null
           let next: string[] | null
           if (enabled) {
-            // Adding a tool back — if current is null (all enabled) nothing changes
             if (current === null) return
             next = [...current, name]
           } else {
-            // Disabling a tool
             if (current === null) {
-              // Was "all enabled" — fetch full list to build the exclusion
               try {
                 const r = await apiFetch(`${API_BASE}/api/tools`)
                 const all: { name: string }[] = await r.json()
@@ -699,8 +682,6 @@ function HuntsPageInner() {
               setSessions(prev => prev.map(s =>
                 s.id === activeSessionId ? { ...s, enabled_tools: next } : s
               ))
-              // The re-render after setSessions can steal focus from the textarea;
-              // restore it after React has finished reconciling.
               setTimeout(() => { chatInputRef.current?.focus() }, 0)
             }
           } catch { /* ignore */ }
@@ -761,7 +742,7 @@ function HuntsPageInner() {
           }} />
       )}
       {showModelPicker && (
-        <ModelPickerModal currentModel={model} onSelect={handleModelSelect} onClose={() => setShowModelPicker(false)} />
+        <ModelPickerModal currentModel={model} onSelect={handleModelSelect} onClose={() => setShowModelPicker(false)} getModels={getModels} />
       )}
       {showNewFileModal && activeSessionId && (
         <NewFileModal sessionId={activeSessionId}
@@ -774,11 +755,13 @@ function HuntsPageInner() {
 
 export default function HuntsPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-full text-neutral-500">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />Loading...
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-full text-neutral-500">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" />Loading...
+        </div>
+      }
+    >
       <HuntsPageInner />
     </Suspense>
   )

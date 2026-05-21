@@ -1,0 +1,85 @@
+# Production compose file — pulls pre-built images from GHCR.
+# Used by: just up
+# Users can clone the repo and run `just up` without Node.js, Python, or a build step.
+#
+# Images are published by .github/workflows/publish-release.yml on version tags.
+# Set FERRET_VERSION to pin a specific release, e.g.:
+#   FERRET_VERSION=v1.2.0 just up
+
+services:
+  # ── Docker exec shim ───────────────────────────────────────────────────────
+  docker-shim:
+    image: ghcr.io/synlace/ferret-docker-shim:${FERRET_VERSION:-latest}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - docker-internal
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/synlace/ferret-api:${FERRET_VERSION:-latest}
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:1337:1337"
+    environment:
+      PROXY_HOST: ${PROXY_HOST:-127.0.0.1}
+      PROXY_PORT: ${PROXY_PORT:-1337}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-3-flash-preview}
+      FERRET_TESTS_DIR: /data/tests
+      FERRET_WORKSPACES_DIR: /data/workspaces
+      FERRET_SANDBOX_CONTAINER: ferret-lab
+      DOCKER_HOST: tcp://docker-shim:2375
+    volumes:
+      - ${FERRET_DATA_DIR:-./data}:/data
+    networks:
+      - default
+      - docker-internal
+    extra_hosts:
+      - "host-gateway:host-gateway"
+    depends_on:
+      - docker-shim
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  ui:
+    image: ghcr.io/synlace/ferret-ui:${FERRET_VERSION:-latest}
+    ports:
+      - "127.0.0.1:${UI_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  lab:
+    image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}
+    container_name: ferret-lab
+    volumes:
+      - ${FERRET_DATA_DIR:-./data}/workspaces:/data/workspaces
+      - ${FERRET_DATA_DIR:-./data}/workspaces:/workspaces
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_PTRACE
+    extra_hosts:
+      - "host-gateway:host-gateway"
+    restart: unless-stopped
+    depends_on:
+      - api
+
+networks:
+  default: {}
+  docker-internal:
+    internal: true

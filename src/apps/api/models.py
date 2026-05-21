@@ -335,7 +335,7 @@ class KeySpend(BaseModel):
 class SetupConfig(BaseModel):
     """Payload submitted by the setup wizard to configure the AI provider."""
     password: Optional[str] = Field(None, min_length=8, description="Instance password (min 8 characters). Required for POST /api/setup; ignored by POST /api/setup/test.")
-    provider: str = Field(..., description="Provider key: openrouter | openai | anthropic | gemini | deepseek | mistral | ollama | lmstudio")
+    provider: Optional[str] = Field(None, description="Provider key: openrouter | openai | anthropic | gemini | deepseek | mistral | ollama | lmstudio")
     api_key: Optional[str] = Field(None, description="API key for cloud providers")
     provisioning_key: Optional[str] = Field(None, description="OpenRouter provisioning key (optional — enables per-project sub-key creation)")
     base_url: Optional[str] = Field(None, description="Base URL for local providers (Ollama, LM Studio)")

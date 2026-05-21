@@ -4,25 +4,22 @@
 help:
     @just --list
 
-# Build and start all services (detached).
-# Pulls the latest ferret-lab image from GHCR unless FERRET_LAB_IMAGE is set
-# to a local build (e.g. ferret-lab:local via just build-lab).
+# Production: pull pre-built images from GHCR and start all services.
+# Users can clone the repo and run `just up` without Node.js, Python, or a build step.
+# Pin a specific release with: FERRET_VERSION=v1.2.0 just up
 up:
     #!/usr/bin/env bash
     set -euo pipefail
-    LAB_IMG="${FERRET_LAB_IMAGE:-}"
-    if [[ -z "$LAB_IMG" || "$LAB_IMG" == ghcr.io/* ]]; then
-        echo "Pulling latest ferret-lab image from GHCR..."
-        docker compose pull lab
-    fi
-    docker compose up --build -d
+    echo "Pulling FERRET images from GHCR..."
+    docker compose -f docker-compose.prod.yml pull
+    docker compose -f docker-compose.prod.yml up -d
     echo ""
     echo "FERRET is running:"
-    echo "  UI    → http://localhost:3000"
+    echo "  UI    → http://localhost:${UI_PORT:-3000}"
     echo "  API   → http://localhost:8000"
     echo "  Proxy → 127.0.0.1:1337"
 
-# Dev mode: API + lab in Docker, UI runs on host with hot reload.
+# Dev mode: build from source, API hot-reloads via watchfiles, UI via npm run dev.
 # Requires Node.js on the host. UI available at http://localhost:3000.
 # Press Ctrl+C to stop the UI; run 'just down' to stop the API containers.
 dev:
@@ -33,21 +30,23 @@ dev:
         echo "Pulling latest ferret-lab image from GHCR..."
         docker compose pull lab
     fi
-    echo "Starting API and lab containers..."
+    echo "Starting API and lab containers (with hot reload)..."
     docker compose up --build -d api lab
     echo ""
     echo "FERRET dev mode:"
     echo "  UI  → http://localhost:3000 (hot reload)"
-    echo "  API → http://localhost:8000"
+    echo "  API → http://localhost:8000 (hot reload via watchfiles)"
     echo ""
     echo "Press Ctrl+C to stop the UI. Run 'just down' to stop API containers."
     echo ""
     APP_VERSION=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "dev")
     cd src/apps/ui && NEXT_PUBLIC_API_URL=http://localhost:8000 NEXT_PUBLIC_APP_VERSION="$APP_VERSION" npm run dev
 
-# Stop and remove all services
+# Stop and remove all services (works for both prod and dev)
 down:
-    docker compose down
+    #!/usr/bin/env bash
+    docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+    docker compose down 2>/dev/null || true
 
 # Build images without starting (no k3s import)
 build:
@@ -74,7 +73,7 @@ test component:
         docker compose build api
         docker compose run --rm -w /app api python -m pytest \
           test_api_v2.py \
-          test_api_chat_sessions.py \
+          test_api_chat_litellm.py \
           test_api_chat_tools.py \
           test_api_gnaw.py \
           test_api_snare.py \
