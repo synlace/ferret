@@ -486,7 +486,7 @@ async def test_get_tools_contains_expected_names(client, mem_db):
     expected = {
         "search_requests", "get_request_detail", "create_finding", "list_findings",
         "write_test", "run_test", "read_test", "pip_install", "run_script",
-        "run_katana", "run_ffuf", "http_request", "list_sources", "read_source",
+        "run_katana", "run_ffuf", "run_nuclei", "http_request", "list_sources", "read_source",
     }
     assert expected == names
 
@@ -498,6 +498,35 @@ async def test_get_tools_each_has_label(client, mem_db):
     for tool in resp.json():
         assert "label" in tool, f"Tool {tool['name']!r} missing label"
         assert tool["label"], f"Tool {tool['name']!r} has empty label"
+
+
+@pytest.mark.asyncio
+async def test_get_tools_each_has_group(client, mem_db):
+    """Every tool entry returned by GET /api/tools has a non-empty group."""
+    resp = await client.get("/api/tools")
+    for tool in resp.json():
+        assert "group" in tool, f"Tool {tool['name']!r} missing group"
+        assert tool["group"], f"Tool {tool['name']!r} has empty group"
+
+
+@pytest.mark.asyncio
+async def test_get_tools_groups_are_known_values(client, mem_db):
+    """All tool groups are one of the five canonical group names."""
+    expected_groups = {"Proxy History", "Findings", "Testing", "Execution", "Sources"}
+    resp = await client.get("/api/tools")
+    for tool in resp.json():
+        assert tool["group"] in expected_groups, (
+            f"Tool {tool['name']!r} has unexpected group {tool['group']!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_tools_all_groups_represented(client, mem_db):
+    """All five canonical groups have at least one tool."""
+    expected_groups = {"Proxy History", "Findings", "Testing", "Execution", "Sources"}
+    resp = await client.get("/api/tools")
+    present_groups = {t["group"] for t in resp.json()}
+    assert expected_groups == present_groups
 
 
 # ===========================================================================
@@ -538,3 +567,20 @@ def test_resolve_tools_label_present_in_result():
     from routers.chats_tools import resolve_tools
     result = resolve_tools(["search_requests"])
     assert "label" in result[0]["function"]
+
+
+def test_resolve_tools_group_present_in_result():
+    """The group key is present in SESSION_CHAT_TOOLS and preserved by resolve_tools."""
+    from routers.chats_tools import resolve_tools
+    result = resolve_tools(["search_requests"])
+    assert "group" in result[0]["function"]
+    assert result[0]["function"]["group"] == "Proxy History"
+
+
+def test_all_tools_have_group_in_session_chat_tools():
+    """Every entry in SESSION_CHAT_TOOLS has a non-empty group field."""
+    from routers.chats_tools import SESSION_CHAT_TOOLS
+    for t in SESSION_CHAT_TOOLS:
+        fn = t["function"]
+        assert "group" in fn, f"Tool {fn['name']!r} missing group in SESSION_CHAT_TOOLS"
+        assert fn["group"], f"Tool {fn['name']!r} has empty group in SESSION_CHAT_TOOLS"

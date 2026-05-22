@@ -52,7 +52,7 @@ async def _run_plan_in_background(
             _build_or_messages,
         )
         from chats_execute import execute_tool_call
-        from chats_runners import stream_run_script, stream_run_katana, stream_run_ffuf
+        from chats_runners import stream_run_script, stream_run_katana, stream_run_ffuf, stream_run_nuclei
 
         import httpx
 
@@ -147,6 +147,13 @@ async def _run_plan_in_background(
                     _runtime_ms = 0
                 elif fn_name == "run_ffuf":
                     _streamer = stream_run_ffuf(fn_args_raw)
+                    tool_result = ""
+                    async for _chunk, _is_final, _final_result in _streamer:
+                        if _is_final:
+                            tool_result = _final_result or ""
+                    _runtime_ms = 0
+                elif fn_name == "run_nuclei":
+                    _streamer = stream_run_nuclei(fn_args_raw)
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:

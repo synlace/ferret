@@ -33,7 +33,7 @@ import deps
 from models import ChatSendRequest
 
 from chats_tools import resolve_tools
-from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana
+from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana, stream_run_nuclei
 from chats_execute import execute_tool_call
 from chats_ai import (
     _NO_KEY_NOTICE,
@@ -277,6 +277,15 @@ async def stream_session_message_v2(
 
                 elif fn_name == "run_ffuf":
                     _streamer = stream_run_ffuf(fn_args_raw)
+                    tool_result = ""
+                    async for _chunk, _is_final, _final_result in _streamer:
+                        if _is_final:
+                            tool_result = _final_result or ""
+                        elif _chunk:
+                            yield f"data: {json.dumps({'type': 'tool_output_chunk', 'name': fn_name, 'chunk': _chunk})}\n\n"
+
+                elif fn_name == "run_nuclei":
+                    _streamer = stream_run_nuclei(fn_args_raw)
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:

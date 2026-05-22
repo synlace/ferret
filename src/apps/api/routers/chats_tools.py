@@ -21,6 +21,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "search_requests",
             "label": "Search proxy history",
+            "group": "Proxy History",
             "description": (
                 "Search the proxy request history. "
                 "Returns a list of matching requests (method, URL, status). "
@@ -61,6 +62,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "get_request_detail",
             "label": "Get request detail",
+            "group": "Proxy History",
             "description": (
                 "Fetch the full details of a single HTTP request by its ID, "
                 "including request headers, body, response headers, and response body. "
@@ -86,6 +88,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "create_finding",
             "label": "Create finding",
+            "group": "Findings",
             "description": (
                 "Create a security finding in the FERRET findings database. "
                 "Use this when you have confirmed or strongly suspected a vulnerability. "
@@ -135,6 +138,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "list_findings",
             "label": "List findings",
+            "group": "Findings",
             "description": (
                 "List existing security findings for the current project. "
                 "Use this to avoid creating duplicate findings and to reference prior work."
@@ -165,6 +169,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "write_test",
             "label": "Write pytest file",
+            "group": "Testing",
             "description": (
                 "Write a complete Python pytest file to disk and immediately execute it. "
                 "Returns the raw pytest output. Use this to create structured, reusable "
@@ -191,6 +196,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "run_test",
             "label": "Run pytest file",
+            "group": "Testing",
             "description": "Run an existing pytest file by filename. Returns pytest output.",
             "parameters": {
                 "type": "object",
@@ -209,6 +215,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "read_test",
             "label": "Read test file",
+            "group": "Testing",
             "description": (
                 "Read the current contents of an existing pytest file. "
                 "Use this before modifying a test — read it first, fix only the broken part, "
@@ -232,6 +239,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "pip_install",
             "label": "Install pip package",
+            "group": "Testing",
             "description": (
                 "Install one or more Python packages into the ferret-lab sandbox environment "
                 "using pip3. Use this when a test fails with ModuleNotFoundError. "
@@ -261,6 +269,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "run_script",
             "label": "Run script",
+            "group": "Execution",
             "description": (
                 "Write and execute an arbitrary bash or Python script in the ferret-lab sandbox. "
                 "Use this to run exploit PoCs, custom scanners, or any shell command that "
@@ -298,6 +307,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "run_katana",
             "label": "Crawl with Katana",
+            "group": "Execution",
             "description": (
                 "Crawl a web application to discover endpoints, paths, forms, and linked resources. "
                 "PREFER this over run_ffuf for directory/file/endpoint discovery — katana follows "
@@ -362,6 +372,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "run_ffuf",
             "label": "Fuzz with ffuf",
+            "group": "Execution",
             "description": (
                 "Run ffuf (Fuzz Faster U Fool) inside the ferret-lab sandbox for parameter fuzzing, "
                 "credential brute-forcing, vhost discovery, or SQLi fuzzing. "
@@ -449,6 +460,74 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         },
     },
     # -----------------------------------------------------------------------
+    # nuclei vulnerability scanner
+    # -----------------------------------------------------------------------
+    {
+        "type": "function",
+        "function": {
+            "name": "run_nuclei",
+            "label": "Scan with Nuclei",
+            "group": "Execution",
+            "description": (
+                "Run Nuclei inside the ferret-lab sandbox to scan a target URL or host "
+                "for known vulnerabilities using community templates. "
+                "Nuclei covers CVEs, misconfigurations, exposed panels, default credentials, "
+                "and many other vulnerability classes. "
+                "Use this after initial recon to quickly identify known issues before writing "
+                "custom tests. "
+                "Results are truncated to 16 KB."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": (
+                            "Target URL or host to scan, e.g. 'https://example.com' "
+                            "or 'example.com'. Multiple targets can be comma-separated."
+                        ),
+                    },
+                    "templates": {
+                        "type": "string",
+                        "description": (
+                            "Comma-separated template tags or paths to run, e.g. "
+                            "'cve,misconfig' or 'exposures/configs'. "
+                            "Defaults to all templates if omitted."
+                        ),
+                    },
+                    "severity": {
+                        "type": "string",
+                        "description": (
+                            "Comma-separated severity levels to include, e.g. "
+                            "'critical,high,medium'. Defaults to all severities."
+                        ),
+                    },
+                    "proxy": {
+                        "type": "string",
+                        "description": (
+                            "Proxy URL to route requests through, e.g. "
+                            "'http://api:1337' to capture traffic in FERRET history. "
+                            "Omit to scan directly."
+                        ),
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Total execution timeout in seconds (default 120, max 300).",
+                    },
+                    "extra_args": {
+                        "type": "string",
+                        "description": (
+                            "Additional raw nuclei flags, e.g. '-rate-limit 10' or "
+                            "'-header \"Authorization: Bearer token\"'. "
+                            "Do NOT include -u, -t, -severity, -proxy (use dedicated params)."
+                        ),
+                    },
+                },
+                "required": ["target"],
+            },
+        },
+    },
+    # -----------------------------------------------------------------------
     # Direct HTTP request tool
     # -----------------------------------------------------------------------
     {
@@ -456,6 +535,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "http_request",
             "label": "Make HTTP request",
+            "group": "Execution",
             "description": (
                 "Send a single HTTP request directly and return the status code, "
                 "response headers, and response body. Use this for quick interactive "
@@ -516,6 +596,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "list_sources",
             "label": "List project sources",
+            "group": "Sources",
             "description": (
                 "List all reference source files attached to this project "
                 "(API documentation, source code, OpenAPI specs, notes, etc.). "
@@ -533,6 +614,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "read_source",
             "label": "Read source file",
+            "group": "Sources",
             "description": (
                 "Read the full text content of a source file by filename. "
                 "Use list_sources first to discover available filenames, then call this "
