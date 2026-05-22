@@ -9,7 +9,7 @@
 services:
   # ── Docker exec shim ───────────────────────────────────────────────────────
   docker-shim:
-    image: ghcr.io/synlace/ferret-docker-shim:${FERRET_VERSION:-latest}
+    image: ghcr.io/synlace/ferret-docker-shim:${FERRET_VERSION:-v1.6.3}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: ghcr.io/synlace/ferret-api:${FERRET_VERSION:-latest}
+    image: ghcr.io/synlace/ferret-api:${FERRET_VERSION:-v1.6.3}
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:1337:1337"
@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
 
   ui:
-    image: ghcr.io/synlace/ferret-ui:${FERRET_VERSION:-latest}
+    image: ghcr.io/synlace/ferret-ui:${FERRET_VERSION:-v1.6.3}
     ports:
       - "127.0.0.1:${UI_PORT:-3000}:3000"
     environment:
@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
 
   lab:
-    image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}
+    image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:v1.6.3}
     container_name: ferret-lab
     volumes:
       - ${FERRET_DATA_DIR:-./data}/workspaces:/data/workspaces
