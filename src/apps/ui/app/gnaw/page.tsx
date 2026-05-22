@@ -855,10 +855,10 @@ function GnawPageInner() {
                       }`}>
                       {/* Row 1: method badge + host + delete button */}
                       <div className="flex items-center gap-1 min-w-0">
-                        <span className={`text-[9px] font-bold font-mono flex-shrink-0 ${tab.id === activeTabId ? "text-brand-400" : methodColor}`}>
+                        <span className={`text-[10px] font-bold font-mono flex-shrink-0 ${tab.id === activeTabId ? "text-brand-400" : methodColor}`}>
                           {tabMethod}
                         </span>
-                        <span className={`flex-1 text-[10px] font-mono truncate min-w-0 ${tab.id === activeTabId ? "text-brand-300" : "text-neutral-300"}`} title={tabHost}>
+                        <span className={`flex-1 text-xs font-mono truncate min-w-0 ${tab.id === activeTabId ? "text-brand-300" : "text-neutral-300"}`} title={tabHost}>
                           {tabHost}
                         </span>
                         <button onClick={(e) => handleDeleteTab(tab.id, e)}
@@ -868,15 +868,15 @@ function GnawPageInner() {
                         </button>
                       </div>
                       {/* Row 2: path */}
-                      <div className={`text-[9px] font-mono truncate ${tab.id === activeTabId ? "text-neutral-500" : "text-neutral-600"}`} title={tabPath}>
+                      <div className={`text-[10px] font-mono truncate ${tab.id === activeTabId ? "text-neutral-500" : "text-neutral-600"}`} title={tabPath}>
                         {tabPath}
                       </div>
                       {/* Row 3: status badge + response time (only if response exists) */}
                       {sc != null && (
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className={`text-[9px] font-mono font-bold px-1 rounded-sm ${scColor} ${scBg}`}>{sc}</span>
+                          <span className={`text-[10px] font-mono font-bold px-1 rounded-sm ${scColor} ${scBg}`}>{sc}</span>
                           {rt != null && (
-                            <span className="text-[9px] font-mono text-neutral-600">{rt.toFixed(0)}ms</span>
+                            <span className="text-[10px] font-mono text-neutral-600">{rt.toFixed(0)}ms</span>
                           )}
                         </div>
                       )}

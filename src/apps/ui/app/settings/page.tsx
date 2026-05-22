@@ -4,7 +4,6 @@ import { apiFetch } from "@/lib/api-fetch"
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -46,7 +45,7 @@ function SectionHeader({
   return (
     <button
       onClick={onToggle}
-      className="w-full flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900 hover:bg-neutral-800/60 transition-colors text-left"
+      className="w-full h-full flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900 hover:bg-neutral-800/60 transition-colors text-left"
     >
       {icon}
       <span className="text-xs font-semibold text-white uppercase tracking-wider">{label}</span>
@@ -55,6 +54,24 @@ function SectionHeader({
         className={`w-3.5 h-3.5 text-neutral-500 ml-auto transition-transform duration-200 ${open ? "rotate-180" : ""}`}
       />
     </button>
+  )
+}
+
+function StaticSectionHeader({
+  icon,
+  label,
+  badge,
+}: {
+  icon: React.ReactNode
+  label: string
+  badge?: React.ReactNode
+}) {
+  return (
+    <div className="w-full h-full flex items-center gap-2 px-3 py-2 bg-neutral-900">
+      {icon}
+      <span className="text-xs font-semibold text-white uppercase tracking-wider">{label}</span>
+      {badge && <span className="ml-2">{badge}</span>}
+    </div>
   )
 }
 
@@ -265,11 +282,7 @@ export default function SettingsPage() {
   const [aiConfig, setAiConfig] = useState<{ provider?: string; model?: string } | null>(null)
   const [proxyStatus, setProxyStatus] = useState<ProxyStatus | null>(null)
 
-  const [proxyOpen, setProxyOpen] = useState(true)
   const [certOpen, setCertOpen] = useState(true)
-  const [aiOpen, setAiOpen] = useState(true)
-  const [pwOpen, setPwOpen] = useState(true)
-  const [mfaOpen, setMfaOpen] = useState(true)
 
   // Change password state
   const [currentPw, setCurrentPw] = useState("")
@@ -527,251 +540,253 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* Change Password section */}
-        <div className="border-b border-neutral-800">
-          <SectionHeader
-            icon={<KeyRound className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="Change Password"
-            open={pwOpen}
-            onToggle={() => setPwOpen(o => !o)}
-          />
-          {pwOpen && (
-            <div className="px-4 py-3">
-              {pwStatus === "ok" ? (
-                <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs mb-3">
-                  <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Password updated. You have been logged out of all sessions — please log in again.</span>
-                </div>
-              ) : null}
+        {/* Change Password + MFA — headers row */}
+        <div className="grid grid-cols-2 items-stretch border-b border-neutral-800">
+          {/* Change Password header */}
+          <div className="border-r border-neutral-800 flex">
+            <StaticSectionHeader
+              icon={<KeyRound className="w-4 h-4 text-brand-400 flex-shrink-0" />}
+              label="Change Password"
+            />
+          </div>
+          {/* MFA header */}
+          <div className="flex">
+            <StaticSectionHeader
+              icon={<ShieldAlert className="w-4 h-4 text-brand-400 flex-shrink-0" />}
+              label="Two-Factor Authentication"
+              badge={mfaBadge}
+            />
+          </div>
+        </div>
 
-              <form onSubmit={changePassword} className="space-y-3 max-w-sm">
-                <div className="space-y-1">
-                  <label className="block text-xs text-neutral-400">Current password</label>
-                  <Input
-                    type="password"
-                    value={currentPw}
-                    onChange={e => setCurrentPw(e.target.value)}
-                    placeholder="Current password"
-                    required
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs text-neutral-400">New password <span className="text-neutral-600">(min 8 chars)</span></label>
-                  <Input
-                    type="password"
-                    value={newPw}
-                    onChange={e => setNewPw(e.target.value)}
-                    placeholder="New password"
-                    required
-                    minLength={8}
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs text-neutral-400">Confirm new password</label>
-                  <Input
-                    type="password"
-                    value={confirmPw}
-                    onChange={e => setConfirmPw(e.target.value)}
-                    placeholder="Confirm new password"
-                    required
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                </div>
+        {/* Change Password + MFA — content row */}
+        <div className="grid grid-cols-2 border-b border-neutral-800">
+          {/* Change Password content */}
+          <div className="border-r border-neutral-800 px-4 py-3">
+            {pwStatus === "ok" ? (
+              <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs mb-3">
+                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>Password updated. You have been logged out of all sessions — please log in again.</span>
+              </div>
+            ) : null}
 
-                {pwError && (
-                  <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                    <span>{pwError}</span>
-                  </div>
+            <form onSubmit={changePassword} className="space-y-3 max-w-sm">
+              <div className="space-y-1">
+                <label className="block text-xs text-neutral-400">Current password</label>
+                <Input
+                  type="password"
+                  value={currentPw}
+                  onChange={e => setCurrentPw(e.target.value)}
+                  placeholder="Current password"
+                  required
+                  className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs text-neutral-400">New password <span className="text-neutral-600">(min 8 chars)</span></label>
+                <Input
+                  type="password"
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                  placeholder="New password"
+                  required
+                  minLength={8}
+                  className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs text-neutral-400">Confirm new password</label>
+                <Input
+                  type="password"
+                  value={confirmPw}
+                  onChange={e => setConfirmPw(e.target.value)}
+                  placeholder="Confirm new password"
+                  required
+                  className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                />
+              </div>
+
+              {pwError && (
+                <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{pwError}</span>
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={pwStatus === "saving"}
+                size="sm"
+                className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
+              >
+                {pwStatus === "saving" ? (
+                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
+                ) : (
+                  "Update password"
                 )}
+              </Button>
+            </form>
+          </div>
 
-                <Button
-                  type="submit"
-                  disabled={pwStatus === "saving"}
-                  size="sm"
-                  className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
-                >
-                  {pwStatus === "saving" ? (
-                    <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
-                  ) : (
-                    "Update password"
-                  )}
-                </Button>
-              </form>
-            </div>
-          )}
-        </div>
-
-        {/* Two-Factor Authentication section */}
-        <div className="border-b border-neutral-800">
-          <SectionHeader
-            icon={<ShieldAlert className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="Two-Factor Authentication"
-            open={mfaOpen}
-            onToggle={() => setMfaOpen(o => !o)}
-            badge={mfaBadge}
-          />
-          {mfaOpen && (
-            <div className="px-4 py-3 space-y-3">
-              {mfaLoading ? (
-                <div className="flex items-center gap-2 text-neutral-500 text-xs">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Loading…</span>
+          {/* MFA content */}
+          <div className="px-4 py-3 space-y-3">
+            {mfaLoading ? (
+              <div className="flex items-center gap-2 text-neutral-500 text-xs">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Loading…</span>
+              </div>
+            ) : mfaEnabled ? (
+              <>
+                <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
+                  <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Two-factor authentication is enabled. A TOTP code is required at every login.</span>
                 </div>
-              ) : mfaEnabled ? (
-                <>
-                  <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
+
+                {disableStatus === "ok" ? (
+                  <div className="flex items-center gap-2 bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-2 text-xs">
                     <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Two-factor authentication is enabled. A TOTP code is required at every login.</span>
+                    <span>MFA disabled successfully.</span>
                   </div>
-
-                  {disableStatus === "ok" ? (
-                    <div className="flex items-center gap-2 bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-2 text-xs">
-                      <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>MFA disabled successfully.</span>
+                ) : (
+                  <form onSubmit={disableMfa} className="space-y-3 max-w-sm">
+                    <p className="text-xs text-neutral-500">To disable MFA, enter your current password and a valid TOTP code.</p>
+                    <div className="space-y-1">
+                      <label className="block text-xs text-neutral-400">Current password</label>
+                      <Input
+                        type="password"
+                        value={disablePw}
+                        onChange={e => setDisablePw(e.target.value)}
+                        placeholder="Current password"
+                        required
+                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                      />
                     </div>
-                  ) : (
-                    <form onSubmit={disableMfa} className="space-y-3 max-w-sm">
-                      <p className="text-xs text-neutral-500">To disable MFA, enter your current password and a valid TOTP code.</p>
-                      <div className="space-y-1">
-                        <label className="block text-xs text-neutral-400">Current password</label>
-                        <Input
-                          type="password"
-                          value={disablePw}
-                          onChange={e => setDisablePw(e.target.value)}
-                          placeholder="Current password"
-                          required
-                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="block text-xs text-neutral-400">Authentication code</label>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={6}
-                          value={disableCode}
-                          onChange={e => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                          placeholder="000000"
-                          required
-                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 tracking-widest text-center"
-                        />
-                      </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs text-neutral-400">Authentication code</label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={disableCode}
+                        onChange={e => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="000000"
+                        required
+                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 tracking-widest text-center"
+                      />
+                    </div>
 
-                      {disableError && (
-                        <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
-                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                          <span>{disableError}</span>
-                        </div>
+                    {disableError && (
+                      <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span>{disableError}</span>
+                      </div>
+                    )}
+
+                    <Button
+                      type="submit"
+                      disabled={disableStatus === "saving"}
+                      size="sm"
+                      className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white rounded-none"
+                    >
+                      {disableStatus === "saving" ? (
+                        <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Disabling...</>
+                      ) : (
+                        "Disable MFA"
                       )}
-
-                      <Button
-                        type="submit"
-                        disabled={disableStatus === "saving"}
-                        size="sm"
-                        className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white rounded-none"
-                      >
-                        {disableStatus === "saving" ? (
-                          <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Disabling...</>
-                        ) : (
-                          "Disable MFA"
-                        )}
-                      </Button>
-                    </form>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p className="text-xs text-neutral-400">
-                    Two-factor authentication adds an extra layer of security. After enabling, you will need a TOTP code from your authenticator app at every login.
-                  </p>
-                  <Button
-                    onClick={() => setShowMfaSetup(true)}
-                    size="sm"
-                    className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
-                  >
-                    Enable two-factor authentication
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* AI Provider section */}
-        <div className="border-b border-neutral-800">
-          <SectionHeader
-            icon={<Cpu className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="AI Provider"
-            open={aiOpen}
-            onToggle={() => setAiOpen(o => !o)}
-          />
-          {aiOpen && (
-            <div className="px-4 py-3 space-y-3">
-              {aiConfig?.provider ? (
-                <div className="rounded border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 text-xs">
-                  <div className="flex justify-between px-3 py-2">
-                    <span className="text-neutral-400">Provider</span>
-                    <span className="text-white font-medium capitalize">{aiConfig.provider}</span>
-                  </div>
-                  <div className="flex justify-between px-3 py-2">
-                    <span className="text-neutral-400">Default model</span>
-                    <span className="text-white font-medium">{aiConfig.model ?? "—"}</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-neutral-500">No AI provider configured.</p>
-              )}
-
-              <p className="text-xs text-neutral-400">
-                Re-run the setup wizard to change your AI provider or API key.
-              </p>
-
-              <Link href="/setup">
+                    </Button>
+                  </form>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-neutral-400">
+                  Two-factor authentication adds an extra layer of security. After enabling, you will need a TOTP code from your authenticator app at every login.
+                </p>
                 <Button
+                  onClick={() => setShowMfaSetup(true)}
                   size="sm"
                   className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
                 >
-                  Re-run setup wizard
+                  Enable two-factor authentication
                 </Button>
-              </Link>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Proxy section */}
-        <div className="border-b border-neutral-800">
-          <SectionHeader
-            icon={<Activity className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="Proxy"
-            open={proxyOpen}
-            onToggle={() => setProxyOpen(o => !o)}
-            badge={proxyBadge}
-          />
-          {proxyOpen && (
-            <div className="divide-y divide-neutral-800">
-              <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
-                <span className="text-neutral-500 w-36 shrink-0">Listen Address</span>
-                <span className="text-white font-mono">
-                  {proxyStatus?.listen_address ?? "—"}
-                </span>
-              </div>
-              <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
-                <span className="text-neutral-500 w-36 shrink-0">Status</span>
-                <span className={`font-mono ${proxyStatus?.running ? "text-green-400" : "text-red-400"}`}>
-                  {proxyStatus == null ? "—" : proxyStatus.running ? "Running" : "Stopped"}
-                </span>
-              </div>
-              {proxyStatus?.running && (
-                <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
-                  <span className="text-neutral-500 w-36 shrink-0">Intercepted</span>
-                  <span className="text-white font-mono">{proxyStatus.intercepted.toLocaleString()} requests</span>
+        {/* AI Provider + Proxy — headers row */}
+        <div className="grid grid-cols-2 items-stretch border-b border-neutral-800">
+          {/* AI Provider header */}
+          <div className="border-r border-neutral-800 flex">
+            <StaticSectionHeader
+              icon={<Cpu className="w-4 h-4 text-brand-400 flex-shrink-0" />}
+              label="AI Provider"
+            />
+          </div>
+          {/* Proxy header */}
+          <div className="flex">
+            <StaticSectionHeader
+              icon={<Activity className="w-4 h-4 text-brand-400 flex-shrink-0" />}
+              label="Proxy"
+              badge={proxyBadge}
+            />
+          </div>
+        </div>
+
+        {/* AI Provider + Proxy — content row */}
+        <div className="grid grid-cols-2 border-b border-neutral-800">
+          {/* AI Provider content */}
+          <div className="border-r border-neutral-800 px-4 py-3 space-y-3">
+            {aiConfig?.provider ? (
+              <div className="rounded border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 text-xs">
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-neutral-400">Provider</span>
+                  <span className="text-white font-medium capitalize">{aiConfig.provider}</span>
                 </div>
-              )}
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-neutral-400">Default model</span>
+                  <span className="text-white font-medium">{aiConfig.model ?? "—"}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-neutral-500">No AI provider configured.</p>
+            )}
+
+            <p className="text-xs text-neutral-400">
+              Re-run the setup wizard to change your AI provider or API key.
+            </p>
+
+            <Link href="/setup">
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
+              >
+                Re-run setup wizard
+              </Button>
+            </Link>
+          </div>
+
+          {/* Proxy content */}
+          <div className="divide-y divide-neutral-800">
+            <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
+              <span className="text-neutral-500 w-36 shrink-0">Listen Address</span>
+              <span className="text-white font-mono">
+                {proxyStatus?.listen_address ?? "—"}
+              </span>
             </div>
-          )}
+            <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
+              <span className="text-neutral-500 w-36 shrink-0">Status</span>
+              <span className={`font-mono ${proxyStatus?.running ? "text-green-400" : "text-red-400"}`}>
+                {proxyStatus == null ? "—" : proxyStatus.running ? "Running" : "Stopped"}
+              </span>
+            </div>
+            {proxyStatus?.running && (
+              <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
+                <span className="text-neutral-500 w-36 shrink-0">Intercepted</span>
+                <span className="text-white font-mono">{proxyStatus.intercepted.toLocaleString()} requests</span>
+              </div>
+            )}
+          </div>
         </div>
 
       </div>
