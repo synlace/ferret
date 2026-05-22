@@ -430,14 +430,14 @@ export default function SetupPage() {
                       onClick={() => selectProvider(p)}
                       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all w-full
                         ${provider.key === p.key
-                          ? "border-brand-500 bg-brand-500/10 text-neutral-900"
+                          ? "border-brand-500 bg-brand-500/10 text-white"
                           : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
                         }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={p.icon} alt={p.name} width={28} height={28} className="rounded flex-shrink-0" />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium leading-tight">{p.name}</span>
+                        <span className={`block text-sm font-medium leading-tight ${provider.key === p.key ? "text-white" : "text-neutral-200"}`}>{p.name}</span>
                         <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">{p.tag}</span>
                       </span>
                       {provider.key === p.key && (
@@ -457,14 +457,14 @@ export default function SetupPage() {
                       onClick={() => selectProvider(p)}
                       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all w-full
                         ${provider.key === p.key
-                          ? "border-brand-500 bg-brand-500/10 text-neutral-900"
+                          ? "border-brand-500 bg-brand-500/10 text-white"
                           : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
                         }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={p.icon} alt={p.name} width={28} height={28} className="rounded flex-shrink-0" />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium leading-tight">{p.name}</span>
+                        <span className={`block text-sm font-medium leading-tight ${provider.key === p.key ? "text-white" : "text-neutral-200"}`}>{p.name}</span>
                         <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">{p.tag}</span>
                       </span>
                       {provider.key === p.key && (
