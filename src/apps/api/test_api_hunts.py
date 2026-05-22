@@ -48,7 +48,7 @@ POST /api/hunts/{session_id}/files/{path}/move:
   - 200 moves file and returns new path metadata
   - 200 promotes workspace/ file to scripts/
 
-POST /api/chats (hunt creation):
+POST /api/hunts (hunt creation):
   - Creates all 7 workspace subdirectories on the filesystem
   - Returns workspace_dir in the response
 
@@ -71,7 +71,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 async def _create_session(client, name: str = "Test Workspace", scope: str = "blank") -> dict:
     """Create a chat session via the API and return the response JSON."""
-    resp = await client.post("/api/chats", json={"name": name, "scope": scope})
+    resp = await client.post("/api/hunts", json={"name": name, "scope": scope})
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -726,15 +726,15 @@ async def test_move_file_promotes_workspace_to_tests(client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/chats — workspace directory creation
+# POST /api/hunts — workspace directory creation
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_create_chat_creates_workspace_dirs(client, tmp_path):
-    """POST /api/chats creates all 7 workspace subdirectories."""
+    """POST /api/hunts creates all 7 workspace subdirectories."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
-        resp = await client.post("/api/chats", json={"name": "My Workspace"})
+        resp = await client.post("/api/hunts", json={"name": "My Workspace"})
 
     assert resp.status_code == 201
     data = resp.json()
@@ -749,11 +749,11 @@ async def test_create_chat_creates_workspace_dirs(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_create_chat_workspace_dir_format(client, tmp_path):
-    """POST /api/chats → workspace_dir is '{project_id}/{session_id}'."""
+    """POST /api/hunts → workspace_dir is '{project_id}/{session_id}'."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         resp = await client.post(
-            "/api/chats?project_id=temp",
+            "/api/hunts?project_id=temp",
             json={"name": "Workspace Format Test"},
         )
 

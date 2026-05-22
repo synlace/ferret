@@ -136,10 +136,10 @@ const CONTRACT = [
     fixedValues: {},
   },
 
-  // ── Chats ────────────────────────────────────────────────────────────────────
+  // ── Hunts ────────────────────────────────────────────────────────────────────
   {
     method: 'GET',
-    path: '/api/chats',
+    path: '/api/hunts',
     status: 200,
     contentType: 'application/json',
     // Array response — may be empty
@@ -149,7 +149,7 @@ const CONTRACT = [
 
   {
     method: 'POST',
-    path: '/api/chats',
+    path: '/api/hunts',
     status: 201,
     contentType: 'application/json',
     requiredFields: ['id', 'name', 'scope', 'created_at', 'workspace_dir'],

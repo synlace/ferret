@@ -12,7 +12,7 @@ Covers:
   8.  POST /api/projects/import       — new UUID, data imported
   9.  GET  /api/requests?project_id=X — only returns requests for X
   10. GET  /api/findings?project_id=X — only returns findings for X
-  11. GET  /api/chats?project_id=X    — only returns chats for X
+  11. GET  /api/hunts?project_id=X    — only returns hunts for X
   12. GET  /api/settings/active-project — returns current active project
   13. PUT  /api/settings/active-project — updates active project
   14. PUT  /api/projects/{id} is_temp=false — promotes temp project
@@ -350,7 +350,7 @@ async def test_findings_filtered_by_project(client, mem_db):
 
 
 # ---------------------------------------------------------------------------
-# 11. GET /api/chats?project_id=X — only returns chats for X
+# 11. GET /api/hunts?project_id=X — only returns hunts for X
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -361,21 +361,21 @@ async def test_chats_filtered_by_project(client, mem_db):
     proj_c = create_resp.json()["id"]
 
     # Create chat sessions via the API (project_id as query param)
-    resp1 = await client.post("/api/chats?project_id=temp", json={"name": "Temp Chat"})
+    resp1 = await client.post("/api/hunts?project_id=temp", json={"name": "Temp Chat"})
     assert resp1.status_code == 201
 
-    resp2 = await client.post(f"/api/chats?project_id={proj_c}", json={"name": "C Chat"})
+    resp2 = await client.post(f"/api/hunts?project_id={proj_c}", json={"name": "C Chat"})
     assert resp2.status_code == 201
 
     # List chats for temp
-    resp_temp = await client.get("/api/chats?project_id=temp")
+    resp_temp = await client.get("/api/hunts?project_id=temp")
     assert resp_temp.status_code == 200
     temp_names = [s["name"] for s in resp_temp.json()]
     assert "Temp Chat" in temp_names
     assert "C Chat" not in temp_names
 
     # List chats for proj_c
-    resp_c = await client.get(f"/api/chats?project_id={proj_c}")
+    resp_c = await client.get(f"/api/hunts?project_id={proj_c}")
     assert resp_c.status_code == 200
     c_names = [s["name"] for s in resp_c.json()]
     assert "C Chat" in c_names

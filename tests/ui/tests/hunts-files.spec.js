@@ -57,8 +57,8 @@ const NOTE_FILE = {
  * @param {object}   fileContents - Map of filePath → content string
  */
 async function gotoWithSession(page, files = [], fileContents = {}) {
-  // Stub GET /api/chats → return our test session
-  await page.route('**/api/chats*', async (route) => {
+  // Stub GET /api/hunts → return our test session
+  await page.route('**/api/hunts*', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === 'GET' && !url.pathname.match(/\/api\/chats\/.+/)) {

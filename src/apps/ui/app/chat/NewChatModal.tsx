@@ -116,7 +116,7 @@ export function NewChatModal({
       }
       if (targetUrl.trim()) body.target_url = targetUrl.trim()
       if (planId) body.plan_id = planId
-      const res = await apiFetch(`${API_BASE}/api/chats`, {
+      const res = await apiFetch(`${API_BASE}/api/hunts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

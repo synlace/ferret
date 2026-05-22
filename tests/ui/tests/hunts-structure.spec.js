@@ -33,8 +33,8 @@ const SEEDED = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function gotoWithSession(page) {
-  // Stub GET /api/chats → return seeded session
-  await page.route('**/api/chats*', async (route) => {
+  // Stub GET /api/hunts → return seeded session
+  await page.route('**/api/hunts*', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === 'GET' && !url.pathname.match(/\/api\/chats\/.+/)) {

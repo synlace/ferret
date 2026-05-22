@@ -20,7 +20,7 @@ _log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/api/chats")
+@router.get("/api/hunts")
 async def get_chat_sessions(project_id: str = "temp"):
     """List all chat sessions."""
     try:
@@ -133,33 +133,37 @@ async def _run_plan_in_background(
                     _runtime_ms = 0
                     _exit_code = 1
                 elif fn_name == "run_script":
+                    _t0 = _time.monotonic()
                     _streamer = stream_run_script(fn_args_raw, project_id=resolved_project_id, session_id=session_id)
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:
                             tool_result = _final_result or ""
-                    _runtime_ms = 0
+                    _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                 elif fn_name == "run_katana":
+                    _t0 = _time.monotonic()
                     _streamer = stream_run_katana(fn_args_raw)
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:
                             tool_result = _final_result or ""
-                    _runtime_ms = 0
+                    _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                 elif fn_name == "run_ffuf":
+                    _t0 = _time.monotonic()
                     _streamer = stream_run_ffuf(fn_args_raw)
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:
                             tool_result = _final_result or ""
-                    _runtime_ms = 0
+                    _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                 elif fn_name == "run_nuclei":
+                    _t0 = _time.monotonic()
                     _streamer = stream_run_nuclei(fn_args_raw)
                     tool_result = ""
                     async for _chunk, _is_final, _final_result in _streamer:
                         if _is_final:
                             tool_result = _final_result or ""
-                    _runtime_ms = 0
+                    _runtime_ms = round((_time.monotonic() - _t0) * 1000)
                 else:
                     _t0 = _time.monotonic()
                     tool_result = await execute_tool_call(
@@ -207,7 +211,7 @@ async def _run_plan_in_background(
             pass
 
 
-@router.post("/api/chats", status_code=201)
+@router.post("/api/hunts", status_code=201)
 async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp"):
     """Create a new chat session / workspace.
 
@@ -267,7 +271,7 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
         raise deps.server_error(e)
 
 
-@router.patch("/api/chats/{session_id}")
+@router.patch("/api/hunts/{session_id}")
 async def update_chat_session(session_id: str, body: ChatSessionUpdate):
     """Update a chat session's name, scope, and/or scope_data."""
     try:
@@ -285,7 +289,7 @@ async def update_chat_session(session_id: str, body: ChatSessionUpdate):
         raise deps.server_error(e)
 
 
-@router.delete("/api/chats/{session_id}", status_code=204)
+@router.delete("/api/hunts/{session_id}", status_code=204)
 async def delete_chat_session(session_id: str):
     """Delete a chat session and its messages."""
     try:
@@ -298,7 +302,7 @@ async def delete_chat_session(session_id: str):
         raise deps.server_error(e)
 
 
-@router.get("/api/chats/{session_id}/messages")
+@router.get("/api/hunts/{session_id}/messages")
 async def get_session_messages(session_id: str):
     """Get messages for a chat session."""
     try:

@@ -39,8 +39,8 @@ const SESSION = {
  * @param {string} [opts.thinking]        - Optional thinking content to include.
  */
 async function gotoWithActiveSession(page, { assistantReply = 'Mock reply', thinking = '' } = {}) {
-  // Stub GET /api/chats → return our session
-  await page.route('**/api/chats*', async (route) => {
+  // Stub GET /api/hunts → return our session
+  await page.route('**/api/hunts*', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === 'GET' && !url.pathname.match(/\/api\/chats\/.+/)) {
@@ -73,8 +73,8 @@ async function gotoWithActiveSession(page, { assistantReply = 'Mock reply', thin
     }
   });
 
-  // Stub the v2 stream endpoint
-  await page.route(`**/api/v2/chats/${SESSION.id}/messages/stream`, async (route) => {
+  // Stub the stream endpoint
+  await page.route(`**/api/hunts/${SESSION.id}/messages/stream`, async (route) => {
     const donePayload = {
       type: 'done',
       messages: [

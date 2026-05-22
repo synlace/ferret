@@ -459,7 +459,7 @@ function handleRequest(req, res) {
   // ── Chats ────────────────────────────────────────────────────────────────────
 
   // List sessions — optionally return seeded session
-  if (method === 'GET' && path === '/api/chats') {
+  if (method === 'GET' && path === '/api/hunts') {
     const seeded = url.searchParams.get('seeded');
     if (seeded === 'one') {
       return json(res, 200, [SEEDED_SESSION]);
@@ -470,7 +470,7 @@ function handleRequest(req, res) {
   }
 
   // Create session
-  if (method === 'POST' && path === '/api/chats') {
+  if (method === 'POST' && path === '/api/hunts') {
     return withBody(req, (body) => {
       const id = 'session-' + Date.now();
       const session = {

@@ -3,7 +3,7 @@ FERRET API — pytest unit tests for the LiteLLM-backed streaming chat endpoint.
 
 Covers
 ------
-POST /api/v2/chats/{session_id}/messages/stream:
+POST /api/hunts/{session_id}/messages/stream:
   - Returns text/event-stream content-type
   - Emits 'replace' event with accumulated text content
   - Emits 'done' event with full messages list
@@ -52,7 +52,7 @@ async def _seed_project_key(mem_db, project_id: str = "temp"):
 
 async def _create_session(client, payload=None):
     """Create a chat session and return its ID."""
-    resp = await client.post("/api/chats", json=payload or _SESSION_PAYLOAD)
+    resp = await client.post("/api/hunts", json=payload or _SESSION_PAYLOAD)
     assert resp.status_code == 201, resp.text
     return resp.json()["id"]
 
@@ -107,7 +107,7 @@ class TestLiteLLMStreamBasic:
         with patch("routers.chats_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("Hello!")):
             resp = await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Hi"},
             )
 
@@ -123,7 +123,7 @@ class TestLiteLLMStreamBasic:
         with patch("routers.chats_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("Hello from AI!")):
             resp = await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Hi"},
             )
 
@@ -141,7 +141,7 @@ class TestLiteLLMStreamBasic:
         with patch("routers.chats_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("Done!")):
             resp = await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Tell me something"},
             )
 
@@ -159,11 +159,11 @@ class TestLiteLLMStreamBasic:
         with patch("routers.chats_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("I am the AI.")):
             await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Who are you?"},
             )
 
-        msgs_resp = await client.get(f"/api/chats/{session_id}/messages")
+        msgs_resp = await client.get(f"/api/hunts/{session_id}/messages")
         messages = msgs_resp.json()["messages"]
         roles = [m["role"] for m in messages]
         assert "user" in roles
@@ -195,7 +195,7 @@ class TestLiteLLMStreamEmptyResponse:
         with patch("routers.chats_litellm.stream_ai_completion",
                    return_value=_fake_stream_empty()):
             resp = await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Hello"},
             )
 
@@ -217,14 +217,14 @@ class TestLiteLLMStreamEmptyResponse:
 
         # Disable all tools for this session
         await client.patch(
-            f"/api/chats/{session_id}",
+            f"/api/hunts/{session_id}",
             json={"enabled_tools": []},
         )
 
         with patch("routers.chats_litellm.stream_ai_completion",
                    return_value=_fake_stream_empty()):
             resp = await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Hello"},
             )
 
@@ -286,7 +286,7 @@ class TestLiteLLMStreamAgenticLoop:
              patch("routers.chats_litellm.execute_tool_call",
                    new=AsyncMock(return_value=mock_tool_result)):
             resp = await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Search for requests"},
             )
 
@@ -340,11 +340,11 @@ class TestLiteLLMStreamAgenticLoop:
              patch("routers.chats_litellm.execute_tool_call",
                    new=AsyncMock(return_value="tool output")):
             await client.post(
-                f"/api/v2/chats/{session_id}/messages/stream",
+                f"/api/hunts/{session_id}/messages/stream",
                 json={"message": "Run a tool"},
             )
 
-        msgs_resp = await client.get(f"/api/chats/{session_id}/messages")
+        msgs_resp = await client.get(f"/api/hunts/{session_id}/messages")
         messages = msgs_resp.json()["messages"]
         roles = [m["role"] for m in messages]
 
@@ -369,7 +369,7 @@ class TestLiteLLMStreamNoKey:
         session_id = await _create_session(client)
 
         resp = await client.post(
-            f"/api/v2/chats/{session_id}/messages/stream",
+            f"/api/hunts/{session_id}/messages/stream",
             json={"message": "Hello"},
         )
 

@@ -18,8 +18,8 @@ import { apiFetch } from "@/lib/api-fetch"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-// LiteLLM-backed stream endpoint
-const STREAM_PATH = "v2/chats"
+// Hunt session stream endpoint
+const STREAM_PATH = "hunts"
 
 const lastSessionKey = (projectId: string) => `ferret_last_chat_session:${projectId}`
 
@@ -171,7 +171,7 @@ function HuntsPageInner() {
   const fetchSessions = useCallback(async () => {
     if (!activeProjectId) return []
     try {
-      const res = await apiFetch(`${API_BASE}/api/chats?project_id=${activeProjectId}`)
+      const res = await apiFetch(`${API_BASE}/api/hunts?project_id=${activeProjectId}`)
       const data = await res.json()
       const chats = Array.isArray(data) ? data : (data.chats ?? [])
       setSessions(chats); return chats
@@ -287,7 +287,7 @@ function HuntsPageInner() {
     if (activeProjectId) localStorage.setItem(lastSessionKey(activeProjectId), sessionId)
     setLoadingHistory(true)
     try {
-      const res = await apiFetch(`${API_BASE}/api/chats/${sessionId}/messages`)
+      const res = await apiFetch(`${API_BASE}/api/hunts/${sessionId}/messages`)
       const data = await res.json()
       const fetched = annotateToolArgs(data.messages ?? [])
       const notice = pendingNoticeRef.current
@@ -333,7 +333,7 @@ function HuntsPageInner() {
   const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      await apiFetch(`${API_BASE}/api/chats/${sessionId}`, { method: "DELETE" })
+      await apiFetch(`${API_BASE}/api/hunts/${sessionId}`, { method: "DELETE" })
       setSessions(prev => prev.filter(s => s.id !== sessionId))
       if (activeSessionId === sessionId) { setActiveSessionId(null); setMessages([]); setWorkspaceFiles([]) }
     } catch { /**/ }
@@ -691,7 +691,7 @@ function HuntsPageInner() {
             }
           }
           try {
-            const r = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}`, {
+            const r = await apiFetch(`${API_BASE}/api/hunts/${activeSessionId}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ enabled_tools: next }),
@@ -707,7 +707,7 @@ function HuntsPageInner() {
         onEnableAll={async () => {
           if (!activeSessionId) return
           try {
-            const r = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}`, {
+            const r = await apiFetch(`${API_BASE}/api/hunts/${activeSessionId}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ enabled_tools: null }),
@@ -723,7 +723,7 @@ function HuntsPageInner() {
         onDisableAll={async () => {
           if (!activeSessionId) return
           try {
-            const r = await apiFetch(`${API_BASE}/api/chats/${activeSessionId}`, {
+            const r = await apiFetch(`${API_BASE}/api/hunts/${activeSessionId}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ enabled_tools: [] }),

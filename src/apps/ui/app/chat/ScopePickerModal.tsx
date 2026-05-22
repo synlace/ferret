@@ -10,7 +10,7 @@ import { apiFetch } from "@/lib/api-fetch"
  *   - A scope-type selector row (All / Single / Selected / Host / Page / Blank)
  *   - A filterable, paginated request table (same pattern as History page)
  *     shown only when scope requires request selection (single / selected)
- *   - Save / Cancel actions that call PATCH /api/chats/:id
+ *   - Save / Cancel actions that call PATCH /api/hunts/:id
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
@@ -282,7 +282,7 @@ export function ScopePickerModal({
         : null
 
     try {
-      const res = await apiFetch(`${API_BASE}/api/chats/${sessionId}`, {
+      const res = await apiFetch(`${API_BASE}/api/hunts/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope, scope_data: scopeData }),

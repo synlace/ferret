@@ -1,14 +1,10 @@
 """
-Chat v2 — LiteLLM-backed streaming router.
+Chat — LiteLLM-backed streaming router.
 
 Exposes:
-  POST /api/v2/chats/{session_id}/messages/stream
+  POST /api/hunts/{session_id}/messages/stream
 
-Wire format is identical to the v1 SSE endpoint so the frontend can switch
-between /api/chats/.../stream and /api/v2/chats/.../stream with a single
-constant change.
-
-SSE event types (same as v1):
+SSE event types:
   {"type": "delta",            "content": "..."}
   {"type": "replace",          "content": "...", "thinking"?: "..."}
   {"type": "tool_start",       "name": "...", "args": "..."}
@@ -81,7 +77,7 @@ def _attach_meta(tool_result: str, runtime_ms: int, exit_code: int | None = None
 # Streaming endpoint
 # ---------------------------------------------------------------------------
 
-@router.post("/api/v2/chats/{session_id}/messages/stream")
+@router.post("/api/hunts/{session_id}/messages/stream")
 async def stream_session_message_v2(
     session_id: str,
     body: ChatSendRequest,
@@ -89,8 +85,7 @@ async def stream_session_message_v2(
 ):
     """Stream a chat response as Server-Sent Events using LiteLLM.
 
-    Identical wire format to POST /api/chats/{session_id}/messages/stream
-    so the frontend can switch endpoints without any other changes.
+    Streams a chat response as Server-Sent Events using LiteLLM.
     """
     try:
         project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(
