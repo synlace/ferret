@@ -74,12 +74,12 @@ export function HuntsList({
           onChange={e => onFilterChange(e.target.value)}
           placeholder="filter hunts..."
           tabIndex={2}
-          className="bg-transparent text-[10px] text-neutral-500 placeholder:text-neutral-700 outline-none flex-1 min-w-0"
+          className="bg-transparent text-xs text-neutral-500 placeholder:text-neutral-700 outline-none flex-1 min-w-0"
         />
         <select
           value={wsSort}
           onChange={e => onSortChange(e.target.value as "newest" | "oldest" | "az" | "za")}
-          className="bg-neutral-900 border border-neutral-800 text-[9px] text-neutral-500 font-sans outline-none cursor-pointer px-1 py-0.5 rounded-sm hover:border-neutral-700 transition-colors flex-shrink-0"
+          className="bg-neutral-900 border border-neutral-800 text-[10px] text-neutral-500 font-sans outline-none cursor-pointer px-1 py-0.5 rounded-sm hover:border-neutral-700 transition-colors flex-shrink-0"
         >
           <option value="newest">newest</option>
           <option value="oldest">oldest</option>
@@ -91,7 +91,7 @@ export function HuntsList({
       {/* Session list */}
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="text-[10px] text-neutral-700 px-3 py-4 text-center leading-relaxed">
+          <p className="text-xs text-neutral-700 px-3 py-4 text-center leading-relaxed">
             {sessions.length === 0 ? <>No hunts yet.<br />Click + to start one.</> : "No matches."}
           </p>
         ) : (
@@ -132,7 +132,7 @@ export function HuntsList({
                     <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse flex-shrink-0" title="Hunt running" />
                   )}
                   <span
-                    className={`flex-1 text-[10px] font-mono truncate min-w-0 ${
+                    className={`flex-1 text-xs font-mono truncate min-w-0 ${
                       isActive ? "text-brand-300" : "text-neutral-300"
                     }`}
                     title={session.name}
@@ -150,24 +150,24 @@ export function HuntsList({
 
                 {/* Row 2: timestamp + file count chips */}
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[9px] font-sans flex-shrink-0 ${isActive ? "text-neutral-600" : "text-neutral-700"}`}>
+                  <span className={`text-[10px] font-sans flex-shrink-0 ${isActive ? "text-neutral-600" : "text-neutral-700"}`}>
                     {relTime}
                   </span>
                   {counts && (counts.scripts + counts.tests + counts.notes) > 0 && (
                     <div className="flex items-center gap-1.5 ml-auto">
                       {counts.scripts > 0 && (
-                        <span className={`flex items-center gap-0.5 text-[9px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                          <Terminal className="w-2 h-2 flex-shrink-0" />{counts.scripts}
+                        <span className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
+                          <Terminal className="w-2.5 h-2.5 flex-shrink-0" />{counts.scripts}
                         </span>
                       )}
                       {counts.tests > 0 && (
-                        <span className={`flex items-center gap-0.5 text-[9px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                          <FileCode className="w-2 h-2 flex-shrink-0" />{counts.tests}
+                        <span className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
+                          <FileCode className="w-2.5 h-2.5 flex-shrink-0" />{counts.tests}
                         </span>
                       )}
                       {counts.notes > 0 && (
-                        <span className={`flex items-center gap-0.5 text-[9px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                          <FileText className="w-2 h-2 flex-shrink-0" />{counts.notes}
+                        <span className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
+                          <FileText className="w-2.5 h-2.5 flex-shrink-0" />{counts.notes}
                         </span>
                       )}
                     </div>
@@ -190,7 +190,7 @@ export function HuntsList({
                         <div
                           key={file.path}
                           onClick={e => { e.stopPropagation(); onSelectFile(file.path) }}
-                          className="group flex items-center gap-1 py-0.5 text-[9px] text-neutral-600 hover:text-neutral-400 cursor-pointer transition-colors"
+                          className="group flex items-center gap-1 py-0.5 text-[10px] text-neutral-600 hover:text-neutral-400 cursor-pointer transition-colors"
                         >
                           <Icon className={`w-2 h-2 flex-shrink-0 transition-colors ${iconClass}`} />
                           <span className="truncate font-mono">{file.path}</span>
@@ -198,7 +198,7 @@ export function HuntsList({
                       )
                     })}
                     {extraFileCount > 0 && (
-                      <span className="text-[9px] text-neutral-700 font-sans py-0.5">+{extraFileCount} more</span>
+                      <span className="text-[10px] text-neutral-700 font-sans py-0.5">+{extraFileCount} more</span>
                     )}
                   </div>
                 )}
@@ -212,7 +212,7 @@ export function HuntsList({
       <div className="border-t border-neutral-800/60 px-2.5 py-2 flex-shrink-0">
         <button
           onClick={onNewHunt}
-          className="w-full border border-dashed border-neutral-800 hover:border-brand-500/30 text-neutral-600 hover:text-brand-400 text-[10px] font-sans flex items-center gap-1.5 px-2 py-1.5 transition-colors"
+          className="w-full border border-dashed border-neutral-800 hover:border-brand-500/30 text-neutral-600 hover:text-brand-400 text-xs font-sans flex items-center gap-1.5 px-2 py-1.5 transition-colors"
         >
           <Plus className="w-2.5 h-2.5 flex-shrink-0" />
           New hunt

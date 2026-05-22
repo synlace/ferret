@@ -2,10 +2,9 @@
 
 import { apiFetch } from "@/lib/api-fetch"
 
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff } from "lucide-react"
 import { ModelPickerModal } from "../projects/ModelPickerModal"
 
 // ---------------------------------------------------------------------------
@@ -32,10 +31,10 @@ const PROVIDERS: Provider[] = [
     key: "openrouter",
     name: "OpenRouter",
     tag: "200+ models",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/openrouter.png",
-    defaultModel: "google/gemini-3-flash-preview",
+    icon: "/providers/openrouter.png",
+    defaultModel: "google/gemini-3.5-flash",
     models: [
-      { id: "google/gemini-3-flash-preview",    label: "Gemini 3 Flash",   note: "Recommended" },
+      { id: "google/gemini-3.5-flash",          label: "Gemini 3.5 Flash", note: "Recommended" },
       { id: "google/gemini-2.5-flash-preview",  label: "Gemini 2.5 Flash" },
       { id: "google/gemini-2.5-pro-preview",    label: "Gemini 2.5 Pro" },
       { id: "anthropic/claude-sonnet-4-5",      label: "Claude Sonnet 4.5" },
@@ -47,7 +46,7 @@ const PROVIDERS: Provider[] = [
     key: "openai",
     name: "OpenAI",
     tag: "Direct API",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/openai.png",
+    icon: "/providers/openai.png",
     defaultModel: "gpt-4o",
     models: [
       { id: "gpt-4o",      label: "GPT-4o",      note: "Recommended" },
@@ -60,7 +59,7 @@ const PROVIDERS: Provider[] = [
     key: "anthropic",
     name: "Anthropic",
     tag: "Direct API",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/claude-color.png",
+    icon: "/providers/claude-color.png",
     defaultModel: "claude-sonnet-4-5",
     models: [
       { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", note: "Recommended" },
@@ -72,7 +71,7 @@ const PROVIDERS: Provider[] = [
     key: "gemini",
     name: "Gemini",
     tag: "Google AI",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/gemini-color.png",
+    icon: "/providers/gemini-color.png",
     defaultModel: "gemini-2.5-flash-preview-05-20",
     models: [
       { id: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash", note: "Recommended" },
@@ -83,7 +82,7 @@ const PROVIDERS: Provider[] = [
     key: "deepseek",
     name: "DeepSeek",
     tag: "Cost-effective",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/deepseek-color.png",
+    icon: "/providers/deepseek-color.png",
     defaultModel: "deepseek-reasoner",
     models: [
       { id: "deepseek-reasoner", label: "DeepSeek R1",  note: "Recommended" },
@@ -94,7 +93,7 @@ const PROVIDERS: Provider[] = [
     key: "mistral",
     name: "Mistral",
     tag: "European AI",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/mistral-color.png",
+    icon: "/providers/mistral-color.png",
     defaultModel: "mistral-large-latest",
     models: [
       { id: "mistral-large-latest", label: "Mistral Large", note: "Recommended" },
@@ -106,7 +105,7 @@ const PROVIDERS: Provider[] = [
     key: "ollama",
     name: "Ollama",
     tag: "host-gateway:11434",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/ollama.png",
+    icon: "/providers/ollama.png",
     local: true,
     // host-gateway resolves to the Docker host IP inside containers (via extra_hosts).
     // Using localhost here would point at the container itself, not the host machine.
@@ -123,7 +122,7 @@ const PROVIDERS: Provider[] = [
     key: "lmstudio",
     name: "LM Studio",
     tag: "host-gateway:1234",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/lmstudio.png",
+    icon: "/providers/lmstudio.png",
     local: true,
     // host-gateway resolves to the Docker host IP inside containers (via extra_hosts).
     // Using localhost here would point at the container itself, not the host machine.
@@ -136,6 +135,7 @@ const PROVIDERS: Provider[] = [
 ]
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const SETUP_PW_KEY = "ferret:setup:pw"
 
 // ---------------------------------------------------------------------------
 // Component
@@ -144,13 +144,16 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 export default function SetupPage() {
   const router = useRouter()
 
-  // Step 0 = password, 1 = provider, 2 = configure, 3 = model, 4 = done
-  const [step, setStep]               = useState<0 | 1 | 2 | 3 | 4>(0)
+  // Step 1 = provider, 2 = configure, 3 = model, 4 = done
+  // (Step 0 / password lives at /setup/password)
+  const [step, setStep]               = useState<1 | 2 | 3 | 4>(1)
   const [password, setPassword]       = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPw, setShowPw]           = useState(false)
-  const [showConfirmPw, setShowConfirmPw] = useState(false)
-  const [pwError, setPwError]         = useState("")
+  // Stays false until the sessionStorage check completes — prevents a flash
+  // redirect on the initial SSR/hydration render before useEffect runs.
+  const [ready, setReady]             = useState(false)
+  // Guard against React StrictMode double-invocation: once we've read the key
+  // we must not read it again (it will have been cleared on the first run).
+  const didReadRef = useRef(false)
   const [provider, setProvider]       = useState<Provider>(PROVIDERS[0])
   const [apiKey, setApiKey]           = useState("")
   const [provisioningKey, setProvisioningKey] = useState("")
@@ -166,21 +169,25 @@ export default function SetupPage() {
   const [saveError, setSaveError]     = useState("")
   const [showModelPicker, setShowModelPicker] = useState(false)
 
-  const passwordRef = useRef<HTMLInputElement>(null)
-  useEffect(() => { passwordRef.current?.focus() }, [])
+  // Read password from sessionStorage (written by /setup/password).
+  // If missing, redirect back — user must set a password first.
+  // Only runs client-side after hydration; render nothing until ready.
+  // didReadRef guards against React StrictMode double-invocation in dev:
+  // the first run reads+clears the key; without the guard the second run
+  // would find it empty and incorrectly redirect back to /setup/password.
+  useEffect(() => {
+    if (didReadRef.current) return
+    didReadRef.current = true
 
-  function advanceFromPassword() {
-    setPwError("")
-    if (password.length < 8) {
-      setPwError("Password must be at least 8 characters.")
+    const pw = sessionStorage.getItem(SETUP_PW_KEY)
+    if (!pw) {
+      router.replace("/setup/password")
       return
     }
-    if (password !== confirmPassword) {
-      setPwError("Passwords do not match.")
-      return
-    }
-    setStep(1)
-  }
+    setPassword(pw)
+    sessionStorage.removeItem(SETUP_PW_KEY)
+    setReady(true)
+  }, [router])
 
   // -------------------------------------------------------------------------
   // Helpers
@@ -216,6 +223,9 @@ export default function SetupPage() {
     const d = await r.json()
     return (d.models ?? []) as { id: string; name: string }[]
   }, [provider, apiKey, baseUrl])
+
+  // Early return AFTER all hooks — Rules of Hooks requires hooks before any return
+  if (!ready) return null
 
   async function testConnection() {
     setTesting(true)
@@ -276,6 +286,8 @@ export default function SetupPage() {
 
   const cloudProviders = PROVIDERS.filter(p => !p.local)
   const localProviders = PROVIDERS.filter(p => p.local)
+  // Step indicator: Password (done), Provider, Configure, Model, Done
+  // We display all 5 steps; step 0 (Password) is always shown as done here.
   const steps = ["Password", "Provider", "Configure", "Model", "Done"]
 
   // -------------------------------------------------------------------------
@@ -303,8 +315,9 @@ export default function SetupPage() {
         {/* Step indicator — always at the same Y position */}
         <div className="mb-6 flex items-center">
           {steps.map((label, i) => {
+            // On this page step indices are 1-based (step 0 = password page)
             const active = step === i
-            const done   = step > i
+            const done   = i === 0 || step > i
             return (
               <div key={label} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center gap-1">
@@ -320,7 +333,7 @@ export default function SetupPage() {
                   </span>
                 </div>
                 {i < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-2 mb-4 ${step > i ? "bg-brand-500" : "bg-neutral-700"}`} />
+                  <div className={`flex-1 h-px mx-2 mb-4 ${(i === 0 || step > i) ? "bg-brand-500" : "bg-neutral-700"}`} />
                 )}
               </div>
             )
@@ -333,88 +346,18 @@ export default function SetupPage() {
           {/* Fixed-height card header — 2 lines reserved so content never shifts */}
           <div className="mb-5 h-[52px] flex flex-col justify-center">
             <h2 className="text-base font-semibold text-white leading-tight">
-              {step === 0 && "Set a Password"}
               {step === 1 && "Choose an AI Provider"}
               {step === 2 && `Configure ${provider.name}`}
               {step === 3 && "Choose a Default Model"}
               {step === 4 && "Setup complete"}
             </h2>
             <p className="mt-0.5 text-xs text-neutral-500 leading-tight">
-              {step === 0 && "Protect your Ferret instance with a password. Minimum 8 characters."}
               {step === 1 && "Select how Ferret calls the AI for chat, annotations, and findings."}
               {step === 2 && (provider.local ? "No API key required — Ferret connects directly to your local server." : "Enter your API key to authenticate with the provider.")}
               {step === 3 && "Used for all AI features. You can change it per-project later."}
               {step === 4 && "\u00a0"}
             </p>
           </div>
-
-          {/* ----------------------------------------------------------------
-              Step 0 — Set password
-          ---------------------------------------------------------------- */}
-          {step === 0 && (
-            <div className="space-y-4">
-              {/* Password */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-neutral-300">Password</label>
-                <div className="relative">
-                  <input
-                    ref={passwordRef}
-                    type={showPw ? "text" : "password"}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && advanceFromPassword()}
-                    placeholder="Min. 8 characters"
-                    autoComplete="new-password"
-                    className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
-                               text-neutral-100 text-sm placeholder-neutral-600
-                               focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
-                  />
-                  <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300">
-                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm password */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-neutral-300">Confirm password</label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPw ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && advanceFromPassword()}
-                    placeholder="Re-enter password"
-                    autoComplete="new-password"
-                    className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
-                               text-neutral-100 text-sm placeholder-neutral-600
-                               focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
-                  />
-                  <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300">
-                    {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {pwError && (
-                <p className="text-red-400 text-xs bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
-                  {pwError}
-                </p>
-              )}
-
-              <div className="flex justify-end pt-1">
-                <button
-                  onClick={advanceFromPassword}
-                  disabled={!password || !confirmPassword}
-                  className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
-                >
-                  Continue →
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* ----------------------------------------------------------------
               Step 1 — Choose provider
@@ -430,14 +373,14 @@ export default function SetupPage() {
                       onClick={() => selectProvider(p)}
                       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all w-full
                         ${provider.key === p.key
-                          ? "border-brand-500 bg-brand-500/10 text-neutral-900"
+                          ? "border-brand-500 bg-brand-500/10 text-white"
                           : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
                         }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={p.icon} alt={p.name} width={28} height={28} className="rounded flex-shrink-0" />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium leading-tight">{p.name}</span>
+                        <span className={`block text-sm font-medium leading-tight ${provider.key === p.key ? "text-white" : "text-neutral-200"}`}>{p.name}</span>
                         <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">{p.tag}</span>
                       </span>
                       {provider.key === p.key && (
@@ -457,14 +400,14 @@ export default function SetupPage() {
                       onClick={() => selectProvider(p)}
                       className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all w-full
                         ${provider.key === p.key
-                          ? "border-brand-500 bg-brand-500/10 text-neutral-900"
+                          ? "border-brand-500 bg-brand-500/10 text-white"
                           : "border-neutral-700 bg-neutral-800/50 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
                         }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={p.icon} alt={p.name} width={28} height={28} className="rounded flex-shrink-0" />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-medium leading-tight">{p.name}</span>
+                        <span className={`block text-sm font-medium leading-tight ${provider.key === p.key ? "text-white" : "text-neutral-200"}`}>{p.name}</span>
                         <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">{p.tag}</span>
                       </span>
                       {provider.key === p.key && (
@@ -477,16 +420,16 @@ export default function SetupPage() {
 
               <div className="flex justify-between pt-1">
                 <button
-                  onClick={() => setStep(0)}
+                  onClick={() => router.push("/setup/password")}
                   className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  ← Back
+                  Back
                 </button>
                 <button
                   onClick={() => setStep(2)}
                   className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 transition-colors"
                 >
-                  Continue →
+                  Continue
                 </button>
               </div>
             </div>
@@ -556,6 +499,11 @@ export default function SetupPage() {
                     onChange={e => setApiKey(e.target.value)}
                     placeholder="sk-..."
                     autoComplete="off"
+                    data-bwignore="true"
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
+                    data-keeper-ignore="true"
                     className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                   />
                   <p className="text-xs text-neutral-500">
@@ -584,6 +532,11 @@ export default function SetupPage() {
                     onChange={e => setProvisioningKey(e.target.value)}
                     placeholder="sk-or-v1-... (master account key)"
                     autoComplete="off"
+                    data-bwignore="true"
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
+                    data-keeper-ignore="true"
                     className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                   />
                   <p className="text-xs text-neutral-500">
@@ -631,14 +584,14 @@ export default function SetupPage() {
                   onClick={() => setStep(1)}
                   className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  ← Back
+                  Back
                 </button>
                 <button
                   onClick={() => setStep(3)}
                   disabled={!provider.local && !testResult?.ok}
                   className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
-                  Continue →
+                  Continue
                 </button>
               </div>
             </div>
@@ -703,14 +656,14 @@ export default function SetupPage() {
                   onClick={() => setStep(2)}
                   className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  ← Back
+                  Back
                 </button>
                 <button
                   onClick={saveSetup}
                   disabled={saving || !model}
                   className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
-                  {saving ? "Saving..." : "Finish setup →"}
+                  {saving ? "Saving..." : "Finish setup"}
                 </button>
               </div>
             </div>
@@ -748,12 +701,27 @@ export default function SetupPage() {
                 onClick={() => router.replace("/login")}
                 className="rounded-md bg-brand-500 px-6 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-brand-400 transition-colors"
               >
-                Sign in to Ferret →
+                Sign in to Ferret
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Footer — pinned to bottom of viewport */}
+      <footer className="fixed bottom-0 left-0 right-0 flex justify-center pb-4">
+        <p className="text-neutral-600 text-xs">
+          by{" "}
+          <a
+            href="https://synlace.ai/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-400 transition-colors"
+          >
+            Synlace
+          </a>
+        </p>
+      </footer>
     </div>
   )
 }

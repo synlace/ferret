@@ -32,8 +32,6 @@
   <a href="#security">Security</a>
   ·
   <a href="#contributing">Contributing</a>
-  ·
-  <a href="https://discord.gg/eF4KQNWKzk">Discord</a>
 </p>
 
 ---

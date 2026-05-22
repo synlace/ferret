@@ -704,32 +704,32 @@ export default function SnarePage() {
                     }`}
                   >
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className={`text-[9px] font-bold font-mono flex-shrink-0 ${
+                      <span className={`text-[10px] font-bold font-mono flex-shrink-0 ${
                         isSelected ? "text-brand-400" : methodColor(req.method)
                       }`}>
                         {req.method}
                       </span>
-                      <span className={`flex-1 text-[10px] font-mono truncate min-w-0 ${
+                      <span className={`flex-1 text-xs font-mono truncate min-w-0 ${
                         isSelected ? "text-brand-300" : "text-neutral-300"
                       }`} title={req.host}>
                         {req.host}
                       </span>
                       {/* Phase badge */}
                       {phase === "request" ? (
-                        <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-brand-900/40 text-brand-400 border border-brand-800/60">
+                        <span className="flex-shrink-0 text-[9px] font-bold font-mono px-1 py-0.5 rounded bg-brand-900/40 text-brand-400 border border-brand-800/60">
                           REQ
                         </span>
                       ) : isWaiting ? (
-                        <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-neutral-800 text-neutral-500 border border-neutral-700 animate-pulse">
+                        <span className="flex-shrink-0 text-[9px] font-bold font-mono px-1 py-0.5 rounded bg-neutral-800 text-neutral-500 border border-neutral-700 animate-pulse">
                           ...
                         </span>
                       ) : (
-                        <span className="flex-shrink-0 text-[8px] font-bold font-mono px-1 py-0.5 rounded bg-blue-900/40 text-blue-400 border border-blue-800/60">
+                        <span className="flex-shrink-0 text-[9px] font-bold font-mono px-1 py-0.5 rounded bg-blue-900/40 text-blue-400 border border-blue-800/60">
                           RESP
                         </span>
                       )}
                     </div>
-                    <div className={`text-[9px] font-mono truncate ${
+                    <div className={`text-[10px] font-mono truncate ${
                       isSelected ? "text-neutral-500" : "text-neutral-600"
                     }`} title={req.path}>
                       {req.path || "/"}

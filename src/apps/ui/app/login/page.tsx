@@ -141,7 +141,7 @@ export default function LoginPage() {
   // Render
   // -------------------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-start pt-[15vh] p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8 gap-3">
@@ -155,7 +155,7 @@ export default function LoginPage() {
           />
           <div className="text-center">
             <h1 className="text-brand-500 font-bold text-xl tracking-wider">Ferret</h1>
-            <p className="text-neutral-500 text-xs mt-0.5">Forensic Analysis &amp; Request Tracker</p>
+            <p className="text-neutral-500 text-xs mt-0.5">A modern HTTP proxy for security testers</p>
           </div>
         </div>
 
@@ -181,6 +181,7 @@ export default function LoginPage() {
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Enter your password"
                     autoComplete="current-password"
+                    autoFocus
                     disabled={loading}
                     className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 pr-10
                                text-neutral-100 text-sm placeholder-neutral-600
@@ -288,6 +289,21 @@ export default function LoginPage() {
           </div>
         )}
       </div>
+
+      {/* Footer — pinned to bottom of viewport */}
+      <footer className="fixed bottom-0 left-0 right-0 flex justify-center pb-4">
+        <p className="text-neutral-600 text-xs">
+          by{" "}
+          <a
+            href="https://synlace.ai/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-400 transition-colors"
+          >
+            Synlace
+          </a>
+        </p>
+      </footer>
     </div>
   )
 }
