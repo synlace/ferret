@@ -80,17 +80,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   // First-run check: redirect to /setup if the wizard has not been completed.
-  // Skipped on /, /setup, and /login — the root page handles its own check,
-  // and /setup + /login must never be redirected away from.
+  // Skipped on /, /setup/*, and /login — the root page handles its own check,
+  // and /setup/* + /login must never be redirected away from.
   useEffect(() => {
-    if (pathname === "/" || pathname === "/setup" || pathname === "/login") return
+    if (pathname === "/" || pathname.startsWith("/setup") || pathname === "/login") return
     const check = async () => {
       try {
         const res = await apiFetch(`${API_BASE}/api/setup`)
         if (!res.ok) return  // API not ready yet — don't block the UI
         const data = await res.json()
         if (!data.setup_complete) {
-          router.replace("/setup")
+          router.replace("/setup/password")
         }
       } catch {
         // Backend unreachable on first load — don't block the UI
@@ -101,9 +101,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname])
 
   // Auth check: redirect to /login if the session is invalid or expired.
-  // Skipped on /, /setup, and /login to avoid redirect loops.
+  // Skipped on /, /setup/*, and /login to avoid redirect loops.
   useEffect(() => {
-    if (pathname === "/" || pathname === "/setup" || pathname === "/login") return
+    if (pathname === "/" || pathname.startsWith("/setup") || pathname === "/login") return
     const checkAuth = async () => {
       try {
         const res = await apiFetch(`${API_BASE}/api/auth/me`, {})
@@ -121,7 +121,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Proxy status polling — must be declared before any early return to satisfy
   // the Rules of Hooks (hooks must always be called in the same order).
   useEffect(() => {
-    if (pathname === "/" || pathname === "/setup" || pathname === "/login") return
+    if (pathname === "/" || pathname.startsWith("/setup") || pathname === "/login") return
     const fetchStatus = async () => {
       try {
         const res = await apiFetch(`${API_BASE}/api/proxy/status`)
@@ -176,11 +176,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     })
   }
 
-  // On /, /setup, and /login render children directly (no sidebar).
+  // On /, /setup/*, and /login render children directly (no sidebar).
   // / renders null while its own async redirect check runs, so we must not
   // wrap it in the sidebar shell or the user will see a flash of the sidebar.
   // This early return must come AFTER all hooks/callbacks to satisfy the Rules of Hooks.
-  if (pathname === "/" || pathname === "/setup" || pathname === "/login") {
+  if (pathname === "/" || pathname.startsWith("/setup") || pathname === "/login") {
     return <>{children}</>
   }
 
