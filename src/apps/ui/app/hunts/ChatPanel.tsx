@@ -20,12 +20,31 @@ import { apiFetch } from "@/lib/api-fetch"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 // ── ThinkingBlock — collapsible chain-of-thought reasoning block ──
-function ThinkingBlock({ content }: { content: string }) {
-  const [collapsed, setCollapsed] = useState(true)
+const THINKING_STORAGE_PREFIX = "ferret_thinking_collapsed:"
+
+function ThinkingBlock({ content, persistKey }: { content: string; persistKey?: string }) {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (!persistKey) return true
+    try {
+      const stored = localStorage.getItem(THINKING_STORAGE_PREFIX + persistKey)
+      return stored !== null ? stored === "1" : true
+    } catch { return true }
+  })
+
+  const toggle = () => {
+    setCollapsed(c => {
+      const next = !c
+      if (persistKey) {
+        try { localStorage.setItem(THINKING_STORAGE_PREFIX + persistKey, next ? "1" : "0") } catch { /* ignore */ }
+      }
+      return next
+    })
+  }
+
   return (
     <div className="border border-neutral-700 rounded bg-neutral-900/60 text-xs my-1">
       <button
-        onClick={() => setCollapsed(c => !c)}
+        onClick={toggle}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-800/40 transition-colors"
       >
         <MessageCircle className="w-3 h-3 text-neutral-400 flex-shrink-0" />
@@ -90,11 +109,17 @@ const MessageList = memo(function MessageList({
         }
         // Thinking-only assistant message (content was fully extracted into thinking)
         if (msg.role === "assistant" && !(msg.content ?? "").trim() && msg.thinking) {
-          return <ThinkingBlock key={i} content={msg.thinking} />
+          const thinkKey = activeSessionId ? `${activeSessionId}:${i}:thinking` : undefined
+          return <ThinkingBlock key={i} content={msg.thinking} persistKey={thinkKey} />
         }
         return (
           <React.Fragment key={i}>
-            {msg.role === "assistant" && msg.thinking && <ThinkingBlock content={msg.thinking} />}
+            {msg.role === "assistant" && msg.thinking && (
+              <ThinkingBlock
+                content={msg.thinking}
+                persistKey={activeSessionId ? `${activeSessionId}:${i}:thinking` : undefined}
+              />
+            )}
             <div className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
               <div className={`max-w-[80%] px-3 py-2 text-sm border ${msg.role === "user" ? "bg-brand-500/15 text-neutral-100 border-brand-500/20" : "bg-neutral-900 text-neutral-200 border-neutral-800"}`}>
                 {msg.role === "assistant" && <div className="text-[10px] text-brand-400 font-semibold mb-1 uppercase tracking-wider">AI</div>}
@@ -115,6 +140,23 @@ const MessageList = memo(function MessageList({
 interface ToolInfo {
   name: string
   label: string
+  group?: string
+}
+
+// Canonical group order for the AI Tools panel
+const TOOL_GROUP_ORDER = ["Proxy History", "Findings", "Testing", "Execution", "Sources"]
+
+const TOOL_GROUP_STORAGE_KEY = "ferret_tool_group_collapsed"
+
+function loadToolGroupCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(TOOL_GROUP_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+function saveToolGroupCollapsed(state: Record<string, boolean>) {
+  try { localStorage.setItem(TOOL_GROUP_STORAGE_KEY, JSON.stringify(state)) } catch { /* ignore */ }
 }
 
 interface ChatPanelProps {
@@ -222,6 +264,16 @@ export function ChatPanel({
       .then((tools: ToolInfo[]) => setAvailableTools(tools))
       .catch(() => {/* silently ignore — non-critical */})
   }, [])
+
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadToolGroupCollapsed())
+
+  const toggleToolGroup = (group: string) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [group]: !prev[group] }
+      saveToolGroupCollapsed(next)
+      return next
+    })
+  }
 
   return (
     <>
@@ -478,27 +530,57 @@ export function ChatPanel({
                       </div>
                     )}
                   </div>
-                  <div className="space-y-0.5">
-                    {availableTools.length === 0 ? (
-                      <p className="text-[10px] text-neutral-600 italic">Loading…</p>
-                    ) : availableTools.map(({ name, label }) => {
-                      const checked = enabledTools === null || enabledTools.includes(name)
+                  {availableTools.length === 0 ? (
+                    <p className="text-[10px] text-neutral-600 italic">Loading…</p>
+                  ) : (() => {
+                    // Group tools by their `group` field, preserving canonical order
+                    const byGroup = availableTools.reduce<Record<string, ToolInfo[]>>((acc, t) => {
+                      const g = t.group ?? "Other"
+                      ;(acc[g] ??= []).push(t)
+                      return acc
+                    }, {})
+                    const orderedGroups = [
+                      ...TOOL_GROUP_ORDER.filter(g => g in byGroup),
+                      ...Object.keys(byGroup).filter(g => !TOOL_GROUP_ORDER.includes(g)),
+                    ]
+                    return orderedGroups.map(group => {
+                      const isCollapsed = !!collapsedGroups[group]
                       return (
-                        <div key={name} className="flex items-center gap-2 py-0.5">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={e => onToolToggle(name, e.target.checked)}
-                            id={`tool-${name}`}
-                            className="w-3 h-3 accent-brand-500 flex-shrink-0 cursor-pointer"
-                          />
-                          <label htmlFor={`tool-${name}`} className="text-[10px] text-neutral-300 flex-1 truncate cursor-pointer" title={name}>
-                            {label}
-                          </label>
+                        <div key={group} className="mb-1.5 last:mb-0">
+                          <button
+                            onClick={() => toggleToolGroup(group)}
+                            className="w-full flex items-center gap-1 py-0.5 text-left group/gh"
+                          >
+                            <ChevronRight
+                              className={`w-2.5 h-2.5 text-neutral-600 group-hover/gh:text-neutral-400 flex-shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                            />
+                            <span className="text-[9px] text-neutral-600 group-hover/gh:text-neutral-400 uppercase tracking-wider transition-colors">{group}</span>
+                          </button>
+                          {!isCollapsed && (
+                            <div className="space-y-0.5 pl-3.5">
+                              {byGroup[group].map(({ name, label }) => {
+                                const checked = enabledTools === null || enabledTools.includes(name)
+                                return (
+                                  <div key={name} className="flex items-center gap-2 py-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={e => onToolToggle(name, e.target.checked)}
+                                      id={`tool-${name}`}
+                                      className="w-3 h-3 accent-brand-500 flex-shrink-0 cursor-pointer"
+                                    />
+                                    <label htmlFor={`tool-${name}`} className="text-[10px] text-neutral-300 flex-1 truncate cursor-pointer" title={name}>
+                                      {label}
+                                    </label>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )
-                    })}
-                  </div>
+                    })
+                  })()}
                 </div>
               </>
             )}

@@ -121,6 +121,7 @@ ENV PATH="/root/go/bin:${PATH}"
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/tomnomnom/assetfinder@latest && \
     go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
     echo 'export PATH="/root/go/bin:$PATH"' > /etc/profile.d/go-path.sh
 
 # ── Layer 9: knock (DNS subdomain scanner) ────────────────────────────────────

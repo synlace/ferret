@@ -165,10 +165,14 @@ async def root():
 
 @app.get("/api/tools")
 async def list_tools():
-    """Return the name and human-readable label of every AI tool available in session chat."""
+    """Return the name, human-readable label, and group of every AI tool available in session chat."""
     from routers.chats_tools import SESSION_CHAT_TOOLS
     return [
-        {"name": t["function"]["name"], "label": t["function"].get("label", t["function"]["name"])}
+        {
+            "name": t["function"]["name"],
+            "label": t["function"].get("label", t["function"]["name"]),
+            "group": t["function"].get("group"),
+        }
         for t in SESSION_CHAT_TOOLS
     ]
 

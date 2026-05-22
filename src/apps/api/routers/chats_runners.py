@@ -1,5 +1,5 @@
 """
-Streaming subprocess helpers for run_script, run_ffuf, and run_katana.
+Streaming subprocess helpers for run_script, run_ffuf, run_katana, and run_nuclei.
 
 Each async generator yields tuples of (chunk: str, is_final: bool, final_result: str | None).
 While is_final is False, chunk is a raw output chunk to stream to the client.
@@ -359,4 +359,100 @@ async def stream_run_katana(fn_args: Dict[str, Any]):
         yield ("", True, final)
     except Exception as exc:
         msg = f"[FERRET] run_katana error: {exc}"
+        yield (msg, True, msg)
+
+
+async def stream_run_nuclei(fn_args: Dict[str, Any]):
+    """Async generator: stream nuclei vulnerability scanner output line-by-line, then yield final result."""
+    import asyncio as _asyncio
+    import shlex as _shlex
+    import json as _json
+    import time as _time
+
+    target = fn_args.get("target", "").strip()
+    if not target:
+        msg = "[FERRET] target is required."
+        yield (msg, True, msg); return
+
+    templates = fn_args.get("templates", "").strip()
+    severity = fn_args.get("severity", "").strip()
+    proxy = fn_args.get("proxy", "").strip()
+    timeout_sec = min(int(fn_args.get("timeout") or 120), 300)
+    extra_args = fn_args.get("extra_args", "").strip()
+
+    # Build nuclei command
+    # -u: target, -silent: suppress banner, -no-color: clean output for parsing
+    cmd: List[str] = [
+        "nuclei",
+        "-u", target,
+        "-silent",
+        "-no-color",
+    ]
+    if templates:
+        # Support comma-separated tags or paths
+        for tmpl in templates.split(","):
+            tmpl = tmpl.strip()
+            if tmpl:
+                cmd += ["-t", tmpl]
+    if severity:
+        cmd += ["-severity", severity]
+    if proxy:
+        cmd += ["-proxy", proxy]
+    if extra_args:
+        try:
+            cmd += _shlex.split(extra_args)
+        except ValueError:
+            pass
+
+    try:
+        exec_proc = await _asyncio.create_subprocess_exec(
+            "docker", "exec", deps.SANDBOX_CONTAINER, *cmd,
+            stdout=_asyncio.subprocess.PIPE,
+            stderr=_asyncio.subprocess.STDOUT,
+        )
+        _t0 = _time.monotonic()
+        all_chunks: List[str] = []
+        total_bytes = 0
+        MAX_BYTES = 16384
+        timed_out = False
+        try:
+            async def _read_lines():
+                nonlocal total_bytes, timed_out
+                assert exec_proc.stdout is not None
+                while True:
+                    try:
+                        line = await _asyncio.wait_for(exec_proc.stdout.readline(), timeout=timeout_sec)
+                    except _asyncio.TimeoutError:
+                        timed_out = True
+                        exec_proc.kill()
+                        break
+                    if not line:
+                        break
+                    chunk = line.decode("utf-8", errors="replace")
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_BYTES:
+                        all_chunks.append("\r\n... [truncated]\r\n")
+                        exec_proc.kill()
+                        break
+                    all_chunks.append(chunk)
+                    yield chunk
+            async for chunk in _read_lines():
+                yield (chunk, False, None)
+        except Exception:
+            pass
+        await exec_proc.wait()
+        rc = exec_proc.returncode
+        _runtime_ms = round((_time.monotonic() - _t0) * 1000)
+        _ts = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%d %H:%M")
+        if timed_out:
+            timeout_msg = f"\r\n[FERRET] nuclei timed out after {timeout_sec}s.\r\n"
+            yield (timeout_msg, False, None)
+            all_chunks.append(timeout_msg)
+        full_output = "".join(all_chunks)
+        prefix = f"[exit {rc}]\r\n" if rc not in (0, None) else ""
+        text = prefix + full_output if full_output.strip() else f"[exit {rc}] (no output — no findings)"
+        final = text + "\n__META__:" + _json.dumps({"exit_code": rc, "runtime_ms": _runtime_ms, "timestamp": _ts})
+        yield ("", True, final)
+    except Exception as exc:
+        msg = f"[FERRET] run_nuclei error: {exc}"
         yield (msg, True, msg)

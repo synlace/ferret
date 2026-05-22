@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 import httpx
 
 import deps
-from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana
+from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana, stream_run_nuclei
 from proxy import _assert_safe_url
 
 _log = logging.getLogger(__name__)
@@ -308,6 +308,17 @@ async def execute_tool_call(
         chunks: List[str] = []
         final: str = ""
         async for _chunk, _is_final, _result in stream_run_ffuf(fn_args):
+            if _is_final:
+                final = _result or ""
+            else:
+                chunks.append(_chunk)
+        return final if final else "".join(chunks)
+
+    elif fn_name == "run_nuclei":
+        # Delegate to the streaming generator; collect all output for non-streaming callers
+        chunks: List[str] = []
+        final: str = ""
+        async for _chunk, _is_final, _result in stream_run_nuclei(fn_args):
             if _is_final:
                 final = _result or ""
             else:
