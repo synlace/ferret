@@ -8,7 +8,7 @@ import { NewChatModal } from "../chat/NewChatModal"
 import { ModelPickerModal } from "../projects/ModelPickerModal"
 import { ScopePickerModal } from "../chat/ScopePickerModal"
 import { NewFileModal } from "./NewFileModal"
-import { HuntsList } from "./HuntsList"
+import { HuntsList, type SessionFileCounts } from "./HuntsList"
 import { ChatPanel } from "./ChatPanel"
 import { annotateToolArgs, formatToolArgs, extractRationale } from "./helpers"
 import { nowTs } from "./tool-views"
@@ -90,7 +90,7 @@ function HuntsPageInner() {
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([])
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
   const [showNewFileModal, setShowNewFileModal] = useState(false)
-  const [sessionFileCounts, setSessionFileCounts] = useState<Record<string, { scripts: number; tests: number; notes: number }>>({})
+  const [sessionFileCounts, setSessionFileCounts] = useState<Record<string, SessionFileCounts>>({})
 
   const [sessionPanelOpen, setSessionPanelOpen] = useState(true)
   const [leftWidth, setLeftWidth] = useState(216)
@@ -187,9 +187,13 @@ function HuntsPageInner() {
       setSessionFileCounts(prev => ({
         ...prev,
         [sessionId]: {
-          scripts: files.filter(f => f.subdir === "scripts").length,
-          tests:   files.filter(f => f.subdir === "tests").length,
-          notes:   files.filter(f => f.subdir === "notes").length,
+          workspace:   files.filter(f => f.subdir === "workspace").length,
+          scripts:     files.filter(f => f.subdir === "scripts").length,
+          tests:       files.filter(f => f.subdir === "tests").length,
+          notes:       files.filter(f => f.subdir === "notes").length,
+          credentials: files.filter(f => f.subdir === "credentials").length,
+          source:      files.filter(f => f.subdir === "source").length,
+          docs:        files.filter(f => f.subdir === "docs").length,
         },
       }))
     } catch { setWorkspaceFiles([]) }
@@ -204,14 +208,31 @@ function HuntsPageInner() {
         setSessionFileCounts(prev => ({
           ...prev,
           [s.id]: {
-            scripts: files.filter(f => f.subdir === "scripts").length,
-            tests:   files.filter(f => f.subdir === "tests").length,
-            notes:   files.filter(f => f.subdir === "notes").length,
+            workspace:   files.filter(f => f.subdir === "workspace").length,
+            scripts:     files.filter(f => f.subdir === "scripts").length,
+            tests:       files.filter(f => f.subdir === "tests").length,
+            notes:       files.filter(f => f.subdir === "notes").length,
+            credentials: files.filter(f => f.subdir === "credentials").length,
+            source:      files.filter(f => f.subdir === "source").length,
+            docs:        files.filter(f => f.subdir === "docs").length,
           },
         }))
       } catch { /* ignore */ }
     }))
   }, [])
+
+  const moveFile = useCallback(async (srcPath: string, dstSubdir: string) => {
+    if (!activeSessionId) return
+    try {
+      const filename = srcPath.split("/").slice(1).join("/")
+      await apiFetch(`${API_BASE}/api/hunts/${activeSessionId}/files/${srcPath}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destination: `${dstSubdir}/${filename}` }),
+      })
+      await fetchWorkspaceFiles(activeSessionId)
+    } catch { /* ignore */ }
+  }, [activeSessionId, fetchWorkspaceFiles])
 
   const handleMessagesScroll = () => {
     if (!scrollContainerRef.current || isRestoringScroll.current) return
@@ -719,6 +740,7 @@ function HuntsPageInner() {
           } catch { /* ignore */ }
         }}
         onRegisterLiveWriter={handleRegisterLiveWriter}
+        onMoveFile={moveFile}
       />
 
       {/* ── Modals ── */}

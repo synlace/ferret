@@ -1,16 +1,26 @@
 "use client"
 
-import React from "react"
-import { Plus, Trash2, Terminal, FileCode, FileText } from "lucide-react"
+import React, { useState } from "react"
+import { Plus, Trash2, Terminal, FileCode, FileText, KeyRound, Code2, BookOpen, Layers, ChevronRight, ChevronDown } from "lucide-react"
 import type { WorkspaceSession } from "./types"
 import type { WorkspaceFile } from "./FileTree"
+
+export interface SessionFileCounts {
+  workspace: number
+  scripts: number
+  tests: number
+  notes: number
+  credentials: number
+  source: number
+  docs: number
+}
 
 interface HuntsListProps {
   sessions: WorkspaceSession[]
   activeSessionId: string | null
   selectedFilePath: string | null
   workspaceFiles: WorkspaceFile[]
-  sessionFileCounts: Record<string, { scripts: number; tests: number; notes: number }>
+  sessionFileCounts: Record<string, SessionFileCounts>
   wsFilter: string
   wsSort: "newest" | "oldest" | "az" | "za"
   leftWidth: number
@@ -20,6 +30,75 @@ interface HuntsListProps {
   onDeleteSession: (id: string, e: React.MouseEvent) => void
   onSelectFile: (path: string) => void
   onNewHunt: () => void
+}
+
+// Ordered display list — workspace first (scratch), then polished, then reference
+const SUBDIR_ORDER: (keyof SessionFileCounts)[] = [
+  "workspace", "scripts", "tests", "notes", "credentials", "source", "docs",
+]
+
+const SUBDIR_META: Record<keyof SessionFileCounts, {
+  icon: (active: boolean) => React.ReactNode
+  chipIcon: React.ReactNode
+  label: string
+  activeChip: string
+  inactiveChip: string
+}> = {
+  workspace:   {
+    icon: (a) => <Layers   className={`w-2 h-2 flex-shrink-0 ${a ? "text-orange-400" : "text-orange-700"}`} />,
+    chipIcon: <Layers   className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Workspace",
+    activeChip: "text-orange-500", inactiveChip: "text-orange-700",
+  },
+  scripts:     {
+    icon: (a) => <Terminal className={`w-2 h-2 flex-shrink-0 ${a ? "text-brand-400" : "text-brand-700"}`} />,
+    chipIcon: <Terminal className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Scripts",
+    activeChip: "text-neutral-500", inactiveChip: "text-neutral-600",
+  },
+  tests:       {
+    icon: (a) => <FileCode className={`w-2 h-2 flex-shrink-0 ${a ? "text-blue-400" : "text-blue-700"}`} />,
+    chipIcon: <FileCode className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Tests",
+    activeChip: "text-neutral-500", inactiveChip: "text-neutral-600",
+  },
+  notes:       {
+    icon: (a) => <FileText className={`w-2 h-2 flex-shrink-0 ${a ? "text-green-400" : "text-green-700"}`} />,
+    chipIcon: <FileText className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Notes",
+    activeChip: "text-neutral-500", inactiveChip: "text-neutral-600",
+  },
+  credentials: {
+    icon: (a) => <KeyRound className={`w-2 h-2 flex-shrink-0 ${a ? "text-red-400" : "text-red-700"}`} />,
+    chipIcon: <KeyRound className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Credentials",
+    activeChip: "text-red-500", inactiveChip: "text-red-700",
+  },
+  source:      {
+    icon: (a) => <Code2    className={`w-2 h-2 flex-shrink-0 ${a ? "text-purple-400" : "text-purple-700"}`} />,
+    chipIcon: <Code2    className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Source",
+    activeChip: "text-purple-500", inactiveChip: "text-purple-700",
+  },
+  docs:        {
+    icon: (a) => <BookOpen className={`w-2 h-2 flex-shrink-0 ${a ? "text-yellow-400" : "text-yellow-700"}`} />,
+    chipIcon: <BookOpen className="w-2.5 h-2.5 flex-shrink-0" />,
+    label: "Docs",
+    activeChip: "text-yellow-500", inactiveChip: "text-yellow-700",
+  },
+}
+
+/** Per-session, per-subdir expand state stored outside the session row so it
+ *  survives re-renders when the session list updates. */
+const expandedSubdirs: Record<string, Record<string, boolean>> = {}
+
+function getExpanded(sessionId: string, subdir: string): boolean {
+  return expandedSubdirs[sessionId]?.[subdir] ?? false
+}
+
+function setExpanded(sessionId: string, subdir: string, value: boolean) {
+  if (!expandedSubdirs[sessionId]) expandedSubdirs[sessionId] = {}
+  expandedSubdirs[sessionId][subdir] = value
 }
 
 export function HuntsList({
@@ -38,6 +117,9 @@ export function HuntsList({
   onSelectFile,
   onNewHunt,
 }: HuntsListProps) {
+  // Force re-render when a subdir is toggled
+  const [, forceRender] = useState(0)
+
   const filtered = sessions.filter(s =>
     s.name.toLowerCase().includes(wsFilter.toLowerCase())
   )
@@ -98,6 +180,9 @@ export function HuntsList({
           sorted.map(session => {
             const isActive = session.id === activeSessionId
             const counts = sessionFileCounts[session.id]
+            const totalFiles = counts
+              ? SUBDIR_ORDER.reduce((sum, k) => sum + counts[k], 0)
+              : 0
 
             const createdMs = new Date(session.created_at).getTime()
             const diffMin = Math.floor((Date.now() - createdMs) / 60000)
@@ -107,8 +192,14 @@ export function HuntsList({
               : diffMin < 2880 ? "yesterday"
               : new Date(session.created_at).toLocaleDateString()
 
-            const activeFiles = isActive ? workspaceFiles.slice(0, 4) : []
-            const extraFileCount = isActive ? Math.max(0, workspaceFiles.length - 4) : 0
+            // Group workspaceFiles by subdir for the active session
+            const filesBySubdir: Record<string, WorkspaceFile[]> = {}
+            if (isActive) {
+              for (const f of workspaceFiles) {
+                if (!filesBySubdir[f.subdir]) filesBySubdir[f.subdir] = []
+                filesBySubdir[f.subdir].push(f)
+              }
+            }
 
             return (
               <div
@@ -153,53 +244,74 @@ export function HuntsList({
                   <span className={`text-[10px] font-sans flex-shrink-0 ${isActive ? "text-neutral-600" : "text-neutral-700"}`}>
                     {relTime}
                   </span>
-                  {counts && (counts.scripts + counts.tests + counts.notes) > 0 && (
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      {counts.scripts > 0 && (
-                        <span className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                          <Terminal className="w-2.5 h-2.5 flex-shrink-0" />{counts.scripts}
-                        </span>
-                      )}
-                      {counts.tests > 0 && (
-                        <span className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                          <FileCode className="w-2.5 h-2.5 flex-shrink-0" />{counts.tests}
-                        </span>
-                      )}
-                      {counts.notes > 0 && (
-                        <span className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? "text-neutral-500" : "text-neutral-600"}`}>
-                          <FileText className="w-2.5 h-2.5 flex-shrink-0" />{counts.notes}
-                        </span>
-                      )}
+                  {counts && totalFiles > 0 && (
+                    <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
+                      {SUBDIR_ORDER.map(key => {
+                        const meta = SUBDIR_META[key]
+                        const count = counts[key]
+                        if (!count) return null
+                        return (
+                          <span
+                            key={key}
+                            className={`flex items-center gap-0.5 text-[10px] font-sans ${isActive ? meta.activeChip : meta.inactiveChip}`}
+                            title={`${count} ${meta.label.toLowerCase()}`}
+                          >
+                            {meta.chipIcon}{count}
+                          </span>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
 
-                {/* Row 3 (active only): inline flat file list */}
+                {/* Row 3 (active only): grouped, expandable/collapsable file list by subdir */}
                 {isActive && workspaceFiles.length > 0 && (
-                  <div className="flex flex-col gap-px pt-1 mt-0.5 border-t border-neutral-700/40">
-                    {activeFiles.map(file => {
-                      const isScript = file.subdir === "scripts"
-                      const isTest = file.subdir === "tests"
-                      const Icon = isScript ? Terminal : isTest ? FileCode : FileText
-                      const iconClass = isScript
-                        ? "text-blue-400/40 group-hover:text-blue-400"
-                        : isTest
-                        ? "text-green-400/40 group-hover:text-green-400"
-                        : "text-yellow-400/40 group-hover:text-yellow-400"
+                  <div className="flex flex-col pt-1 mt-0.5 border-t border-neutral-700/40">
+                    {SUBDIR_ORDER.map(subdir => {
+                      const files = filesBySubdir[subdir]
+                      if (!files || files.length === 0) return null
+                      const meta = SUBDIR_META[subdir]
+                      const isExpanded = getExpanded(session.id, subdir)
                       return (
-                        <div
-                          key={file.path}
-                          onClick={e => { e.stopPropagation(); onSelectFile(file.path) }}
-                          className="group flex items-center gap-1 py-0.5 text-[10px] text-neutral-600 hover:text-neutral-400 cursor-pointer transition-colors"
-                        >
-                          <Icon className={`w-2 h-2 flex-shrink-0 transition-colors ${iconClass}`} />
-                          <span className="truncate font-mono">{file.path}</span>
+                        <div key={subdir}>
+                          {/* Subdir header — click to expand/collapse */}
+                          <button
+                            onClick={e => {
+                              e.stopPropagation()
+                              setExpanded(session.id, subdir, !isExpanded)
+                              forceRender(n => n + 1)
+                            }}
+                            className="w-full flex items-center gap-1 py-0.5 text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+                          >
+                            {isExpanded
+                              ? <ChevronDown  className="w-3 h-3 flex-shrink-0" />
+                              : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+                            {meta.icon(true)}
+                            <span className="font-sans font-medium">{meta.label}</span>
+                            <span className="ml-auto text-neutral-600 text-[10px]">{files.length}</span>
+                          </button>
+                          {/* File list — shown when expanded */}
+                          {isExpanded && (
+                            <div className="flex flex-col gap-px pl-5">
+                              {files.map(file => (
+                                <div
+                                  key={file.path}
+                                  onClick={e => { e.stopPropagation(); onSelectFile(file.path) }}
+                                  className={`flex items-center gap-1 py-0.5 text-xs cursor-pointer transition-colors font-mono truncate ${
+                                    selectedFilePath === file.path
+                                      ? "text-brand-300"
+                                      : "text-neutral-500 hover:text-neutral-300"
+                                  }`}
+                                >
+                                  {meta.icon(selectedFilePath === file.path)}
+                                  <span className="truncate">{file.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
-                    {extraFileCount > 0 && (
-                      <span className="text-[10px] text-neutral-700 font-sans py-0.5">+{extraFileCount} more</span>
-                    )}
                   </div>
                 )}
               </div>

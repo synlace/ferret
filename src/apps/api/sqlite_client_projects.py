@@ -1023,90 +1023,100 @@ class ProjectsMixin:
         }
         return await self.create_plan(new_plan)
 
+    # ------------------------------------------------------------------
+    # Built-in plan helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_builtin_plans() -> list:
+        """Load built-in plan definitions from .md files in the plans/ directory.
+
+        Each file uses a simple YAML-style front-matter block delimited by ``---``
+        lines, followed by the prompt body.  No external YAML library is required —
+        only the four scalar keys (name, description, tool, max_tool_calls) are
+        parsed with a hand-rolled key: value reader.
+
+        Returns a list of dicts with keys: name, description, tool, prompt,
+        max_tool_calls.
+        """
+        import pathlib
+
+        plans_dir = pathlib.Path(__file__).parent / "plans"
+        plans: list = []
+        for md_file in sorted(plans_dir.glob("*.md")):
+            text = md_file.read_text(encoding="utf-8")
+            # Split on front-matter delimiters
+            parts = text.split("---", 2)
+            if len(parts) < 3:
+                # No valid front-matter — skip
+                continue
+            front_matter_raw = parts[1].strip()
+            prompt_body = parts[2].strip()
+            # Parse key: value lines (scalar values only)
+            meta: dict = {}
+            for line in front_matter_raw.splitlines():
+                if ":" in line:
+                    key, _, val = line.partition(":")
+                    meta[key.strip()] = val.strip()
+            if "name" not in meta:
+                continue
+            plans.append({
+                "name": meta["name"],
+                "description": meta.get("description", ""),
+                "tool": meta.get("tool", "hunt"),
+                "prompt": prompt_body,
+                "max_tool_calls": int(meta.get("max_tool_calls", "15")),
+            })
+        return plans
+
     async def _seed_builtin_plans(self) -> None:
-        """Insert built-in plans if they don't already exist (checked by name WHERE project_id IS NULL)."""
-        BUILTIN_PLANS = [
-            {
-                "name": "Quick Recon",
-                "description": "Crawl the target, check security headers, summarise findings.",
-                "tool": "hunt",
-                "prompt": (
-                    "Run a quick recon against {{target}}.\n"
-                    "1. Crawl with katana (depth 3, js_crawl true) to discover endpoints.\n"
-                    "2. Send a GET request to the root path and inspect the response headers for security misconfigurations (missing CSP, HSTS, X-Frame-Options, etc.).\n"
-                    "3. List all discovered endpoints.\n"
-                    "4. Write a concise summary to notes/recon.md covering: target, endpoints found, header issues, and any interesting observations."
-                ),
-                "max_tool_calls": 15,
-            },
-            {
-                "name": "Full Recon",
-                "description": "Deep crawl + ffuf directory fuzzing + JS endpoint extraction.",
-                "tool": "hunt",
-                "prompt": (
-                    "Run a full recon against {{target}}.\n"
-                    "1. Crawl with katana (depth 5, js_crawl true, headless false).\n"
-                    "2. Run ffuf on the root path with the raft-medium-directories wordlist to find hidden directories.\n"
-                    "3. Use run_script (python3) to extract any API endpoints from discovered JavaScript files.\n"
-                    "4. Check security headers on the root path.\n"
-                    "5. Write a detailed report to notes/recon.md covering all findings."
-                ),
-                "max_tool_calls": 30,
-            },
-            {
-                "name": "API Surface",
-                "description": "Enumerate REST endpoints, probe authentication behaviour.",
-                "tool": "hunt",
-                "prompt": (
-                    "Map the API surface of {{target}}.\n"
-                    "1. Crawl with katana focusing on API paths (/api/, /v1/, /v2/, /graphql, /rest/).\n"
-                    "2. Run ffuf with the api-endpoints wordlist against common API base paths.\n"
-                    "3. For each discovered endpoint, probe with GET and OPTIONS to determine auth requirements (200 vs 401 vs 403).\n"
-                    "4. Note any endpoints that return data without authentication.\n"
-                    "5. Write findings to notes/api-surface.md."
-                ),
-                "max_tool_calls": 25,
-            },
-            {
-                "name": "Subdomain Enum",
-                "description": "Discover subdomains via DNS fuzzing, probe each live host.",
-                "tool": "hunt",
-                "prompt": (
-                    "Enumerate subdomains for {{target}}.\n"
-                    "1. Extract the base domain from {{target}}.\n"
-                    "2. Run ffuf with the subdomains-top1million-5000 wordlist against the base domain using DNS mode.\n"
-                    "3. For each discovered subdomain, send a GET request to check if it is live.\n"
-                    "4. Note the status code, server header, and title of each live subdomain.\n"
-                    "5. Write results to notes/subdomains.md."
-                ),
-                "max_tool_calls": 20,
-            },
-        ]
+        """Upsert built-in plans from the plans/ directory.
+
+        Plans are loaded from .md files at startup.  Existing built-in rows are
+        updated (prompt, description, max_tool_calls) so that changes to the .md
+        files take effect on the next container restart without requiring a DB
+        migration.  The plan name and is_builtin flag are never changed.
+        """
         now = datetime.utcnow().isoformat()
-        for plan in BUILTIN_PLANS:
-            # Check if a built-in with this name already exists
+        for plan in self._load_builtin_plans():
             async with self._db.execute(
                 "SELECT id FROM plans WHERE name = ? AND project_id IS NULL",
                 (plan["name"],),
             ) as cur:
                 existing = await cur.fetchone()
             if existing:
-                continue
-            await self._db.execute(
-                """
-                INSERT INTO plans
-                    (id, project_id, name, description, tool, prompt, max_tool_calls, is_builtin, created_at)
-                VALUES
-                    (?, NULL, ?, ?, ?, ?, ?, 1, ?)
-                """,
-                (
-                    str(uuid.uuid4()),
-                    plan["name"],
-                    plan["description"],
-                    plan["tool"],
-                    plan["prompt"],
-                    plan["max_tool_calls"],
-                    now,
-                ),
-            )
+                # Update mutable fields so .md edits propagate on restart
+                await self._db.execute(
+                    """
+                    UPDATE plans
+                       SET description    = ?,
+                           prompt         = ?,
+                           max_tool_calls = ?
+                     WHERE id = ?
+                    """,
+                    (
+                        plan["description"],
+                        plan["prompt"],
+                        plan["max_tool_calls"],
+                        existing[0],
+                    ),
+                )
+            else:
+                await self._db.execute(
+                    """
+                    INSERT INTO plans
+                        (id, project_id, name, description, tool, prompt, max_tool_calls, is_builtin, created_at)
+                    VALUES
+                        (?, NULL, ?, ?, ?, ?, ?, 1, ?)
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        plan["name"],
+                        plan["description"],
+                        plan["tool"],
+                        plan["prompt"],
+                        plan["max_tool_calls"],
+                        now,
+                    ),
+                )
         await self._db.commit()

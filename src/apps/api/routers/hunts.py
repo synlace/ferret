@@ -3,16 +3,21 @@ Hunt workspace file management endpoints.
 
 Each chat session (hunt) has its own directory:
   {WORKSPACES_DIR}/{project_id}/{session_id}/
-    scripts/   ← one-off scripts (bash, python, etc.)
-    tests/     ← pytest test files
-    notes/     ← markdown notes / findings
+    workspace/     ← AI scratch area (temp scripts/tests before promotion)
+    scripts/       ← polished, promoted scripts (bash, python, etc.)
+    tests/         ← polished, promoted pytest test files
+    notes/         ← markdown notes / findings
+    credentials/   ← credentials to access target
+    source/        ← source code of target
+    docs/          ← documentation relating to target
 
 Endpoints:
-  GET    /api/hunts/{session_id}/files          → file tree
-  GET    /api/hunts/{session_id}/files/{path}   → read file
-  PUT    /api/hunts/{session_id}/files/{path}   → write/create file
-  DELETE /api/hunts/{session_id}/files/{path}   → delete file
-  POST   /api/hunts/{session_id}/files/{path}/run → run file in lab (SSE)
+  GET    /api/hunts/{session_id}/files                    → file tree
+  GET    /api/hunts/{session_id}/files/{path}             → read file
+  PUT    /api/hunts/{session_id}/files/{path}             → write/create file
+  DELETE /api/hunts/{session_id}/files/{path}             → delete file
+  POST   /api/hunts/{session_id}/files/{path}/run         → run file in lab (SSE)
+  POST   /api/hunts/{session_id}/files/{path}/move        → move/rename file (promotion)
 """
 
 import asyncio
@@ -30,7 +35,10 @@ import deps
 
 router = APIRouter()
 
-ALLOWED_SUBDIRS = {"scripts", "tests", "notes"}
+ALLOWED_SUBDIRS = {"workspace", "scripts", "tests", "notes", "credentials", "source", "docs"}
+
+# Subdirs whose files cannot be executed
+NON_RUNNABLE_SUBDIRS = {"notes", "credentials", "source", "docs"}
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +111,10 @@ def _file_tree(root: Path) -> List[dict]:
 
 class FileWrite(BaseModel):
     content: str
+
+
+class FileMove(BaseModel):
+    destination: str  # e.g. "scripts/recon.py" — must be under an allowed subdir
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +215,8 @@ async def run_workspace_file(session_id: str, file_path: str, project_id: str = 
     parts = Path(file_path).parts
     subdir = parts[0] if parts else ""
 
-    if subdir == "notes":
-        raise HTTPException(status_code=400, detail="Notes files cannot be run")
+    if subdir in NON_RUNNABLE_SUBDIRS:
+        raise HTTPException(status_code=400, detail=f"{subdir.capitalize()} files cannot be run")
 
     # Build the docker exec command
     cmd = ["docker", "exec"]
@@ -221,6 +233,7 @@ async def run_workspace_file(session_id: str, file_path: str, project_id: str = 
     if subdir == "tests" and file_path.endswith(".py"):
         cmd += [deps.SANDBOX_CONTAINER, "python3", "-m", "pytest", "-v", "--tb=short", container_path]
     elif file_path.endswith(".py"):
+        # scripts/*.py and workspace/*.py both run with python3
         cmd += [deps.SANDBOX_CONTAINER, "python3", container_path]
     elif file_path.endswith(".sh"):
         cmd += [deps.SANDBOX_CONTAINER, "bash", container_path]
@@ -252,3 +265,50 @@ async def run_workspace_file(session_id: str, file_path: str, project_id: str = 
             yield f"data: {{\"run_id\": \"{run_id}\", \"status\": \"error\", \"error\": \"{msg}\"}}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/api/hunts/{session_id}/files/{file_path:path}/move")
+async def move_workspace_file(session_id: str, file_path: str, body: FileMove, project_id: str = "temp"):
+    """Move (rename/promote) a hunt workspace file to a new path.
+
+    Typical use: promote a scratch file from workspace/ to scripts/ or tests/.
+    Both source and destination must be under allowed subdirs.
+    """
+    session = await deps.db_client.get_chat_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Hunt not found")
+    pid = session.get("project_id", project_id)
+    root = _workspace_root(session_id, pid)
+
+    # Validate source
+    src_parts = Path(file_path).parts
+    if not src_parts or src_parts[0] not in ALLOWED_SUBDIRS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source must be under one of: {', '.join(sorted(ALLOWED_SUBDIRS))}",
+        )
+    src_path = _safe_path(root, file_path)
+    if not src_path.exists() or not src_path.is_file():
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    # Validate destination
+    dst_rel = body.destination.lstrip("/")
+    dst_parts = Path(dst_rel).parts
+    if not dst_parts or dst_parts[0] not in ALLOWED_SUBDIRS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Destination must be under one of: {', '.join(sorted(ALLOWED_SUBDIRS))}",
+        )
+    dst_path = _safe_path(root, dst_rel)
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy content then remove source
+    dst_path.write_bytes(src_path.read_bytes())
+    src_path.unlink()
+
+    return {
+        "moved_from": file_path,
+        "moved_to": dst_rel,
+        "size": dst_path.stat().st_size,
+        "modified_at": datetime.utcfromtimestamp(dst_path.stat().st_mtime).isoformat(),
+    }

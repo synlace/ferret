@@ -173,14 +173,26 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             "description": (
                 "Write a complete Python pytest file to disk and immediately execute it. "
                 "Returns the raw pytest output. Use this to create structured, reusable "
-                "security tests for endpoints discovered in the proxy history."
+                "security tests for endpoints discovered in the proxy history. "
+                "Files are saved to the workspace/ scratch area; the user can promote them "
+                "to tests/ once they pass.\n"
+                "Naming convention — filename MUST follow: "
+                "test_<target>_<vulnerability>.py  e.g. test_login_sqli.py, "
+                "test_checkout_idor.py, test_api_auth_bypass.py. "
+                "Use lowercase_snake_case. Never use generic names like test_generated.py, "
+                "test_v2.py, or test_1.py. Never append _v2/_v3 — fix in place and reuse "
+                "the same filename."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filename": {
                         "type": "string",
-                        "description": "Filename for the test file, e.g. test_login_sqli.py",
+                        "description": (
+                            "Filename for the test file. "
+                            "Format: test_<target>_<vulnerability>.py "
+                            "e.g. test_login_sqli.py, test_checkout_idor.py"
+                        ),
                     },
                     "code": {
                         "type": "string",
@@ -262,6 +274,83 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
         },
     },
     # -----------------------------------------------------------------------
+    # Notes tool — write markdown notes to the notes/ subdir
+    # -----------------------------------------------------------------------
+    {
+        "type": "function",
+        "function": {
+            "name": "write_note",
+            "label": "Write note",
+            "group": "Notes",
+            "description": (
+                "Write a markdown note to the notes/ area of the current hunt session. "
+                "Use this to record recon findings, attack plans, endpoint inventories, "
+                "or any structured information about the target. "
+                "Notes are saved to notes/<filename> and visible in the file tree.\n"
+                "Naming convention — filename MUST be a short descriptive topic slug: "
+                "<topic>.md  e.g. recon_summary.md, api_endpoints.md, attack_plan.md, "
+                "vuln_notes.md, auth_flow.md. "
+                "Use lowercase_snake_case. Never use generic names like note.md or notes.md."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": (
+                            "Filename for the note. Format: <topic>.md "
+                            "e.g. recon_summary.md, api_endpoints.md, attack_plan.md"
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Markdown content for the note.",
+                    },
+                },
+                "required": ["filename", "content"],
+            },
+        },
+    },
+    # -----------------------------------------------------------------------
+    # Credentials tool — write credential data to the credentials/ subdir
+    # -----------------------------------------------------------------------
+    {
+        "type": "function",
+        "function": {
+            "name": "write_credential",
+            "label": "Write credential",
+            "group": "Notes",
+            "description": (
+                "Write discovered credentials or secrets to the credentials/ area of the "
+                "current hunt session. Use this to record usernames/passwords, API keys, "
+                "JWT tokens, session cookies, or any other authentication material found "
+                "during testing. "
+                "Credentials are saved to credentials/<filename> and visible in the file tree.\n"
+                "Naming convention — filename MUST describe the service and credential type: "
+                "<service>_<type>.txt  e.g. admin_creds.txt, api_keys.txt, jwt_tokens.txt, "
+                "session_cookies.txt, ssh_keys.txt. "
+                "Use lowercase_snake_case. Never use generic names like creds.txt or passwords.txt."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": (
+                            "Filename for the credential file. Format: <service>_<type>.txt "
+                            "e.g. admin_creds.txt, api_keys.txt, jwt_tokens.txt"
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Credential data to store (plaintext).",
+                    },
+                },
+                "required": ["filename", "content"],
+            },
+        },
+    },
+    # -----------------------------------------------------------------------
     # Script execution tool
     # -----------------------------------------------------------------------
     {
@@ -273,10 +362,16 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             "description": (
                 "Write and execute an arbitrary bash or Python script in the ferret-lab sandbox. "
                 "Use this to run exploit PoCs, custom scanners, or any shell command that "
-                "doesn't fit into write_pytest_file. "
+                "doesn't fit into write_test. "
                 "The script runs inside the sandbox container with network access. "
                 "stdout + stderr are returned (truncated to 8 KB). "
-                "For Python scripts use interpreter='python3'; for shell use interpreter='bash'."
+                "For Python scripts use interpreter='python3'; for shell use interpreter='bash'. "
+                "Scripts are saved to the workspace/ scratch area with the name you provide; "
+                "the user can promote them to scripts/ once they work correctly.\n"
+                "Naming convention — name MUST be a short descriptive slug: "
+                "<action>_<target> e.g. exploit_sqli_login, recon_api_endpoints, "
+                "brute_admin_password, probe_idor_orders. "
+                "Use lowercase_snake_case. Never use generic names like script, test, run, poc."
             ),
             "parameters": {
                 "type": "object",
@@ -289,6 +384,14 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
                     "script": {
                         "type": "string",
                         "description": "Full script source code to execute.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "Short descriptive slug for the saved file (no extension). "
+                            "Format: <action>_<target>  e.g. exploit_sqli_login, recon_api_endpoints. "
+                            "Use lowercase_snake_case. Omit to auto-generate a timestamp name."
+                        ),
                     },
                     "timeout": {
                         "type": "integer",

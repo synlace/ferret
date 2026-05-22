@@ -487,6 +487,7 @@ async def test_get_tools_contains_expected_names(client, mem_db):
         "search_requests", "get_request_detail", "create_finding", "list_findings",
         "write_test", "run_test", "read_test", "pip_install", "run_script",
         "run_katana", "run_ffuf", "run_nuclei", "http_request", "list_sources", "read_source",
+        "write_note", "write_credential",
     }
     assert expected == names
 
@@ -511,8 +512,8 @@ async def test_get_tools_each_has_group(client, mem_db):
 
 @pytest.mark.asyncio
 async def test_get_tools_groups_are_known_values(client, mem_db):
-    """All tool groups are one of the five canonical group names."""
-    expected_groups = {"Proxy History", "Findings", "Testing", "Execution", "Sources"}
+    """All tool groups are one of the canonical group names."""
+    expected_groups = {"Proxy History", "Findings", "Testing", "Execution", "Sources", "Notes"}
     resp = await client.get("/api/tools")
     for tool in resp.json():
         assert tool["group"] in expected_groups, (
@@ -522,8 +523,8 @@ async def test_get_tools_groups_are_known_values(client, mem_db):
 
 @pytest.mark.asyncio
 async def test_get_tools_all_groups_represented(client, mem_db):
-    """All five canonical groups have at least one tool."""
-    expected_groups = {"Proxy History", "Findings", "Testing", "Execution", "Sources"}
+    """All canonical groups have at least one tool."""
+    expected_groups = {"Proxy History", "Findings", "Testing", "Execution", "Sources", "Notes"}
     resp = await client.get("/api/tools")
     present_groups = {t["group"] for t in resp.json()}
     assert expected_groups == present_groups
