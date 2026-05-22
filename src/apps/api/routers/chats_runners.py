@@ -89,13 +89,25 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
         )
         script = preamble + script
 
-    # Persist the script to the workspace scripts/ subdir so it appears in the
+    # Persist the script to the workspace/ scratch subdir so it appears in the
     # file tree.  Only done when called from a session context (session_id set).
+    # On clean exit (rc == 0) the file is auto-promoted to scripts/.
+    ws_script_path = None
+    script_name = None
     if session_id:
         import datetime as _dt
+        import re as _re2
         ts_slug = _dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        script_name = f"script_{ts_slug}{ext}"
-        ws_script_path = deps.WORKSPACES_DIR / project_id / session_id / "scripts" / script_name
+        # Use the LLM-provided name if given; sanitise to safe slug, fall back to timestamp.
+        raw_name = fn_args.get("name", "").strip()
+        if raw_name:
+            # Normalise: lowercase, replace spaces/hyphens with underscores, strip unsafe chars
+            safe_name = _re2.sub(r"[^a-z0-9_]", "", raw_name.lower().replace("-", "_").replace(" ", "_"))
+            safe_name = _re2.sub(r"_+", "_", safe_name).strip("_")[:60]
+            script_name = f"{safe_name}{ext}" if safe_name else f"script_{ts_slug}{ext}"
+        else:
+            script_name = f"script_{ts_slug}{ext}"
+        ws_script_path = deps.WORKSPACES_DIR / project_id / session_id / "workspace" / script_name
         try:
             ws_script_path.parent.mkdir(parents=True, exist_ok=True)
             ws_script_path.write_text(script, encoding="utf-8")
@@ -164,7 +176,19 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
         full_output = "".join(all_chunks)
         prefix = f"[exit {rc}]\r\n" if rc not in (0, None) else ""
         text = prefix + full_output if full_output.strip() else f"[exit {rc}] (no output)"
-        final = text + "\n__META__:" + _json.dumps({"exit_code": rc, "runtime_ms": _runtime_ms, "timestamp": _ts})
+        # Auto-promote script to scripts/ when it exits cleanly (rc == 0) and was
+        # persisted to workspace/.  Non-fatal: if the move fails the file stays in workspace/.
+        promotion_notice = ""
+        if rc == 0 and ws_script_path is not None and ws_script_path.exists():
+            try:
+                _promoted = deps.WORKSPACES_DIR / project_id / session_id / "scripts" / script_name
+                _promoted.parent.mkdir(parents=True, exist_ok=True)
+                _promoted.write_bytes(ws_script_path.read_bytes())
+                ws_script_path.unlink(missing_ok=True)
+                promotion_notice = f"\r\n[FERRET] ✓ Script exited cleanly — promoted to scripts/{script_name}"
+            except Exception:
+                pass
+        final = text + promotion_notice + "\n__META__:" + _json.dumps({"exit_code": rc, "runtime_ms": _runtime_ms, "timestamp": _ts})
         yield ("", True, final)
     except Exception as exc:
         msg = f"[FERRET] run_script error: {exc}"

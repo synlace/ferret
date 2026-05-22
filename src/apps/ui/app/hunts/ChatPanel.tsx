@@ -209,6 +209,8 @@ interface ChatPanelProps {
   onDisableAll: () => void
   /** Called by XTermView when it's ready to receive chunks; idx is the liveToolCalls index */
   onRegisterLiveWriter: (idx: number, write: (chunk: string) => void) => void
+  /** Move a workspace file to a new subdir (promotion). srcPath = "workspace/foo.py", dstSubdir = "scripts" */
+  onMoveFile?: (srcPath: string, dstSubdir: string) => void
 }
 
 export function ChatPanel({
@@ -256,6 +258,7 @@ export function ChatPanel({
   onEnableAll,
   onDisableAll,
   onRegisterLiveWriter,
+  onMoveFile,
 }: ChatPanelProps) {
   const [availableTools, setAvailableTools] = useState<ToolInfo[]>([])
   useEffect(() => {

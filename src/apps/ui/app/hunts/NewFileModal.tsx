@@ -7,10 +7,22 @@ import { X, Loader2 } from "lucide-react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+type Subdir = "workspace" | "scripts" | "tests" | "notes" | "credentials" | "source" | "docs"
+
+const SUBDIR_OPTIONS: { value: Subdir; label: string; description: string }[] = [
+  { value: "workspace",   label: "Workspace",   description: "AI scratch area" },
+  { value: "scripts",     label: "Scripts",     description: "Polished scripts" },
+  { value: "tests",       label: "Tests",       description: "Polished tests" },
+  { value: "notes",       label: "Notes",       description: "Findings & notes" },
+  { value: "credentials", label: "Credentials", description: "Target credentials" },
+  { value: "source",      label: "Source",      description: "Target source code" },
+  { value: "docs",        label: "Docs",        description: "Target documentation" },
+]
+
 interface NewFileModalProps { sessionId: string; onCreated: (path: string) => void; onClose: () => void }
 
 export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProps) {
-  const [subdir, setSubdir] = useState<"scripts" | "tests" | "notes">("scripts")
+  const [subdir, setSubdir] = useState<Subdir>("workspace")
   const [name, setName] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -37,14 +49,23 @@ export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProp
           </button>
         </div>
 
-        {/* Directory */}
+        {/* Directory — 2-column grid for 7 options */}
         <div className="border-b border-neutral-800 px-3 py-2">
           <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Directory</label>
-          <div className="flex gap-0 mt-1.5">
-            {(["scripts", "tests", "notes"] as const).map(d => (
-              <button key={d} onClick={() => setSubdir(d)}
-                className={`flex-1 py-1.5 text-xs border transition-colors ${subdir === d ? "bg-brand-500/20 border-brand-500/60 text-brand-300" : "border-neutral-700 text-neutral-400 hover:border-neutral-600"}`}>
-                {d}
+          <div className="grid grid-cols-2 gap-1 mt-1.5">
+            {SUBDIR_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSubdir(opt.value)}
+                title={opt.description}
+                className={`flex flex-col items-start px-2 py-1.5 text-xs border transition-colors rounded-sm ${
+                  subdir === opt.value
+                    ? "bg-brand-500/20 border-brand-500/60 text-brand-300"
+                    : "border-neutral-700 text-neutral-400 hover:border-neutral-600 hover:text-neutral-300"
+                }`}
+              >
+                <span className="font-medium">{opt.label}</span>
+                <span className="text-[9px] text-neutral-600 leading-tight">{opt.description}</span>
               </button>
             ))}
           </div>

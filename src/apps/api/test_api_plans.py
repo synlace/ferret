@@ -337,3 +337,93 @@ async def test_clone_nonexistent_plan_returns_404(client):
     resp = await client.post("/api/plans/nonexistent-plan-id/clone?project_id=temp")
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# _load_builtin_plans — unit tests for the .md file parser
+# ---------------------------------------------------------------------------
+
+def test_load_builtin_plans_returns_four_plans():
+    """_load_builtin_plans() must return exactly four plans (one per .md file)."""
+    from sqlite_client_projects import ProjectsMixin
+    plans = ProjectsMixin._load_builtin_plans()
+    assert len(plans) == 4, f"Expected 4 plans, got {len(plans)}"
+
+
+def test_load_builtin_plans_names_match_expected():
+    """_load_builtin_plans() must return plans with the four expected names."""
+    from sqlite_client_projects import ProjectsMixin
+    plans = ProjectsMixin._load_builtin_plans()
+    names = {p["name"] for p in plans}
+    assert names == BUILTIN_PLAN_NAMES, f"Name mismatch: {names}"
+
+
+def test_load_builtin_plans_all_have_required_keys():
+    """Every plan returned by _load_builtin_plans() must have all required keys."""
+    from sqlite_client_projects import ProjectsMixin
+    required = {"name", "description", "tool", "prompt", "max_tool_calls"}
+    for plan in ProjectsMixin._load_builtin_plans():
+        missing = required - plan.keys()
+        assert not missing, f"Plan '{plan.get('name')}' missing keys: {missing}"
+
+
+def test_load_builtin_plans_prompts_are_non_empty():
+    """Every plan must have a non-empty prompt body."""
+    from sqlite_client_projects import ProjectsMixin
+    for plan in ProjectsMixin._load_builtin_plans():
+        assert plan["prompt"].strip(), f"Plan '{plan['name']}' has an empty prompt"
+
+
+def test_load_builtin_plans_max_tool_calls_are_integers():
+    """max_tool_calls must be parsed as an integer for every plan."""
+    from sqlite_client_projects import ProjectsMixin
+    for plan in ProjectsMixin._load_builtin_plans():
+        assert isinstance(plan["max_tool_calls"], int), (
+            f"Plan '{plan['name']}' max_tool_calls is not int: {plan['max_tool_calls']!r}"
+        )
+
+
+def test_load_builtin_plans_tool_is_hunt():
+    """All built-in plans must have tool == 'hunt'."""
+    from sqlite_client_projects import ProjectsMixin
+    for plan in ProjectsMixin._load_builtin_plans():
+        assert plan["tool"] == "hunt", (
+            f"Plan '{plan['name']}' has unexpected tool: {plan['tool']!r}"
+        )
+
+
+def test_load_builtin_plans_prompts_reference_write_note():
+    """Every built-in plan prompt must reference the write_note tool."""
+    from sqlite_client_projects import ProjectsMixin
+    for plan in ProjectsMixin._load_builtin_plans():
+        assert "write_note" in plan["prompt"], (
+            f"Plan '{plan['name']}' prompt does not reference write_note"
+        )
+
+
+@pytest.mark.asyncio
+async def test_seed_builtin_plans_upserts_prompt_on_restart(client):
+    """Re-seeding must update the prompt of an existing built-in plan."""
+    import deps
+    # Confirm plans are seeded (they are via conftest → db.initialize())
+    resp = await client.get("/api/plans?project_id=temp")
+    assert resp.status_code == 200
+    plans = resp.json()
+    builtin = next(p for p in plans if p.get("is_builtin"))
+    original_prompt = builtin["prompt"]
+
+    # Manually corrupt the prompt in the DB
+    async with deps.db_client._db.execute(
+        "UPDATE plans SET prompt = 'CORRUPTED' WHERE id = ?", (builtin["id"],)
+    ):
+        pass
+    await deps.db_client._db.commit()
+
+    # Re-seed — should restore the prompt from the .md file
+    await deps.db_client._seed_builtin_plans()
+
+    resp2 = await client.get("/api/plans?project_id=temp")
+    plans2 = resp2.json()
+    restored = next(p for p in plans2 if p["id"] == builtin["id"])
+    assert restored["prompt"] != "CORRUPTED", "Upsert did not restore the prompt"
+    assert restored["prompt"] == original_prompt, "Restored prompt does not match .md file"

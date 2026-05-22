@@ -352,6 +352,54 @@ def _build_or_messages(
         )
 
     # ---------------------------------------------------------------------------
+    # Workspace file naming rules — injected whenever any file-creating tool is active
+    # ---------------------------------------------------------------------------
+    _file_tools = {"run_script", "write_test", "write_pytest_file", "write_note", "write_credential"}
+    if _active & _file_tools:
+        system_prompt += (
+            "Workspace file naming rules (CRITICAL):\n"
+            "All files you create land in the workspace/ scratch area (scripts/tests are "
+            "auto-promoted to scripts/ or tests/ when they exit/pass cleanly). "
+            "Names must be short, descriptive, and follow these patterns:\n"
+            "  Scripts (run_script name=):  <action>_<target>  "
+            "e.g. exploit_sqli_login, recon_api_endpoints, brute_admin_password, probe_idor_orders\n"
+            "  Tests (write_test filename=):  test_<target>_<vulnerability>.py  "
+            "e.g. test_login_sqli.py, test_checkout_idor.py, test_api_auth_bypass.py\n"
+            "  Notes (write_note filename=):  <topic>.md  "
+            "e.g. recon_summary.md, api_endpoints.md, attack_plan.md, vuln_notes.md\n"
+            "  Credentials (write_credential filename=):  <service>_<type>.txt  "
+            "e.g. admin_creds.txt, api_keys.txt, jwt_tokens.txt, session_cookies.txt\n"
+            "Rules:\n"
+            "  - Use lowercase_snake_case only.\n"
+            "  - Be specific: include the target endpoint/feature AND the attack/action.\n"
+            "  - NEVER use generic names: script, test, run, poc, exploit, generated, temp, v2, v3.\n"
+            "  - NEVER append _v2/_v3 to fix a broken file — read it, fix in place, reuse the same name.\n"
+            "  - Always set the `name` parameter in run_script calls.\n\n"
+        )
+
+    # ---------------------------------------------------------------------------
+    # write_note / write_credential guidance — only if those tools are enabled
+    # ---------------------------------------------------------------------------
+    if "write_note" in _active:
+        system_prompt += (
+            "write_note usage:\n"
+            "Use write_note to record structured information about the target: recon findings, "
+            "endpoint inventories, attack plans, vulnerability notes, or any reference material "
+            "that will be useful later in the session. "
+            "Write notes proactively — don't wait to be asked. "
+            "Good triggers: after search_requests reveals interesting endpoints, after katana "
+            "crawl completes, after confirming a vulnerability.\n\n"
+        )
+    if "write_credential" in _active:
+        system_prompt += (
+            "write_credential usage:\n"
+            "Use write_credential immediately whenever you discover or confirm working credentials: "
+            "username/password pairs, API keys, JWT tokens, session cookies, SSH keys, or any "
+            "other authentication material. "
+            "Always record credentials before continuing — they may be needed later in the session.\n\n"
+        )
+
+    # ---------------------------------------------------------------------------
     # Workflow order — only include steps for enabled tools
     # ---------------------------------------------------------------------------
     workflow_steps = []

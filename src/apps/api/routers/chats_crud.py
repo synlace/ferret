@@ -221,7 +221,7 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
 
         # Create workspace subdirectories on the host filesystem
         workspace_root = deps.WORKSPACES_DIR / workspace_dir
-        for subdir in ("scripts", "tests", "notes"):
+        for subdir in ("workspace", "scripts", "tests", "notes", "credentials", "source", "docs"):
             (workspace_root / subdir).mkdir(parents=True, exist_ok=True)
 
         # Determine initial hunt_status

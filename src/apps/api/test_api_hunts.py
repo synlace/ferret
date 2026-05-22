@@ -24,6 +24,7 @@ PUT /api/hunts/{session_id}/files/{path}:
   - 400 on path traversal attempt
   - 200 creates the file and returns metadata
   - 200 overwrites an existing file
+  - 200 for all 7 allowed subdirs (workspace, scripts, tests, notes, credentials, source, docs)
 
 DELETE /api/hunts/{session_id}/files/{path}:
   - 404 when session does not exist
@@ -33,13 +34,22 @@ DELETE /api/hunts/{session_id}/files/{path}:
 POST /api/hunts/{session_id}/files/{path}/run:
   - 404 when session does not exist
   - 404 when file does not exist
-  - 400 when file is under notes/
+  - 400 when file is under notes/, credentials/, source/, or docs/
   - 200 streams SSE output for a scripts/*.py file
   - 200 streams SSE output for a scripts/*.sh file
   - 200 streams SSE output for a tests/*.py file (pytest)
+  - 200 streams SSE output for a workspace/*.py file (runs like scripts)
+
+POST /api/hunts/{session_id}/files/{path}/move:
+  - 404 when session does not exist
+  - 404 when source file does not exist
+  - 400 when source is not under an allowed subdir
+  - 400 when destination is not under an allowed subdir
+  - 200 moves file and returns new path metadata
+  - 200 promotes workspace/ file to scripts/
 
 POST /api/chats (hunt creation):
-  - Creates workspace subdirectories on the filesystem
+  - Creates all 7 workspace subdirectories on the filesystem
   - Returns workspace_dir in the response
 
 Run with:
@@ -340,15 +350,19 @@ async def test_write_file_overwrites_existing(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_write_file_all_allowed_subdirs(client, tmp_path):
-    """PUT /api/hunts/{id}/files/{path} → 200 for scripts/, tests/, notes/."""
+    """PUT /api/hunts/{id}/files/{path} → 200 for all 7 allowed subdirs."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         sid = session["id"]
         for subdir, filename, content in [
-            ("scripts", "run.sh", "#!/bin/bash\necho hi"),
-            ("tests", "test_auth.py", "def test_pass(): pass"),
-            ("notes", "recon.md", "# Recon notes"),
+            ("workspace",   "scratch.py",    "print('scratch')"),
+            ("scripts",     "run.sh",        "#!/bin/bash\necho hi"),
+            ("tests",       "test_auth.py",  "def test_pass(): pass"),
+            ("notes",       "recon.md",      "# Recon notes"),
+            ("credentials", "creds.txt",     "user:pass"),
+            ("source",      "app.py",        "# target source"),
+            ("docs",        "readme.md",     "# Target docs"),
         ]:
             resp = await client.put(
                 f"/api/hunts/{sid}/files/{subdir}/{filename}",
@@ -453,6 +467,47 @@ async def test_run_notes_file_rejected(client, tmp_path):
         )
     assert resp.status_code == 400
     assert "notes" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subdir", ["credentials", "source", "docs"])
+async def test_run_non_runnable_subdirs_rejected(client, tmp_path, subdir):
+    """POST /api/hunts/{id}/files/{subdir}/*.*/run → 400 for non-runnable subdirs."""
+    import deps as deps_module
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        sid = session["id"]
+        await _write_file(client, sid, f"{subdir}/file.txt", "content")
+        resp = await client.post(
+            f"/api/hunts/{sid}/files/{subdir}/file.txt/run"
+        )
+    assert resp.status_code == 400
+    assert subdir in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_run_workspace_file_streams_sse(client, tmp_path):
+    """POST /api/hunts/{id}/files/workspace/scratch.py/run → SSE stream (runs like scripts)."""
+    import deps as deps_module
+
+    fake_proc = MagicMock()
+    fake_proc.stdout = _make_async_line_reader([b"workspace output\n"])
+    fake_proc.wait = AsyncMock(return_value=None)
+    fake_proc.returncode = 0
+
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        sid = session["id"]
+        await _write_file(client, sid, "workspace/scratch.py", "print('workspace output')")
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
+            resp = await client.post(f"/api/hunts/{sid}/files/workspace/scratch.py/run")
+
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    body = resp.text
+    assert "run_id" in body
+    assert "running" in body
 
 
 @pytest.mark.asyncio
@@ -566,12 +621,117 @@ async def test_run_via_proxy_sets_env_vars(client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# POST /api/hunts/{session_id}/files/{path}/move
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_move_file_session_not_found(client):
+    """POST /api/hunts/{id}/files/{path}/move → 404 when session does not exist."""
+    resp = await client.post(
+        "/api/hunts/nonexistent/files/workspace/scratch.py/move",
+        json={"destination": "scripts/scratch.py"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_move_file_source_not_found(client, tmp_path):
+    """POST /api/hunts/{id}/files/{path}/move → 404 when source file does not exist."""
+    import deps as deps_module
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        resp = await client.post(
+            f"/api/hunts/{session['id']}/files/workspace/missing.py/move",
+            json={"destination": "scripts/missing.py"},
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_move_file_invalid_source_subdir(client, tmp_path):
+    """POST /api/hunts/{id}/files/{path}/move → 400 when source is not under allowed subdir."""
+    import deps as deps_module
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        resp = await client.post(
+            f"/api/hunts/{session['id']}/files/hidden/secret.py/move",
+            json={"destination": "scripts/secret.py"},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_move_file_invalid_destination_subdir(client, tmp_path):
+    """POST /api/hunts/{id}/files/{path}/move → 400 when destination is not under allowed subdir."""
+    import deps as deps_module
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        sid = session["id"]
+        await _write_file(client, sid, "workspace/scratch.py", "print('hi')")
+        resp = await client.post(
+            f"/api/hunts/{sid}/files/workspace/scratch.py/move",
+            json={"destination": "hidden/scratch.py"},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_move_file_promotes_workspace_to_scripts(client, tmp_path):
+    """POST /api/hunts/{id}/files/workspace/scratch.py/move → 200 promotes to scripts/."""
+    import deps as deps_module
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        sid = session["id"]
+        content = "print('promoted script')"
+        await _write_file(client, sid, "workspace/scratch.py", content)
+
+        resp = await client.post(
+            f"/api/hunts/{sid}/files/workspace/scratch.py/move",
+            json={"destination": "scripts/scratch.py"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["moved_from"] == "workspace/scratch.py"
+        assert data["moved_to"] == "scripts/scratch.py"
+        assert "size" in data
+
+        # Source should be gone
+        src_resp = await client.get(f"/api/hunts/{sid}/files/workspace/scratch.py")
+        assert src_resp.status_code == 404
+
+        # Destination should exist with same content
+        dst_resp = await client.get(f"/api/hunts/{sid}/files/scripts/scratch.py")
+        assert dst_resp.status_code == 200
+        assert dst_resp.json()["content"] == content
+
+
+@pytest.mark.asyncio
+async def test_move_file_promotes_workspace_to_tests(client, tmp_path):
+    """POST /api/hunts/{id}/files/workspace/test_foo.py/move → 200 promotes to tests/."""
+    import deps as deps_module
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session = await _create_session(client)
+        sid = session["id"]
+        content = "def test_foo(): pass"
+        await _write_file(client, sid, "workspace/test_foo.py", content)
+
+        resp = await client.post(
+            f"/api/hunts/{sid}/files/workspace/test_foo.py/move",
+            json={"destination": "tests/test_foo.py"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["moved_from"] == "workspace/test_foo.py"
+        assert data["moved_to"] == "tests/test_foo.py"
+
+
+# ---------------------------------------------------------------------------
 # POST /api/chats — workspace directory creation
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_create_chat_creates_workspace_dirs(client, tmp_path):
-    """POST /api/chats creates scripts/, tests/, notes/ subdirectories."""
+    """POST /api/chats creates all 7 workspace subdirectories."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         resp = await client.post("/api/chats", json={"name": "My Workspace"})
@@ -581,11 +741,10 @@ async def test_create_chat_creates_workspace_dirs(client, tmp_path):
     assert "workspace_dir" in data
     assert data["workspace_dir"] is not None
 
-    # Verify the directories were created
+    # Verify all 7 directories were created
     workspace_root = tmp_path / data["workspace_dir"]
-    assert (workspace_root / "scripts").is_dir()
-    assert (workspace_root / "tests").is_dir()
-    assert (workspace_root / "notes").is_dir()
+    for subdir in ("workspace", "scripts", "tests", "notes", "credentials", "source", "docs"):
+        assert (workspace_root / subdir).is_dir(), f"Missing subdir: {subdir}"
 
 
 @pytest.mark.asyncio
@@ -629,3 +788,184 @@ class _AsyncLineReader:
 
 def _make_async_line_reader(lines):
     return _AsyncLineReader(lines)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — execute_tool_call: write_note, write_credential, auto-promote
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_write_note_creates_file(tmp_path):
+    """write_note tool creates a .md file in notes/ subdir."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    import deps as deps_module
+    from chats_execute import execute_tool_call
+
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session_id = "test-session-note"
+        (tmp_path / "temp" / session_id / "notes").mkdir(parents=True, exist_ok=True)
+        tc = {
+            "function": {
+                "name": "write_note",
+                "arguments": '{"filename": "recon_summary.md", "content": "# Recon\\nFound /api/admin endpoint."}',
+            }
+        }
+        result = await execute_tool_call(tc, project_id="temp", session_id=session_id)
+
+    assert "notes/recon_summary.md" in result
+    note_path = tmp_path / "temp" / session_id / "notes" / "recon_summary.md"
+    assert note_path.exists()
+    assert "Found /api/admin endpoint." in note_path.read_text()
+
+
+@pytest.mark.asyncio
+async def test_write_note_requires_session():
+    """write_note without session_id returns an error."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    from chats_execute import execute_tool_call
+
+    tc = {
+        "function": {
+            "name": "write_note",
+            "arguments": '{"filename": "test.md", "content": "hello"}',
+        }
+    }
+    result = await execute_tool_call(tc, project_id="temp", session_id="")
+    assert "requires an active hunt session" in result
+
+
+@pytest.mark.asyncio
+async def test_write_credential_creates_file(tmp_path):
+    """write_credential tool creates a file in credentials/ subdir."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    import deps as deps_module
+    from chats_execute import execute_tool_call
+
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        session_id = "test-session-cred"
+        (tmp_path / "temp" / session_id / "credentials").mkdir(parents=True, exist_ok=True)
+        tc = {
+            "function": {
+                "name": "write_credential",
+                "arguments": '{"filename": "admin_creds.txt", "content": "admin:password123"}',
+            }
+        }
+        result = await execute_tool_call(tc, project_id="temp", session_id=session_id)
+
+    assert "credentials/admin_creds.txt" in result
+    cred_path = tmp_path / "temp" / session_id / "credentials" / "admin_creds.txt"
+    assert cred_path.exists()
+    assert "admin:password123" in cred_path.read_text()
+
+
+@pytest.mark.asyncio
+async def test_write_credential_requires_session():
+    """write_credential without session_id returns an error."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    from chats_execute import execute_tool_call
+
+    tc = {
+        "function": {
+            "name": "write_credential",
+            "arguments": '{"filename": "creds.txt", "content": "user:pass"}',
+        }
+    }
+    result = await execute_tool_call(tc, project_id="temp", session_id="")
+    assert "requires an active hunt session" in result
+
+
+def test_pytest_all_passed_detects_success():
+    """_pytest_all_passed returns True for passing pytest output."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    from chats_execute import _pytest_all_passed
+
+    passing = "test_login_sqli.py::test_sqli PASSED\n\n1 passed in 0.45s"
+    assert _pytest_all_passed(passing) is True
+
+    multi_pass = "3 passed, 1 warning in 0.12s"
+    assert _pytest_all_passed(multi_pass) is True
+
+
+def test_pytest_all_passed_detects_failure():
+    """_pytest_all_passed returns False for failing pytest output."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    from chats_execute import _pytest_all_passed
+
+    failing = "test_login_sqli.py::test_sqli FAILED\n\n1 failed in 0.45s"
+    assert _pytest_all_passed(failing) is False
+
+    mixed = "2 passed, 1 failed in 0.30s"
+    assert _pytest_all_passed(mixed) is False
+
+    empty = "no tests ran"
+    assert _pytest_all_passed(empty) is False
+
+
+@pytest.mark.asyncio
+async def test_write_test_auto_promotes_on_success(tmp_path):
+    """write_test auto-promotes to tests/ when pytest passes."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    import deps as deps_module
+    from chats_execute import execute_tool_call
+
+    session_id = "test-session-promote"
+    ws_root = tmp_path / "temp" / session_id
+    for d in ("workspace", "tests"):
+        (ws_root / d).mkdir(parents=True, exist_ok=True)
+
+    async def fake_run_pytest(path):
+        return "test_login_sqli.py::test_sqli PASSED\n\n1 passed in 0.12s"
+
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        with patch.object(deps_module, "run_pytest", fake_run_pytest):
+            tc = {
+                "function": {
+                    "name": "write_test",
+                    "arguments": '{"filename": "test_login_sqli.py", "code": "def test_sqli(): pass"}',
+                }
+            }
+            result = await execute_tool_call(tc, project_id="temp", session_id=session_id)
+
+    # File should be promoted to tests/ and removed from workspace/
+    assert (ws_root / "tests" / "test_login_sqli.py").exists()
+    assert not (ws_root / "workspace" / "test_login_sqli.py").exists()
+    assert "promoted to tests/test_login_sqli.py" in result
+
+
+@pytest.mark.asyncio
+async def test_write_test_stays_in_workspace_on_failure(tmp_path):
+    """write_test keeps file in workspace/ when pytest fails."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "routers"))
+    import deps as deps_module
+    from chats_execute import execute_tool_call
+
+    session_id = "test-session-no-promote"
+    ws_root = tmp_path / "temp" / session_id
+    for d in ("workspace", "tests"):
+        (ws_root / d).mkdir(parents=True, exist_ok=True)
+
+    async def fake_run_pytest(path):
+        return "test_login_sqli.py::test_sqli FAILED\n\n1 failed in 0.12s"
+
+    with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
+        with patch.object(deps_module, "run_pytest", fake_run_pytest):
+            tc = {
+                "function": {
+                    "name": "write_test",
+                    "arguments": '{"filename": "test_login_sqli.py", "code": "def test_sqli(): assert False"}',
+                }
+            }
+            result = await execute_tool_call(tc, project_id="temp", session_id=session_id)
+
+    # File should remain in workspace/ (not promoted)
+    assert (ws_root / "workspace" / "test_login_sqli.py").exists()
+    assert not (ws_root / "tests" / "test_login_sqli.py").exists()
+    assert "promoted" not in result

@@ -17,6 +17,17 @@ from proxy import _assert_safe_url
 _log = logging.getLogger(__name__)
 
 
+def _pytest_all_passed(output: str) -> bool:
+    """Return True if pytest output indicates all tests passed with no failures or errors."""
+    import re as _re
+    # pytest summary line looks like: "3 passed in 0.45s" or "2 passed, 1 warning in 0.12s"
+    # Failure indicators: "failed", "error" in the summary
+    lower = output.lower()
+    has_passed = bool(_re.search(r"\d+ passed", lower))
+    has_failure = bool(_re.search(r"\d+ (failed|error)", lower))
+    return has_passed and not has_failure
+
+
 async def execute_tool_call(
     tc: Dict[str, Any],
     project_id: str = "temp",
@@ -43,11 +54,11 @@ async def execute_tool_call(
         filename = filename.replace("/", "_").replace("..", "_")
         if not filename.endswith(".py"):
             filename += ".py"
-        # Write into the workspace tests/ subdir when called from a session so
-        # the file appears in the workspace file tree immediately.  Fall back to
-        # the legacy TESTS_DIR for non-workspace callers (backwards compat).
+        # Write into the workspace/ scratch subdir when called from a session so
+        # the file appears in the workspace file tree immediately.
+        # Fall back to the legacy TESTS_DIR for non-workspace callers (backwards compat).
         if session_id:
-            test_path = deps.WORKSPACES_DIR / project_id / session_id / "tests" / filename
+            test_path = deps.WORKSPACES_DIR / project_id / session_id / "workspace" / filename
         else:
             test_path = deps.TESTS_DIR / filename
         try:
@@ -56,6 +67,18 @@ async def execute_tool_call(
             result = await deps.run_pytest(test_path)
         except Exception as exc:
             result = f"[FERRET] Error writing/running test ({type(exc).__name__}): {exc}\n  test_path={test_path}"
+            return result
+        # Auto-promote to tests/ when all tests pass (pytest summary contains
+        # "passed" and no "failed" or "error" lines).
+        if session_id and _pytest_all_passed(result):
+            try:
+                promoted_path = deps.WORKSPACES_DIR / project_id / session_id / "tests" / filename
+                promoted_path.parent.mkdir(parents=True, exist_ok=True)
+                promoted_path.write_bytes(test_path.read_bytes())
+                test_path.unlink(missing_ok=True)
+                result += f"\n[FERRET] ✓ All tests passed — promoted to tests/{filename}"
+            except Exception:
+                pass  # non-fatal — file stays in workspace/
         return result
 
     elif fn_name in ("run_pytest_file", "run_test"):
@@ -63,9 +86,13 @@ async def execute_tool_call(
         filename = filename.replace("/", "_").replace("..", "_")
         if not filename.endswith(".py"):
             filename += ".py"
-        # Prefer workspace path when session context is available
+        # Look in workspace/ first (scratch area), then fall back to tests/ for
+        # files that have already been promoted, then legacy TESTS_DIR.
         if session_id:
-            test_path = deps.WORKSPACES_DIR / project_id / session_id / "tests" / filename
+            ws_root = deps.WORKSPACES_DIR / project_id / session_id
+            test_path = ws_root / "workspace" / filename
+            if not test_path.exists():
+                test_path = ws_root / "tests" / filename
         else:
             test_path = deps.TESTS_DIR / filename
         if test_path.exists():
@@ -77,9 +104,12 @@ async def execute_tool_call(
         filename = filename.replace("/", "_").replace("..", "_")
         if not filename.endswith(".py"):
             filename += ".py"
-        # Prefer workspace path when session context is available
+        # Look in workspace/ first, then tests/, then legacy TESTS_DIR.
         if session_id:
-            test_path = deps.WORKSPACES_DIR / project_id / session_id / "tests" / filename
+            ws_root = deps.WORKSPACES_DIR / project_id / session_id
+            test_path = ws_root / "workspace" / filename
+            if not test_path.exists():
+                test_path = ws_root / "tests" / filename
         else:
             test_path = deps.TESTS_DIR / filename
         if test_path.exists():
@@ -109,6 +139,38 @@ async def execute_tool_call(
             return f"[FERRET] pip install failed (exit {proc.returncode}):\n{output}"
         except Exception as exc:
             return f"[FERRET] pip install error: {exc}"
+
+    elif fn_name == "write_note":
+        filename = fn_args.get("filename", "note.md").strip()
+        content = fn_args.get("content", "")
+        # Sanitise filename — no path traversal, force .md extension
+        filename = filename.replace("/", "_").replace("..", "_")
+        if not filename.endswith(".md"):
+            filename += ".md"
+        if not session_id:
+            return "[FERRET] write_note requires an active hunt session."
+        note_path = deps.WORKSPACES_DIR / project_id / session_id / "notes" / filename
+        try:
+            note_path.parent.mkdir(parents=True, exist_ok=True)
+            note_path.write_text(content, encoding="utf-8")
+            return f"[FERRET] Note saved to notes/{filename} ({len(content)} chars)"
+        except Exception as exc:
+            return f"[FERRET] Error writing note ({type(exc).__name__}): {exc}"
+
+    elif fn_name == "write_credential":
+        filename = fn_args.get("filename", "creds.txt").strip()
+        content = fn_args.get("content", "")
+        # Sanitise filename — no path traversal
+        filename = filename.replace("/", "_").replace("..", "_")
+        if not session_id:
+            return "[FERRET] write_credential requires an active hunt session."
+        cred_path = deps.WORKSPACES_DIR / project_id / session_id / "credentials" / filename
+        try:
+            cred_path.parent.mkdir(parents=True, exist_ok=True)
+            cred_path.write_text(content, encoding="utf-8")
+            return f"[FERRET] Credential saved to credentials/{filename} ({len(content)} chars)"
+        except Exception as exc:
+            return f"[FERRET] Error writing credential ({type(exc).__name__}): {exc}"
 
     elif fn_name == "search_requests":
         query = fn_args.get("query", "").strip()
