@@ -1,21 +1,44 @@
 """
-Hunt Plans endpoints.
+Hunt Plans endpoints — filesystem-only implementation.
 
 Plans are reusable prompt templates for automated hunt sessions.
-Built-in plans (is_builtin=1, project_id IS NULL) are read-only and shared
-across all projects.  Project-scoped plans (project_id = <id>) are owned by
-that project and can be created, updated, deleted, or cloned from a built-in.
 
-Routes:
-  GET    /api/plans?project_id=…              list plans (built-ins + project's own)
-  POST   /api/plans                           create a new plan
-  PUT    /api/plans/{plan_id}                 update a plan (own plans only, not built-ins)
-  DELETE /api/plans/{plan_id}?project_id=…   delete a plan (own plans only)
-  POST   /api/plans/{plan_id}/clone?project_id=…  clone a built-in into the project
+Layout
+------
+Built-in plans  (read-only, shipped with the app):
+    {PLANS_BUILTIN_DIR}/*.md   →  src/apps/api/plans/*.md
+
+User plans  (created/edited/deleted at runtime):
+    {PLANS_USER_DIR}/*.md      →  /data/plans/*.md  (host-mounted volume)
+
+Both directories use the same .md format:
+
+    ---
+    name: Human-readable plan name
+    description: One-line description.
+    tool: hunt
+    max_tool_calls: 15
+    ---
+
+    Prompt body text here.  Supports {{target}} placeholder.
+
+The plan ``id`` is the filename stem (e.g. ``quick_recon`` for
+``quick_recon.md``).  Built-in plan IDs are prefixed with ``builtin:``
+in the response so the frontend can distinguish them from user plans.
+
+Routes
+------
+  GET    /api/plans?project_id=…              list all plans (built-ins + user)
+  POST   /api/plans                           create a new user plan
+  PUT    /api/plans/{plan_id}                 update a user plan
+  DELETE /api/plans/{plan_id}?project_id=…   delete a user plan
+  POST   /api/plans/{plan_id}/clone           clone a built-in into user plans
 """
 
+import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -24,6 +47,120 @@ from pydantic import BaseModel
 import deps
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Front-matter parser (no external YAML dependency)
+# ---------------------------------------------------------------------------
+
+def _parse_plan_file(path: Path) -> Optional[dict]:
+    """Parse a plan .md file and return a plan dict, or None if invalid."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+
+    meta: dict = {}
+    for line in parts[1].strip().splitlines():
+        if ":" in line:
+            key, _, val = line.partition(":")
+            meta[key.strip()] = val.strip()
+
+    if "name" not in meta:
+        return None
+
+    return {
+        "name":           meta["name"],
+        "description":    meta.get("description", ""),
+        "tool":           meta.get("tool", "hunt"),
+        "prompt":         parts[2].strip(),
+        "max_tool_calls": int(meta.get("max_tool_calls", "15")),
+    }
+
+
+def _write_plan_file(path: Path, plan: dict) -> None:
+    """Write a plan dict to a .md file with YAML front-matter."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        "---\n"
+        f"name: {plan['name']}\n"
+        f"description: {plan.get('description', '')}\n"
+        f"tool: {plan.get('tool', 'hunt')}\n"
+        f"max_tool_calls: {plan.get('max_tool_calls', 15)}\n"
+        "---\n\n"
+        f"{plan['prompt']}\n"
+    )
+    path.write_text(content, encoding="utf-8")
+
+
+def _safe_slug(name: str) -> str:
+    """Convert a plan name to a safe filename slug."""
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "_", name.strip().lower())
+    return slug[:60] or "plan"
+
+
+def _load_all_plans() -> list:
+    """Return all plans (built-ins first, then user plans), sorted by name."""
+    plans: list = []
+
+    # Built-in plans
+    builtin_dir = deps.PLANS_BUILTIN_DIR
+    if builtin_dir.exists():
+        for md_file in sorted(builtin_dir.glob("*.md")):
+            plan = _parse_plan_file(md_file)
+            if plan:
+                plan["id"] = f"builtin:{md_file.stem}"
+                plan["is_builtin"] = True
+                plan["created_at"] = None
+                plans.append(plan)
+
+    # User plans
+    user_dir = deps.PLANS_USER_DIR
+    if user_dir.exists():
+        for md_file in sorted(user_dir.glob("*.md")):
+            plan = _parse_plan_file(md_file)
+            if plan:
+                plan["id"] = md_file.stem
+                plan["is_builtin"] = False
+                # created_at stored in front-matter if present, else file mtime
+                try:
+                    plan["created_at"] = datetime.fromtimestamp(
+                        md_file.stat().st_mtime, tz=timezone.utc
+                    ).isoformat()
+                except OSError:
+                    plan["created_at"] = None
+                plans.append(plan)
+
+    return plans
+
+
+def _find_plan(plan_id: str) -> Optional[dict]:
+    """Look up a single plan by ID. Returns None if not found."""
+    if plan_id.startswith("builtin:"):
+        stem = plan_id[len("builtin:"):]
+        path = deps.PLANS_BUILTIN_DIR / f"{stem}.md"
+        plan = _parse_plan_file(path)
+        if plan:
+            plan["id"] = plan_id
+            plan["is_builtin"] = True
+            plan["created_at"] = None
+        return plan
+    else:
+        path = deps.PLANS_USER_DIR / f"{plan_id}.md"
+        plan = _parse_plan_file(path)
+        if plan:
+            plan["id"] = plan_id
+            plan["is_builtin"] = False
+            try:
+                plan["created_at"] = datetime.fromtimestamp(
+                    path.stat().st_mtime, tz=timezone.utc
+                ).isoformat()
+            except OSError:
+                plan["created_at"] = None
+        return plan
 
 
 # ---------------------------------------------------------------------------
@@ -52,80 +189,101 @@ class PlanUpdate(BaseModel):
 
 @router.get("/api/plans")
 async def list_plans(project_id: str = "temp"):
-    """Return built-in plans plus plans owned by the given project."""
-    try:
-        return await deps.db_client.get_plans(project_id)
-    except Exception as e:
-        raise deps.server_error(e)
+    """Return all plans — built-ins first, then user plans."""
+    return _load_all_plans()
 
 
 @router.post("/api/plans", status_code=201)
 async def create_plan(body: PlanCreate, project_id: str = "temp"):
-    """Create a new project-scoped plan."""
-    try:
-        plan = {
-            "id": str(uuid.uuid4()),
-            "project_id": project_id,
-            "name": body.name,
-            "description": body.description,
-            "tool": body.tool,
-            "prompt": body.prompt,
-            "max_tool_calls": body.max_tool_calls,
-            "is_builtin": 0,
-            "created_at": datetime.utcnow().isoformat(),
-        }
-        return await deps.db_client.create_plan(plan)
-    except Exception as e:
-        raise deps.server_error(e)
+    """Create a new user plan and write it to the user plans directory."""
+    slug = _safe_slug(body.name)
+    # Ensure uniqueness by appending a short UUID suffix if the slug is taken
+    user_dir = deps.PLANS_USER_DIR
+    user_dir.mkdir(parents=True, exist_ok=True)
+    candidate = user_dir / f"{slug}.md"
+    if candidate.exists():
+        slug = f"{slug}_{uuid.uuid4().hex[:6]}"
+        candidate = user_dir / f"{slug}.md"
+
+    plan = {
+        "name":           body.name,
+        "description":    body.description,
+        "tool":           body.tool,
+        "prompt":         body.prompt,
+        "max_tool_calls": body.max_tool_calls,
+    }
+    _write_plan_file(candidate, plan)
+
+    plan["id"] = slug
+    plan["is_builtin"] = False
+    plan["created_at"] = datetime.now(tz=timezone.utc).isoformat()
+    return plan
 
 
 @router.put("/api/plans/{plan_id}")
 async def update_plan(plan_id: str, body: PlanUpdate):
-    """Update a project-scoped plan. Built-in plans cannot be modified."""
+    """Update a user plan. Built-in plans cannot be modified."""
+    if plan_id.startswith("builtin:"):
+        raise HTTPException(status_code=403, detail="Built-in plans cannot be modified")
+
+    path = deps.PLANS_USER_DIR / f"{plan_id}.md"
+    existing = _parse_plan_file(path)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    updates = body.model_dump(exclude_none=True)
+    existing.update(updates)
+    _write_plan_file(path, existing)
+
+    existing["id"] = plan_id
+    existing["is_builtin"] = False
     try:
-        existing = await deps.db_client.get_plan(plan_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="Plan not found")
-        if existing.get("is_builtin"):
-            raise HTTPException(status_code=403, detail="Built-in plans cannot be modified")
-        updates = body.model_dump(exclude_none=True)
-        result = await deps.db_client.update_plan(plan_id, updates)
-        if result is None:
-            raise HTTPException(status_code=404, detail="Plan not found")
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise deps.server_error(e)
+        existing["created_at"] = datetime.fromtimestamp(
+            path.stat().st_mtime, tz=timezone.utc
+        ).isoformat()
+    except OSError:
+        existing["created_at"] = None
+    return existing
 
 
 @router.delete("/api/plans/{plan_id}", status_code=204)
 async def delete_plan(plan_id: str, project_id: str = "temp"):
-    """Delete a project-scoped plan. Built-in plans cannot be deleted."""
-    try:
-        existing = await deps.db_client.get_plan(plan_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="Plan not found")
-        if existing.get("is_builtin"):
-            raise HTTPException(status_code=403, detail="Built-in plans cannot be deleted")
-        ok = await deps.db_client.delete_plan(plan_id, project_id)
-        if not ok:
-            raise HTTPException(status_code=404, detail="Plan not found or does not belong to this project")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise deps.server_error(e)
+    """Delete a user plan. Built-in plans cannot be deleted."""
+    if plan_id.startswith("builtin:"):
+        raise HTTPException(status_code=403, detail="Built-in plans cannot be deleted")
+
+    path = deps.PLANS_USER_DIR / f"{plan_id}.md"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Plan not found")
+    path.unlink()
 
 
 @router.post("/api/plans/{plan_id}/clone", status_code=201)
 async def clone_plan(plan_id: str, project_id: str = "temp"):
-    """Clone a built-in plan into the given project."""
-    try:
-        result = await deps.db_client.clone_plan(plan_id, project_id)
-        if result is None:
-            raise HTTPException(status_code=404, detail="Plan not found")
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise deps.server_error(e)
+    """Clone any plan (built-in or user) into the user plans directory."""
+    source = _find_plan(plan_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    # Build a new slug from the source name
+    slug = _safe_slug(source["name"])
+    user_dir = deps.PLANS_USER_DIR
+    user_dir.mkdir(parents=True, exist_ok=True)
+    candidate = user_dir / f"{slug}.md"
+    if candidate.exists():
+        slug = f"{slug}_{uuid.uuid4().hex[:6]}"
+        candidate = user_dir / f"{slug}.md"
+
+    clone = {
+        "name":           source["name"],
+        "description":    source.get("description", ""),
+        "tool":           source.get("tool", "hunt"),
+        "prompt":         source["prompt"],
+        "max_tool_calls": source.get("max_tool_calls", 15),
+    }
+    _write_plan_file(candidate, clone)
+
+    clone["id"] = slug
+    clone["is_builtin"] = False
+    clone["created_at"] = datetime.now(tz=timezone.utc).isoformat()
+    return clone

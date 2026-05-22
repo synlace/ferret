@@ -144,6 +144,15 @@ WORKSPACES_DIR = Path(os.getenv("FERRET_WORKSPACES_DIR", "/data/workspaces"))
 
 SOURCES_DIR = Path(os.getenv("FERRET_SOURCES_DIR", "/data/sources"))
 
+# ---------------------------------------------------------------------------
+# Plans directories (filesystem-only, no DB)
+# Built-in plans: {PLANS_BUILTIN_DIR}/*.md  (shipped with the app, read-only)
+# User plans:     {PLANS_USER_DIR}/*.md      (created/edited/deleted at runtime)
+# ---------------------------------------------------------------------------
+
+PLANS_BUILTIN_DIR = Path(__file__).parent / "plans"
+PLANS_USER_DIR = Path(os.getenv("FERRET_PLANS_DIR", "/data/plans"))
+
 
 # ---------------------------------------------------------------------------
 # AI helpers
