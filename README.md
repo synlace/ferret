@@ -16,19 +16,15 @@
   <a href="https://github.com/synlace/ferret/releases/latest">
     <img src="https://img.shields.io/github/v/release/synlace/ferret?label=Release&color=brightgreen" alt="Latest Release" />
   </a>
-  &nbsp;
   <a href="https://discord.gg/eF4KQNWKzk">
     <img src="https://img.shields.io/discord/1504495834266599424?logo=discord&label=Discord&color=5865F2" alt="Discord" />
   </a>
-  &nbsp;
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/synlace/ferret?label=License" alt="License: MIT" />
   </a>
-  &nbsp;
   <a href="https://github.com/synlace/ferret/actions/workflows/publish-release.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/synlace/ferret/publish-release.yml?label=Build&logo=github" alt="Build Status" />
   </a>
-  &nbsp;
   <a href="https://github.com/synlace/ferret/pkgs/container/ferret">
     <img src="https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker" alt="Docker on GHCR" />
   </a>
