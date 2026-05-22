@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 import deps
 from models import ChatSession, ChatSessionCreate, ChatSessionUpdate
 from chats_ai import clean_messages_for_display
+from plans import _find_plan
 
 _log = logging.getLogger(__name__)
 
@@ -228,7 +229,7 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
         hunt_status = "idle"
         plan = None
         if body.plan_id:
-            plan = await deps.db_client.get_plan(body.plan_id)
+            plan = _find_plan(body.plan_id)
             if plan:
                 hunt_status = "running"
 
