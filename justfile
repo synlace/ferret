@@ -100,7 +100,7 @@ test component="":
           test_api_snare.py \
           test_api_projects.py \
           test_api_openrouter_keys.py \
-          test_api_workspaces.py \
+          test_api_hunts.py \
           test_api_sources.py \
           test_api_auth.py \
           test_api_mfa.py \

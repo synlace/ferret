@@ -1,5 +1,5 @@
 """
-FERRET API — pytest unit tests for workspace endpoints.
+FERRET API — pytest unit tests for hunt workspace endpoints.
 
 Covers
 ------
@@ -7,30 +7,30 @@ Helpers:
   - _safe_path rejects path traversal attempts
   - _file_tree returns correct entries for a populated workspace
 
-GET /api/workspaces/{session_id}/files:
+GET /api/hunts/{session_id}/files:
   - 404 when session does not exist
   - 200 with empty file list for a fresh workspace
   - 200 with correct entries after files are written
 
-GET /api/workspaces/{session_id}/files/{path}:
+GET /api/hunts/{session_id}/files/{path}:
   - 404 when session does not exist
   - 404 when file does not exist
   - 200 with content for an existing file
   - 400 on path traversal attempt
 
-PUT /api/workspaces/{session_id}/files/{path}:
+PUT /api/hunts/{session_id}/files/{path}:
   - 404 when session does not exist
   - 400 when path is not under an allowed subdir
   - 400 on path traversal attempt
   - 200 creates the file and returns metadata
   - 200 overwrites an existing file
 
-DELETE /api/workspaces/{session_id}/files/{path}:
+DELETE /api/hunts/{session_id}/files/{path}:
   - 404 when session does not exist
   - 404 when file does not exist
   - 200 deletes the file and returns {"deleted": path}
 
-POST /api/workspaces/{session_id}/files/{path}/run:
+POST /api/hunts/{session_id}/files/{path}/run:
   - 404 when session does not exist
   - 404 when file does not exist
   - 400 when file is under notes/
@@ -38,13 +38,13 @@ POST /api/workspaces/{session_id}/files/{path}/run:
   - 200 streams SSE output for a scripts/*.sh file
   - 200 streams SSE output for a tests/*.py file (pytest)
 
-POST /api/chats (workspace creation):
+POST /api/chats (hunt creation):
   - Creates workspace subdirectories on the filesystem
   - Returns workspace_dir in the response
 
 Run with:
-    cd github/monorepo/tools/ferret/src/apps/api
-    pytest test_api_workspaces.py -v
+    cd github/ferret/src/apps/api
+    pytest test_api_hunts.py -v
 """
 
 import uuid
@@ -67,9 +67,9 @@ async def _create_session(client, name: str = "Test Workspace", scope: str = "bl
 
 
 async def _write_file(client, session_id: str, file_path: str, content: str = "# hello") -> dict:
-    """Write a file to a workspace via the API and return the response JSON."""
+    """Write a file to a hunt workspace via the API and return the response JSON."""
     resp = await client.put(
-        f"/api/workspaces/{session_id}/files/{file_path}",
+        f"/api/hunts/{session_id}/files/{file_path}",
         json={"content": content},
     )
     assert resp.status_code == 200, resp.text
@@ -82,7 +82,7 @@ async def _write_file(client, session_id: str, file_path: str, content: str = "#
 
 def test_safe_path_allows_valid_path(tmp_path):
     """_safe_path returns the resolved path for a valid relative path."""
-    from routers.workspaces import _safe_path
+    from routers.hunts import _safe_path
     result = _safe_path(tmp_path, "scripts/test.py")
     assert result == (tmp_path / "scripts" / "test.py").resolve()
 
@@ -90,7 +90,7 @@ def test_safe_path_allows_valid_path(tmp_path):
 def test_safe_path_rejects_traversal(tmp_path):
     """_safe_path raises 400 for a path that escapes the root."""
     from fastapi import HTTPException
-    from routers.workspaces import _safe_path
+    from routers.hunts import _safe_path
     with pytest.raises(HTTPException) as exc_info:
         _safe_path(tmp_path, "../../etc/passwd")
     assert exc_info.value.status_code == 400
@@ -103,13 +103,13 @@ def test_safe_path_rejects_traversal(tmp_path):
 
 def test_file_tree_empty_workspace(tmp_path):
     """_file_tree returns an empty list when no subdirs exist."""
-    from routers.workspaces import _file_tree
+    from routers.hunts import _file_tree
     assert _file_tree(tmp_path) == []
 
 
 def test_file_tree_returns_entries(tmp_path):
     """_file_tree returns correct entries for a populated workspace."""
-    from routers.workspaces import _file_tree
+    from routers.hunts import _file_tree
     (tmp_path / "scripts").mkdir()
     (tmp_path / "tests").mkdir()
     (tmp_path / "notes").mkdir()
@@ -136,7 +136,7 @@ def test_file_tree_returns_entries(tmp_path):
 
 def test_file_tree_ignores_unknown_subdirs(tmp_path):
     """_file_tree only returns files under scripts/, tests/, notes/."""
-    from routers.workspaces import _file_tree
+    from routers.hunts import _file_tree
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "run.sh").write_text("echo hi")
     (tmp_path / "hidden").mkdir()
@@ -149,24 +149,24 @@ def test_file_tree_ignores_unknown_subdirs(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workspaces/{session_id}/files
+# GET /api/hunts/{session_id}/files
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_list_files_session_not_found(client):
-    """GET /api/workspaces/{id}/files → 404 when session does not exist."""
-    resp = await client.get("/api/workspaces/nonexistent-session/files")
+    """GET /api/hunts/{id}/files → 404 when session does not exist."""
+    resp = await client.get("/api/hunts/nonexistent-session/files")
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
 async def test_list_files_empty_workspace(client, tmp_path):
-    """GET /api/workspaces/{id}/files → 200 with empty list for a fresh workspace."""
+    """GET /api/hunts/{id}/files → 200 with empty list for a fresh workspace."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
-        resp = await client.get(f"/api/workspaces/{session['id']}/files")
+        resp = await client.get(f"/api/hunts/{session['id']}/files")
     assert resp.status_code == 200
     data = resp.json()
     assert data["session_id"] == session["id"]
@@ -175,7 +175,7 @@ async def test_list_files_empty_workspace(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_list_files_with_content(client, tmp_path):
-    """GET /api/workspaces/{id}/files → 200 with entries after writing files."""
+    """GET /api/hunts/{id}/files → 200 with entries after writing files."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
@@ -183,7 +183,7 @@ async def test_list_files_with_content(client, tmp_path):
         await _write_file(client, sid, "scripts/recon.sh", "#!/bin/bash\necho hi")
         await _write_file(client, sid, "tests/test_auth.py", "def test_pass(): pass")
 
-        resp = await client.get(f"/api/workspaces/{sid}/files")
+        resp = await client.get(f"/api/hunts/{sid}/files")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -193,36 +193,36 @@ async def test_list_files_with_content(client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workspaces/{session_id}/files/{path}
+# GET /api/hunts/{session_id}/files/{path}
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_read_file_session_not_found(client):
-    """GET /api/workspaces/{id}/files/{path} → 404 when session does not exist."""
-    resp = await client.get("/api/workspaces/nonexistent/files/scripts/run.sh")
+    """GET /api/hunts/{id}/files/{path} → 404 when session does not exist."""
+    resp = await client.get("/api/hunts/nonexistent/files/scripts/run.sh")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_read_file_not_found(client, tmp_path):
-    """GET /api/workspaces/{id}/files/{path} → 404 when file does not exist."""
+    """GET /api/hunts/{id}/files/{path} → 404 when file does not exist."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
-        resp = await client.get(f"/api/workspaces/{session['id']}/files/scripts/missing.py")
+        resp = await client.get(f"/api/hunts/{session['id']}/files/scripts/missing.py")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_read_file_success(client, tmp_path):
-    """GET /api/workspaces/{id}/files/{path} → 200 with file content."""
+    """GET /api/hunts/{id}/files/{path} → 200 with file content."""
     import deps as deps_module
     content = "print('hello from ferret')"
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         sid = session["id"]
         await _write_file(client, sid, "scripts/hello.py", content)
-        resp = await client.get(f"/api/workspaces/{sid}/files/scripts/hello.py")
+        resp = await client.get(f"/api/hunts/{sid}/files/scripts/hello.py")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -234,7 +234,7 @@ async def test_read_file_success(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_read_file_path_traversal(client, tmp_path):
-    """GET /api/workspaces/{id}/files/{path} → 400 or 404 on path traversal.
+    """GET /api/hunts/{id}/files/{path} → 400 or 404 on path traversal.
 
     FastAPI normalises ``../../etc/passwd`` in the URL before routing, so the
     path may never reach _safe_path.  Both 400 (explicit rejection by
@@ -245,7 +245,7 @@ async def test_read_file_path_traversal(client, tmp_path):
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         resp = await client.get(
-            f"/api/workspaces/{session['id']}/files/../../etc/passwd"
+            f"/api/hunts/{session['id']}/files/../../etc/passwd"
         )
     assert resp.status_code in (400, 404), (
         f"Expected 400 or 404 for path traversal, got {resp.status_code}"
@@ -253,14 +253,14 @@ async def test_read_file_path_traversal(client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# PUT /api/workspaces/{session_id}/files/{path}
+# PUT /api/hunts/{session_id}/files/{path}
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_write_file_session_not_found(client):
-    """PUT /api/workspaces/{id}/files/{path} → 404 when session does not exist."""
+    """PUT /api/hunts/{id}/files/{path} → 404 when session does not exist."""
     resp = await client.put(
-        "/api/workspaces/nonexistent/files/scripts/run.sh",
+        "/api/hunts/nonexistent/files/scripts/run.sh",
         json={"content": "echo hi"},
     )
     assert resp.status_code == 404
@@ -268,12 +268,12 @@ async def test_write_file_session_not_found(client):
 
 @pytest.mark.asyncio
 async def test_write_file_disallowed_subdir(client, tmp_path):
-    """PUT /api/workspaces/{id}/files/{path} → 400 when path is not under allowed subdir."""
+    """PUT /api/hunts/{id}/files/{path} → 400 when path is not under allowed subdir."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         resp = await client.put(
-            f"/api/workspaces/{session['id']}/files/uploads/evil.sh",
+            f"/api/hunts/{session['id']}/files/uploads/evil.sh",
             json={"content": "rm -rf /"},
         )
     assert resp.status_code == 400
@@ -282,7 +282,7 @@ async def test_write_file_disallowed_subdir(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_write_file_path_traversal(client, tmp_path):
-    """PUT /api/workspaces/{id}/files/{path} → 400 or 404 on path traversal.
+    """PUT /api/hunts/{id}/files/{path} → 400 or 404 on path traversal.
 
     FastAPI normalises ``scripts/../../evil.sh`` in the URL before routing, so
     the path may never reach _safe_path.  Both 400 (explicit rejection) and
@@ -292,7 +292,7 @@ async def test_write_file_path_traversal(client, tmp_path):
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         resp = await client.put(
-            f"/api/workspaces/{session['id']}/files/scripts/../../evil.sh",
+            f"/api/hunts/{session['id']}/files/scripts/../../evil.sh",
             json={"content": "rm -rf /"},
         )
     assert resp.status_code in (400, 404), (
@@ -302,13 +302,13 @@ async def test_write_file_path_traversal(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_write_file_creates_file(client, tmp_path):
-    """PUT /api/workspaces/{id}/files/{path} → 200 creates the file."""
+    """PUT /api/hunts/{id}/files/{path} → 200 creates the file."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         sid = session["id"]
         resp = await client.put(
-            f"/api/workspaces/{sid}/files/scripts/recon.sh",
+            f"/api/hunts/{sid}/files/scripts/recon.sh",
             json={"content": "#!/bin/bash\nnmap -sV $TARGET"},
         )
     assert resp.status_code == 200
@@ -320,27 +320,27 @@ async def test_write_file_creates_file(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_write_file_overwrites_existing(client, tmp_path):
-    """PUT /api/workspaces/{id}/files/{path} → 200 overwrites an existing file."""
+    """PUT /api/hunts/{id}/files/{path} → 200 overwrites an existing file."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         sid = session["id"]
         await _write_file(client, sid, "notes/findings.md", "# v1")
         resp = await client.put(
-            f"/api/workspaces/{sid}/files/notes/findings.md",
+            f"/api/hunts/{sid}/files/notes/findings.md",
             json={"content": "# v2 — updated"},
         )
         assert resp.status_code == 200
 
         # Verify content was updated
-        read_resp = await client.get(f"/api/workspaces/{sid}/files/notes/findings.md")
+        read_resp = await client.get(f"/api/hunts/{sid}/files/notes/findings.md")
     assert read_resp.status_code == 200
     assert read_resp.json()["content"] == "# v2 — updated"
 
 
 @pytest.mark.asyncio
 async def test_write_file_all_allowed_subdirs(client, tmp_path):
-    """PUT /api/workspaces/{id}/files/{path} → 200 for scripts/, tests/, notes/."""
+    """PUT /api/hunts/{id}/files/{path} → 200 for scripts/, tests/, notes/."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
@@ -351,50 +351,50 @@ async def test_write_file_all_allowed_subdirs(client, tmp_path):
             ("notes", "recon.md", "# Recon notes"),
         ]:
             resp = await client.put(
-                f"/api/workspaces/{sid}/files/{subdir}/{filename}",
+                f"/api/hunts/{sid}/files/{subdir}/{filename}",
                 json={"content": content},
             )
             assert resp.status_code == 200, f"Failed for {subdir}/{filename}: {resp.text}"
 
 
 # ---------------------------------------------------------------------------
-# DELETE /api/workspaces/{session_id}/files/{path}
+# DELETE /api/hunts/{session_id}/files/{path}
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_delete_file_session_not_found(client):
-    """DELETE /api/workspaces/{id}/files/{path} → 404 when session does not exist."""
-    resp = await client.delete("/api/workspaces/nonexistent/files/scripts/run.sh")
+    """DELETE /api/hunts/{id}/files/{path} → 404 when session does not exist."""
+    resp = await client.delete("/api/hunts/nonexistent/files/scripts/run.sh")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_delete_file_not_found(client, tmp_path):
-    """DELETE /api/workspaces/{id}/files/{path} → 404 when file does not exist."""
+    """DELETE /api/hunts/{id}/files/{path} → 404 when file does not exist."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         resp = await client.delete(
-            f"/api/workspaces/{session['id']}/files/scripts/missing.sh"
+            f"/api/hunts/{session['id']}/files/scripts/missing.sh"
         )
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_delete_file_success(client, tmp_path):
-    """DELETE /api/workspaces/{id}/files/{path} → 200 deletes the file."""
+    """DELETE /api/hunts/{id}/files/{path} → 200 deletes the file."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         sid = session["id"]
         await _write_file(client, sid, "scripts/temp.sh", "echo bye")
 
-        del_resp = await client.delete(f"/api/workspaces/{sid}/files/scripts/temp.sh")
+        del_resp = await client.delete(f"/api/hunts/{sid}/files/scripts/temp.sh")
         assert del_resp.status_code == 200
         assert del_resp.json()["deleted"] == "scripts/temp.sh"
 
         # File should no longer be readable
-        read_resp = await client.get(f"/api/workspaces/{sid}/files/scripts/temp.sh")
+        read_resp = await client.get(f"/api/hunts/{sid}/files/scripts/temp.sh")
     assert read_resp.status_code == 404
 
 
@@ -408,8 +408,8 @@ async def test_delete_file_removed_from_tree(client, tmp_path):
         await _write_file(client, sid, "scripts/a.sh", "echo a")
         await _write_file(client, sid, "scripts/b.sh", "echo b")
 
-        await client.delete(f"/api/workspaces/{sid}/files/scripts/a.sh")
-        tree_resp = await client.get(f"/api/workspaces/{sid}/files")
+        await client.delete(f"/api/hunts/{sid}/files/scripts/a.sh")
+        tree_resp = await client.get(f"/api/hunts/{sid}/files")
 
     assert tree_resp.status_code == 200
     paths = [f["path"] for f in tree_resp.json()["files"]]
@@ -418,38 +418,38 @@ async def test_delete_file_removed_from_tree(client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/workspaces/{session_id}/files/{path}/run
+# POST /api/hunts/{session_id}/files/{path}/run
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_run_file_session_not_found(client):
-    """POST /api/workspaces/{id}/files/{path}/run → 404 when session does not exist."""
-    resp = await client.post("/api/workspaces/nonexistent/files/scripts/run.sh/run")
+    """POST /api/hunts/{id}/files/{path}/run → 404 when session does not exist."""
+    resp = await client.post("/api/hunts/nonexistent/files/scripts/run.sh/run")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_run_file_not_found(client, tmp_path):
-    """POST /api/workspaces/{id}/files/{path}/run → 404 when file does not exist."""
+    """POST /api/hunts/{id}/files/{path}/run → 404 when file does not exist."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         resp = await client.post(
-            f"/api/workspaces/{session['id']}/files/scripts/missing.sh/run"
+            f"/api/hunts/{session['id']}/files/scripts/missing.sh/run"
         )
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_run_notes_file_rejected(client, tmp_path):
-    """POST /api/workspaces/{id}/files/notes/{path}/run → 400 (notes not runnable)."""
+    """POST /api/hunts/{id}/files/notes/{path}/run → 400 (notes not runnable)."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         session = await _create_session(client)
         sid = session["id"]
         await _write_file(client, sid, "notes/findings.md", "# Findings")
         resp = await client.post(
-            f"/api/workspaces/{sid}/files/notes/findings.md/run"
+            f"/api/hunts/{sid}/files/notes/findings.md/run"
         )
     assert resp.status_code == 400
     assert "notes" in resp.json()["detail"].lower()
@@ -457,7 +457,7 @@ async def test_run_notes_file_rejected(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_script_py_streams_sse(client, tmp_path):
-    """POST /api/workspaces/{id}/files/scripts/run.py/run → SSE stream for python3."""
+    """POST /api/hunts/{id}/files/scripts/run.py/run → SSE stream for python3."""
     import deps as deps_module
 
     # Mock asyncio.create_subprocess_exec to return a fake process
@@ -472,7 +472,7 @@ async def test_run_script_py_streams_sse(client, tmp_path):
         await _write_file(client, sid, "scripts/run.py", "print('hello from script')")
 
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
-            resp = await client.post(f"/api/workspaces/{sid}/files/scripts/run.py/run")
+            resp = await client.post(f"/api/hunts/{sid}/files/scripts/run.py/run")
 
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers["content-type"]
@@ -484,7 +484,7 @@ async def test_run_script_py_streams_sse(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_script_sh_streams_sse(client, tmp_path):
-    """POST /api/workspaces/{id}/files/scripts/run.sh/run → SSE stream for bash."""
+    """POST /api/hunts/{id}/files/scripts/run.sh/run → SSE stream for bash."""
     import deps as deps_module
 
     fake_proc = MagicMock()
@@ -498,7 +498,7 @@ async def test_run_script_sh_streams_sse(client, tmp_path):
         await _write_file(client, sid, "scripts/run.sh", "#!/bin/bash\necho hi")
 
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
-            resp = await client.post(f"/api/workspaces/{sid}/files/scripts/run.sh/run")
+            resp = await client.post(f"/api/hunts/{sid}/files/scripts/run.sh/run")
 
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers["content-type"]
@@ -506,7 +506,7 @@ async def test_run_script_sh_streams_sse(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_test_py_uses_pytest(client, tmp_path):
-    """POST /api/workspaces/{id}/files/tests/test_auth.py/run → uses pytest command."""
+    """POST /api/hunts/{id}/files/tests/test_auth.py/run → uses pytest command."""
     import deps as deps_module
 
     captured_cmd = []
@@ -526,7 +526,7 @@ async def test_run_test_py_uses_pytest(client, tmp_path):
 
         with patch("asyncio.create_subprocess_exec", fake_subprocess):
             resp = await client.post(
-                f"/api/workspaces/{sid}/files/tests/test_auth.py/run"
+                f"/api/hunts/{sid}/files/tests/test_auth.py/run"
             )
 
     assert resp.status_code == 200
@@ -557,7 +557,7 @@ async def test_run_via_proxy_sets_env_vars(client, tmp_path):
 
         with patch("asyncio.create_subprocess_exec", fake_subprocess):
             resp = await client.post(
-                f"/api/workspaces/{sid}/files/scripts/scan.sh/run?via_proxy=true"
+                f"/api/hunts/{sid}/files/scripts/scan.sh/run?via_proxy=true"
             )
 
     assert resp.status_code == 200
