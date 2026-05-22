@@ -143,12 +143,27 @@ export default function SetupPasswordPage() {
                 disabled={!password || !confirmPassword}
                 className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
               >
-                Continue →
+                Continue
               </button>
             </div>
           </form>
         </div>
       </div>
+
+      {/* Footer — pinned to bottom of viewport */}
+      <footer className="fixed bottom-0 left-0 right-0 flex justify-center pb-4">
+        <p className="text-neutral-600 text-xs">
+          by{" "}
+          <a
+            href="https://synlace.ai/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-400 transition-colors"
+          >
+            Synlace
+          </a>
+        </p>
+      </footer>
     </div>
   )
 }

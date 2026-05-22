@@ -31,10 +31,10 @@ const PROVIDERS: Provider[] = [
     key: "openrouter",
     name: "OpenRouter",
     tag: "200+ models",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/openrouter.png",
-    defaultModel: "google/gemini-3-flash-preview",
+    icon: "/providers/openrouter.png",
+    defaultModel: "google/gemini-3.5-flash",
     models: [
-      { id: "google/gemini-3-flash-preview",    label: "Gemini 3 Flash",   note: "Recommended" },
+      { id: "google/gemini-3.5-flash",          label: "Gemini 3.5 Flash", note: "Recommended" },
       { id: "google/gemini-2.5-flash-preview",  label: "Gemini 2.5 Flash" },
       { id: "google/gemini-2.5-pro-preview",    label: "Gemini 2.5 Pro" },
       { id: "anthropic/claude-sonnet-4-5",      label: "Claude Sonnet 4.5" },
@@ -46,7 +46,7 @@ const PROVIDERS: Provider[] = [
     key: "openai",
     name: "OpenAI",
     tag: "Direct API",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/openai.png",
+    icon: "/providers/openai.png",
     defaultModel: "gpt-4o",
     models: [
       { id: "gpt-4o",      label: "GPT-4o",      note: "Recommended" },
@@ -59,7 +59,7 @@ const PROVIDERS: Provider[] = [
     key: "anthropic",
     name: "Anthropic",
     tag: "Direct API",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/claude-color.png",
+    icon: "/providers/claude-color.png",
     defaultModel: "claude-sonnet-4-5",
     models: [
       { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", note: "Recommended" },
@@ -71,7 +71,7 @@ const PROVIDERS: Provider[] = [
     key: "gemini",
     name: "Gemini",
     tag: "Google AI",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/gemini-color.png",
+    icon: "/providers/gemini-color.png",
     defaultModel: "gemini-2.5-flash-preview-05-20",
     models: [
       { id: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash", note: "Recommended" },
@@ -82,7 +82,7 @@ const PROVIDERS: Provider[] = [
     key: "deepseek",
     name: "DeepSeek",
     tag: "Cost-effective",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/deepseek-color.png",
+    icon: "/providers/deepseek-color.png",
     defaultModel: "deepseek-reasoner",
     models: [
       { id: "deepseek-reasoner", label: "DeepSeek R1",  note: "Recommended" },
@@ -93,7 +93,7 @@ const PROVIDERS: Provider[] = [
     key: "mistral",
     name: "Mistral",
     tag: "European AI",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/mistral-color.png",
+    icon: "/providers/mistral-color.png",
     defaultModel: "mistral-large-latest",
     models: [
       { id: "mistral-large-latest", label: "Mistral Large", note: "Recommended" },
@@ -105,7 +105,7 @@ const PROVIDERS: Provider[] = [
     key: "ollama",
     name: "Ollama",
     tag: "host-gateway:11434",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/ollama.png",
+    icon: "/providers/ollama.png",
     local: true,
     // host-gateway resolves to the Docker host IP inside containers (via extra_hosts).
     // Using localhost here would point at the container itself, not the host machine.
@@ -122,7 +122,7 @@ const PROVIDERS: Provider[] = [
     key: "lmstudio",
     name: "LM Studio",
     tag: "host-gateway:1234",
-    icon: "https://unpkg.com/@lobehub/icons-static-png@latest/dark/lmstudio.png",
+    icon: "/providers/lmstudio.png",
     local: true,
     // host-gateway resolves to the Docker host IP inside containers (via extra_hosts).
     // Using localhost here would point at the container itself, not the host machine.
@@ -423,13 +423,13 @@ export default function SetupPage() {
                   onClick={() => router.push("/setup/password")}
                   className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  ← Back
+                  Back
                 </button>
                 <button
                   onClick={() => setStep(2)}
                   className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 transition-colors"
                 >
-                  Continue →
+                  Continue
                 </button>
               </div>
             </div>
@@ -499,6 +499,11 @@ export default function SetupPage() {
                     onChange={e => setApiKey(e.target.value)}
                     placeholder="sk-..."
                     autoComplete="off"
+                    data-bwignore="true"
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
+                    data-keeper-ignore="true"
                     className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                   />
                   <p className="text-xs text-neutral-500">
@@ -527,6 +532,11 @@ export default function SetupPage() {
                     onChange={e => setProvisioningKey(e.target.value)}
                     placeholder="sk-or-v1-... (master account key)"
                     autoComplete="off"
+                    data-bwignore="true"
+                    data-lpignore="true"
+                    data-1p-ignore
+                    data-form-type="other"
+                    data-keeper-ignore="true"
                     className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-brand-500 focus:outline-none"
                   />
                   <p className="text-xs text-neutral-500">
@@ -574,14 +584,14 @@ export default function SetupPage() {
                   onClick={() => setStep(1)}
                   className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  ← Back
+                  Back
                 </button>
                 <button
                   onClick={() => setStep(3)}
                   disabled={!provider.local && !testResult?.ok}
                   className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
-                  Continue →
+                  Continue
                 </button>
               </div>
             </div>
@@ -646,14 +656,14 @@ export default function SetupPage() {
                   onClick={() => setStep(2)}
                   className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                 >
-                  ← Back
+                  Back
                 </button>
                 <button
                   onClick={saveSetup}
                   disabled={saving || !model}
                   className="rounded-md bg-brand-500 px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-brand-400 disabled:opacity-40 transition-colors"
                 >
-                  {saving ? "Saving..." : "Finish setup →"}
+                  {saving ? "Saving..." : "Finish setup"}
                 </button>
               </div>
             </div>
@@ -691,12 +701,27 @@ export default function SetupPage() {
                 onClick={() => router.replace("/login")}
                 className="rounded-md bg-brand-500 px-6 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-brand-400 transition-colors"
               >
-                Sign in to Ferret →
+                Sign in to Ferret
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Footer — pinned to bottom of viewport */}
+      <footer className="fixed bottom-0 left-0 right-0 flex justify-center pb-4">
+        <p className="text-neutral-600 text-xs">
+          by{" "}
+          <a
+            href="https://synlace.ai/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-400 transition-colors"
+          >
+            Synlace
+          </a>
+        </p>
+      </footer>
     </div>
   )
 }
