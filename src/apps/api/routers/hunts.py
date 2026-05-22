@@ -1,18 +1,18 @@
 """
-Workspace file management endpoints.
+Hunt workspace file management endpoints.
 
-Each chat session (workspace) has its own directory:
+Each chat session (hunt) has its own directory:
   {WORKSPACES_DIR}/{project_id}/{session_id}/
     scripts/   ← one-off scripts (bash, python, etc.)
     tests/     ← pytest test files
     notes/     ← markdown notes / findings
 
 Endpoints:
-  GET    /api/workspaces/{session_id}/files          → file tree
-  GET    /api/workspaces/{session_id}/files/{path}   → read file
-  PUT    /api/workspaces/{session_id}/files/{path}   → write/create file
-  DELETE /api/workspaces/{session_id}/files/{path}   → delete file
-  POST   /api/workspaces/{session_id}/files/{path}/run → run file in lab (SSE)
+  GET    /api/hunts/{session_id}/files          → file tree
+  GET    /api/hunts/{session_id}/files/{path}   → read file
+  PUT    /api/hunts/{session_id}/files/{path}   → write/create file
+  DELETE /api/hunts/{session_id}/files/{path}   → delete file
+  POST   /api/hunts/{session_id}/files/{path}/run → run file in lab (SSE)
 """
 
 import asyncio
@@ -109,23 +109,23 @@ class FileWrite(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("/api/workspaces/{session_id}/files")
+@router.get("/api/hunts/{session_id}/files")
 async def list_workspace_files(session_id: str, project_id: str = "temp"):
-    """Return the file tree for a workspace."""
+    """Return the file tree for a hunt workspace."""
     session = await deps.db_client.get_chat_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Hunt not found")
     pid = session.get("project_id", project_id)
     root = _workspace_root(session_id, pid)
     return {"session_id": session_id, "files": _file_tree(root)}
 
 
-@router.get("/api/workspaces/{session_id}/files/{file_path:path}")
+@router.get("/api/hunts/{session_id}/files/{file_path:path}")
 async def read_workspace_file(session_id: str, file_path: str, project_id: str = "temp"):
-    """Read the content of a workspace file."""
+    """Read the content of a hunt workspace file."""
     session = await deps.db_client.get_chat_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Hunt not found")
     pid = session.get("project_id", project_id)
     root = _workspace_root(session_id, pid)
     path = _safe_path(root, file_path)
@@ -139,12 +139,12 @@ async def read_workspace_file(session_id: str, file_path: str, project_id: str =
     }
 
 
-@router.put("/api/workspaces/{session_id}/files/{file_path:path}", status_code=200)
+@router.put("/api/hunts/{session_id}/files/{file_path:path}", status_code=200)
 async def write_workspace_file(session_id: str, file_path: str, body: FileWrite, project_id: str = "temp"):
-    """Write (create or overwrite) a workspace file."""
+    """Write (create or overwrite) a hunt workspace file."""
     session = await deps.db_client.get_chat_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Hunt not found")
     pid = session.get("project_id", project_id)
     root = _workspace_root(session_id, pid)
 
@@ -166,12 +166,12 @@ async def write_workspace_file(session_id: str, file_path: str, body: FileWrite,
     }
 
 
-@router.delete("/api/workspaces/{session_id}/files/{file_path:path}", status_code=200)
+@router.delete("/api/hunts/{session_id}/files/{file_path:path}", status_code=200)
 async def delete_workspace_file(session_id: str, file_path: str, project_id: str = "temp"):
-    """Delete a workspace file."""
+    """Delete a hunt workspace file."""
     session = await deps.db_client.get_chat_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Hunt not found")
     pid = session.get("project_id", project_id)
     root = _workspace_root(session_id, pid)
     path = _safe_path(root, file_path)
@@ -181,9 +181,9 @@ async def delete_workspace_file(session_id: str, file_path: str, project_id: str
     return {"deleted": file_path}
 
 
-@router.post("/api/workspaces/{session_id}/files/{file_path:path}/run")
+@router.post("/api/hunts/{session_id}/files/{file_path:path}/run")
 async def run_workspace_file(session_id: str, file_path: str, project_id: str = "temp", via_proxy: bool = False):
-    """Run a workspace file inside the lab container and stream output via SSE.
+    """Run a hunt workspace file inside the lab container and stream output via SSE.
 
     - tests/*.py  → pytest
     - scripts/*.py → python3
@@ -192,7 +192,7 @@ async def run_workspace_file(session_id: str, file_path: str, project_id: str = 
     """
     session = await deps.db_client.get_chat_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Hunt not found")
     pid = session.get("project_id", project_id)
     root = _workspace_root(session_id, pid)
     path = _safe_path(root, file_path)
