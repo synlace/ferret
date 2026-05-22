@@ -306,7 +306,7 @@ export function ScopePickerModal({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" data-modal>
       <div
         ref={modalRef}
         className="bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl flex flex-col"

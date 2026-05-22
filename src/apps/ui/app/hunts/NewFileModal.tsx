@@ -39,7 +39,7 @@ export function NewFileModal({ sessionId, onCreated, onClose }: NewFileModalProp
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-stretch justify-end" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-stretch justify-end" onClick={onClose} data-modal>
       <div className="w-72 bg-neutral-900 border-l border-neutral-700 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-700 flex-shrink-0 bg-neutral-800">

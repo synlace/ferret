@@ -308,19 +308,16 @@ function HuntsPageInner() {
   }, [activeProjectId, fetchSessions, loadSession, fetchAllFileCounts])
 
   useEffect(() => {
-    const FOCUS_SELECTORS = [
-      'textarea',
-      'input[type="text"]',
-      'input[type="number"]',
-      'select',
-      '[contenteditable]',
-    ]
     const handler = (e: MouseEvent) => {
       const textarea = chatInputRef.current
       if (!textarea) return
       const target = e.target as HTMLElement
-      const needsOwnFocus = FOCUS_SELECTORS.some(sel => target.closest(sel))
-      if (needsOwnFocus) return
+      // Don't steal focus if the click is on any interactive input element
+      // or if the click is inside a modal overlay (fixed-position backdrop)
+      const isInteractive = !!target.closest('input, textarea, select, [contenteditable], button, a, [role="dialog"]')
+      if (isInteractive) return
+      const isInModal = !!target.closest('[data-modal]')
+      if (isInModal) return
       setTimeout(() => { chatInputRef.current?.focus() }, 0)
     }
     document.addEventListener("mousedown", handler, true)
@@ -745,7 +742,7 @@ function HuntsPageInner() {
 
       {/* ── Modals ── */}
       {showNewModal && (
-        <NewChatModal activeProjectId={activeProjectId} onClose={() => setShowNewModal(false)}
+        <NewChatModal activeProjectId={activeProjectId} onClose={() => { setShowNewModal(false); setTimeout(() => { chatInputRef.current?.focus() }, 0) }}
           onCreated={session => {
             setSessions(prev => [{ ...session, workspace_dir: (session as WorkspaceSession).workspace_dir ?? null } as WorkspaceSession, ...prev])
             setShowNewModal(false)

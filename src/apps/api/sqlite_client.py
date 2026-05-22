@@ -180,19 +180,6 @@ class SQLiteClient(ProjectsMixin):
                 created_at    TEXT NOT NULL
             );
 
-            -- Hunt plans (built-in and project-scoped)
-            CREATE TABLE IF NOT EXISTS plans (
-                id             TEXT PRIMARY KEY,
-                project_id     TEXT,
-                name           TEXT NOT NULL,
-                description    TEXT DEFAULT '',
-                tool           TEXT DEFAULT 'hunt',
-                prompt         TEXT NOT NULL,
-                max_tool_calls INTEGER DEFAULT 15,
-                is_builtin     INTEGER DEFAULT 0,
-                created_at     TEXT NOT NULL
-            );
-
             -- Test runs
             CREATE TABLE IF NOT EXISTS test_runs (
                 id          TEXT PRIMARY KEY,
@@ -372,9 +359,6 @@ class SQLiteClient(ProjectsMixin):
             await self._db.commit()
         except Exception:
             pass  # column already exists
-
-        # Seed built-in plans (idempotent)
-        await self._seed_builtin_plans()
 
     # ------------------------------------------------------------------
     # Temp-project seed (idempotent)

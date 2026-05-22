@@ -116,7 +116,7 @@ export function ModelPickerModal({
   )
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" data-modal>
       <div ref={modalRef} className="bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl w-[600px] max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700">
           <h2 className="text-sm font-semibold text-white">Select Default Model</h2>
