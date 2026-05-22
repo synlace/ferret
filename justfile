@@ -249,9 +249,20 @@ tag bump:
       *) echo "Usage: just tag major|minor|patch"; exit 1 ;;
     esac
     NEW="v${MAJOR}.${MINOR}.${PATCH}"
+    echo "Pinning docker-compose.prod.yml defaults to ${NEW}..."
+    # Update the fallback version in docker-compose.prod.yml so `just up`
+    # (without FERRET_VERSION set) pulls this release rather than :latest.
+    sed -i \
+        -e "s|ferret-docker-shim:\${FERRET_VERSION:-v[^}]*}|ferret-docker-shim:\${FERRET_VERSION:-${NEW}}|g" \
+        -e "s|ferret-api:\${FERRET_VERSION:-v[^}]*}|ferret-api:\${FERRET_VERSION:-${NEW}}|g" \
+        -e "s|ferret-ui:\${FERRET_VERSION:-v[^}]*}|ferret-ui:\${FERRET_VERSION:-${NEW}}|g" \
+        -e "s|ferret-lab:v[0-9][^}]*}|ferret-lab:${NEW}}|g" \
+        docker-compose.prod.yml
+    git add docker-compose.prod.yml
+    git commit -m "chore(release): pin docker-compose.prod.yml defaults to ${NEW}"
     echo "Tagging ${NEW}..."
     git tag -a "$NEW" -m "Release ${NEW}"
-    git push origin "$NEW"
+    git push origin HEAD "$NEW"
     echo ""
     echo "Tag ${NEW} pushed. GitHub Actions will publish:"
     echo "  ghcr.io/synlace/ferret-lab:${NEW}"
