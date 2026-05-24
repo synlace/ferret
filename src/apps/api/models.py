@@ -203,6 +203,10 @@ class ChatSessionCreate(BaseModel):
     scope_data: Optional[Dict[str, Any]] = None
     target_url: str = ""
     plan_id: str = ""
+    # Workspace association: supply workspace_id to reuse an existing workspace,
+    # or workspace_name to create a new one (workspace_id takes precedence).
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
 
 
 class ChatSessionUpdate(BaseModel):
@@ -220,6 +224,64 @@ class ChatSendRequest(BaseModel):
     max_tool_calls: Optional[int] = None  # max tool-call iterations; None = use server default
     # NOTE: enabled_tools is intentionally NOT a field here.
     # It is always loaded from the session DB record to prevent enforcement bypass.
+
+
+# ---------------------------------------------------------------------------
+# Workspaces
+# ---------------------------------------------------------------------------
+
+class Workspace(BaseModel):
+    id: str = Field(..., description="Unique workspace identifier")
+    project_id: str = Field("temp", description="Owning project ID")
+    parent_id: Optional[str] = Field(None, description="Parent workspace ID (for child workspaces)")
+    name: str = Field(..., description="Human-readable workspace name, e.g. 'hilton.com'")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class WorkspaceCreate(BaseModel):
+    name: str
+    project_id: str = "temp"
+    parent_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Runs
+# ---------------------------------------------------------------------------
+
+class Run(BaseModel):
+    id: str = Field(..., description="Unique run identifier")
+    workspace_id: str = Field(..., description="Workspace this run belongs to")
+    project_id: str = Field("temp", description="Owning project ID (denormalised)")
+    plan_id: str = Field(..., description="Plan ID used for this run")
+    target_url: str = Field("", description="Target URL / domain for the run")
+    status: str = Field("pending", description="Status: pending|running|done|error")
+    exit_code: Optional[int] = Field(None, description="Script exit code")
+    run_log_path: Optional[str] = Field(None, description="Relative path to stdout log within workspace")
+    started_at: Optional[datetime] = Field(None)
+    finished_at: Optional[datetime] = Field(None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Plans to run automatically against each workspace discovered via
+    # [FERRET:MANIFEST] streaming lines emitted during this run.
+    follow_on_plan_ids: List[str] = Field(default_factory=list, description="Plan IDs to run against each discovered host workspace")
+    follow_on_path_plan_ids: List[str] = Field(default_factory=list, description="Plan IDs to run against each discovered path workspace")
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class RunCreate(BaseModel):
+    plan_id: str
+    target_url: str = ""
+    # Supply workspace_id to attach to an existing workspace,
+    # or workspace_name to create a new one (workspace_id takes precedence).
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
+    # Plans to chain against each workspace discovered during this run.
+    follow_on_plan_ids: List[str] = Field(default_factory=list)
+    follow_on_path_plan_ids: List[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

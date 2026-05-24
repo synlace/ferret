@@ -6,9 +6,17 @@ While is_final is False, chunk is a raw output chunk to stream to the client.
 When is_final is True, final_result is the complete result string (with __META__).
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import asyncio as _asyncio_module
 
 import deps
+
+# ---------------------------------------------------------------------------
+# Live subprocess registry: session_id → asyncio.subprocess.Process
+# Populated by stream_run_script while the subprocess is running.
+# Used by the cancel endpoint in runs.py to kill the process immediately.
+# ---------------------------------------------------------------------------
+_run_procs: Dict[str, "_asyncio_module.subprocess.Process"] = {}
 
 # ---------------------------------------------------------------------------
 # Persistent session preamble injected at the top of every python3 run_script.
@@ -69,7 +77,7 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
     if not script:
         yield ("[FERRET] script is required.", True, "[FERRET] script is required.")
         return
-    timeout_sec = min(int(fn_args.get("timeout") or 30), 120)
+    timeout_sec = min(int(fn_args.get("timeout") or 30), 3600)
     ext = ".sh" if interpreter == "bash" else ".py"
 
     # For Python scripts running inside a session context, prepend the persistent
@@ -119,26 +127,23 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
             tf.write(script)
             tmp_path = tf.name
         container_path = f"/tmp/ferret_script_{_os.path.basename(tmp_path)}"
-        cp_proc = await _asyncio.create_subprocess_exec(
-            "docker", "cp", tmp_path, f"{deps.SANDBOX_CONTAINER}:{container_path}",
-            stdout=_asyncio.subprocess.PIPE, stderr=_asyncio.subprocess.STDOUT,
-        )
-        await cp_proc.communicate()
+        success = await deps.sandbox_executor.copy_to_sandbox(tmp_path, container_path)
         _os.unlink(tmp_path)
-        if cp_proc.returncode != 0:
+        if not success:
             msg = "[FERRET] Failed to copy script into sandbox."
             yield (msg, True, msg)
             return
-        exec_proc = await _asyncio.create_subprocess_exec(
-            "docker", "exec", deps.SANDBOX_CONTAINER,
-            interpreter, container_path,
-            stdout=_asyncio.subprocess.PIPE,
-            stderr=_asyncio.subprocess.STDOUT,
+        exec_proc = await deps.sandbox_executor.execute_command(
+            [interpreter, container_path],
+            env={"PYTHONUNBUFFERED": "1"}
         )
+        # Register process so cancel endpoint can kill it immediately
+        if session_id:
+            _run_procs[session_id] = exec_proc
         _t0 = _time.monotonic()
         all_chunks: List[str] = []
         total_bytes = 0
-        MAX_BYTES = 8192
+        MAX_BYTES = 1_048_576  # 1 MB — raised from 8 KB to support long script output
         timed_out = False
         try:
             async def _read_lines():
@@ -166,6 +171,9 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
         except Exception:
             pass
         await exec_proc.wait()
+        # Deregister process
+        if session_id:
+            _run_procs.pop(session_id, None)
         rc = exec_proc.returncode
         _runtime_ms = round((_time.monotonic() - _t0) * 1000)
         _ts = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%d %H:%M")
@@ -234,11 +242,7 @@ async def stream_run_ffuf(fn_args: Dict[str, Any]):
         except ValueError: pass
 
     try:
-        exec_proc = await _asyncio.create_subprocess_exec(
-            "docker", "exec", deps.SANDBOX_CONTAINER, *cmd,
-            stdout=_asyncio.subprocess.PIPE,
-            stderr=_asyncio.subprocess.STDOUT,
-        )
+        exec_proc = await deps.sandbox_executor.execute_command(cmd)
         _t0 = _time.monotonic()
         all_chunks: List[str] = []
         total_bytes = 0
@@ -333,11 +337,7 @@ async def stream_run_katana(fn_args: Dict[str, Any]):
             pass
 
     try:
-        exec_proc = await _asyncio.create_subprocess_exec(
-            "docker", "exec", deps.SANDBOX_CONTAINER, *cmd,
-            stdout=_asyncio.subprocess.PIPE,
-            stderr=_asyncio.subprocess.STDOUT,
-        )
+        exec_proc = await deps.sandbox_executor.execute_command(cmd)
         _t0 = _time.monotonic()
         all_chunks: List[str] = []
         total_bytes = 0
@@ -429,11 +429,7 @@ async def stream_run_nuclei(fn_args: Dict[str, Any]):
             pass
 
     try:
-        exec_proc = await _asyncio.create_subprocess_exec(
-            "docker", "exec", deps.SANDBOX_CONTAINER, *cmd,
-            stdout=_asyncio.subprocess.PIPE,
-            stderr=_asyncio.subprocess.STDOUT,
-        )
+        exec_proc = await deps.sandbox_executor.execute_command(cmd)
         _t0 = _time.monotonic()
         all_chunks: List[str] = []
         total_bytes = 0

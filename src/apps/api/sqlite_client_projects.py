@@ -1,6 +1,6 @@
 """
-SQLiteClient mixin — Projects, Findings, Chat Sessions, Test Runs,
-Project API Keys, Spend Snapshots, and Settings.
+SQLiteClient mixin — Projects, Findings, Chat Sessions, Workspaces, Runs,
+Test Runs, Project API Keys, Spend Snapshots, and Settings.
 
 Imported by SQLiteClient via multiple inheritance:
     class SQLiteClient(ProjectsMixin):
@@ -13,7 +13,7 @@ import aiosqlite
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-from models import Finding, ChatSession, TestRun, Project, ProjectApiKey
+from models import Finding, ChatSession, TestRun, Project, ProjectApiKey, Workspace, Run
 
 
 class ProjectsMixin:
@@ -106,12 +106,13 @@ class ProjectsMixin:
     async def create_chat_session(self, session: ChatSession) -> None:
         import json as _json
         _enabled = getattr(session, "enabled_tools", None)
+        _workspace_id = getattr(session, "workspace_id", None) or session.__dict__.get("workspace_id")
         await self._db.execute(
             """
             INSERT INTO chat_sessions
-                (id, name, scope, scope_data, workspace_dir, target_url, plan_id, hunt_status, enabled_tools, created_at, project_id)
+                (id, name, scope, scope_data, workspace_dir, workspace_id, target_url, plan_id, hunt_status, enabled_tools, created_at, project_id)
             VALUES
-                (:id, :name, :scope, :scope_data, :workspace_dir, :target_url, :plan_id, :hunt_status, :enabled_tools, :created_at, :project_id)
+                (:id, :name, :scope, :scope_data, :workspace_dir, :workspace_id, :target_url, :plan_id, :hunt_status, :enabled_tools, :created_at, :project_id)
             """,
             {
                 "id": session.id,
@@ -119,6 +120,7 @@ class ProjectsMixin:
                 "scope": session.scope,
                 "scope_data": _json.dumps(session.scope_data) if session.scope_data else None,
                 "workspace_dir": session.workspace_dir,
+                "workspace_id": _workspace_id,
                 "target_url": getattr(session, "target_url", "") or "",
                 "plan_id": getattr(session, "plan_id", "") or "",
                 "hunt_status": getattr(session, "hunt_status", "idle") or "idle",
@@ -201,6 +203,184 @@ class ProjectsMixin:
     async def append_chat_message(self, session_id: str, message: Dict[str, Any]) -> None:
         """Append a single chat message for a session."""
         await self.save_chat_messages(session_id, [message])  # type: ignore[attr-defined]
+
+    # ------------------------------------------------------------------
+    # Workspaces CRUD
+    # ------------------------------------------------------------------
+
+    async def create_workspace(self, workspace: "Workspace") -> None:
+        await self._db.execute(
+            """
+            INSERT INTO workspaces (id, project_id, parent_id, name, created_at)
+            VALUES (:id, :project_id, :parent_id, :name, :created_at)
+            """,
+            {
+                "id": workspace.id,
+                "project_id": workspace.project_id,
+                "parent_id": workspace.parent_id,
+                "name": workspace.name,
+                "created_at": workspace.created_at.isoformat(),
+            },
+        )
+        await self._db.commit()
+
+    async def get_workspaces(self, project_id: str = "temp") -> List[Dict[str, Any]]:
+        """Return all workspaces for a project, with run and hunt counts."""
+        async with self._db.execute(
+            """
+            SELECT w.*,
+                   (SELECT COUNT(*) FROM runs r WHERE r.workspace_id = w.id) AS run_count,
+                   (SELECT COUNT(*) FROM chat_sessions cs WHERE cs.workspace_id = w.id) AS hunt_count
+            FROM workspaces w
+            WHERE w.project_id = ?
+            ORDER BY w.created_at DESC
+            """,
+            (project_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_workspace(self, workspace_id: str) -> Optional[Dict[str, Any]]:
+        async with self._db.execute(
+            """
+            SELECT w.*,
+                   (SELECT COUNT(*) FROM runs r WHERE r.workspace_id = w.id) AS run_count,
+                   (SELECT COUNT(*) FROM chat_sessions cs WHERE cs.workspace_id = w.id) AS hunt_count
+            FROM workspaces w
+            WHERE w.id = ?
+            """,
+            (workspace_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def delete_workspace(self, workspace_id: str) -> bool:
+        async with self._db.execute(
+            "DELETE FROM workspaces WHERE id = ?", (workspace_id,)
+        ) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        return changed > 0
+
+    # ------------------------------------------------------------------
+    # Runs CRUD
+    # ------------------------------------------------------------------
+
+    async def create_run(self, run: "Run") -> None:
+        import json as _json
+        follow_on_plan_ids = getattr(run, "follow_on_plan_ids", None) or []
+        follow_on_path_plan_ids = getattr(run, "follow_on_path_plan_ids", None) or []
+        await self._db.execute(
+            """
+            INSERT INTO runs
+                (id, workspace_id, project_id, plan_id, target_url, status,
+                 exit_code, run_log_path, started_at, finished_at, created_at,
+                 follow_on_plan_id, follow_on_path_plan_id)
+            VALUES
+                (:id, :workspace_id, :project_id, :plan_id, :target_url, :status,
+                 :exit_code, :run_log_path, :started_at, :finished_at, :created_at,
+                 :follow_on_plan_id, :follow_on_path_plan_id)
+            """,
+            {
+                "id": run.id,
+                "workspace_id": run.workspace_id,
+                "project_id": run.project_id,
+                "plan_id": run.plan_id,
+                "target_url": run.target_url,
+                "status": run.status,
+                "exit_code": run.exit_code,
+                "run_log_path": run.run_log_path,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+                "created_at": run.created_at.isoformat(),
+                # Store as JSON arrays
+                "follow_on_plan_id": _json.dumps(follow_on_plan_ids) if follow_on_plan_ids else None,
+                "follow_on_path_plan_id": _json.dumps(follow_on_path_plan_ids) if follow_on_path_plan_ids else None,
+            },
+        )
+        await self._db.commit()
+
+    @staticmethod
+    def _deserialise_run(row) -> Dict[str, Any]:
+        """Convert a raw DB run row to a dict, deserialising follow_on_plan_ids."""
+        import json as _json
+
+        def _parse_ids(raw) -> list:
+            if raw is None:
+                return []
+            if isinstance(raw, list):
+                return raw
+            try:
+                parsed = _json.loads(raw)
+                return parsed if isinstance(parsed, list) else [parsed]
+            except Exception:
+                return [raw] if raw else []
+
+        d = dict(row)
+        d["follow_on_plan_ids"] = _parse_ids(d.pop("follow_on_plan_id", None))
+        d["follow_on_path_plan_ids"] = _parse_ids(d.pop("follow_on_path_plan_id", None))
+        return d
+
+    async def get_runs(
+        self,
+        workspace_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        if workspace_id:
+            sql = "SELECT * FROM runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?"
+            params: list = [workspace_id, limit]
+        elif project_id:
+            sql = "SELECT * FROM runs WHERE project_id = ? ORDER BY created_at DESC LIMIT ?"
+            params = [project_id, limit]
+        else:
+            sql = "SELECT * FROM runs ORDER BY created_at DESC LIMIT ?"
+            params = [limit]
+        async with self._db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+        return [self._deserialise_run(r) for r in rows]
+
+    async def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        async with self._db.execute(
+            "SELECT * FROM runs WHERE id = ?", (run_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        return self._deserialise_run(row) if row else None
+
+    async def update_run_status(
+        self,
+        run_id: str,
+        status: str,
+        exit_code: Optional[int] = None,
+        run_log_path: Optional[str] = None,
+        started_at: Optional[datetime] = None,
+        finished_at: Optional[datetime] = None,
+    ) -> bool:
+        fields: dict = {"status": status}
+        if exit_code is not None:
+            fields["exit_code"] = exit_code
+        if run_log_path is not None:
+            fields["run_log_path"] = run_log_path
+        if started_at is not None:
+            fields["started_at"] = started_at.isoformat()
+        if finished_at is not None:
+            fields["finished_at"] = finished_at.isoformat()
+        set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+        fields["run_id"] = run_id
+        async with self._db.execute(
+            f"UPDATE runs SET {set_clause} WHERE id = :run_id", fields
+        ) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        return changed > 0
+
+    async def delete_run(self, run_id: str) -> bool:
+        async with self._db.execute(
+            "DELETE FROM runs WHERE id = ?", (run_id,)
+        ) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        return changed > 0
 
     # ------------------------------------------------------------------
     # Test Runs CRUD

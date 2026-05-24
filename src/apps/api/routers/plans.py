@@ -53,7 +53,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 def _parse_plan_file(path: Path) -> Optional[dict]:
-    """Parse a plan .md file and return a plan dict, or None if invalid."""
+    """Parse a prompt plan .md file and return a plan dict, or None if invalid."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -73,16 +73,79 @@ def _parse_plan_file(path: Path) -> Optional[dict]:
         return None
 
     return {
-        "name":           meta["name"],
-        "description":    meta.get("description", ""),
-        "tool":           meta.get("tool", "hunt"),
-        "prompt":         parts[2].strip(),
-        "max_tool_calls": int(meta.get("max_tool_calls", "15")),
+        "name":                meta["name"],
+        "description":         meta.get("description", ""),
+        "tool":                meta.get("tool", "hunt"),
+        "prompt":              parts[2].strip(),
+        "max_tool_calls":      int(meta.get("max_tool_calls", "15")),
+        "interpreter":         meta.get("interpreter", ""),
+        "max_runtime_seconds": int(meta.get("max_runtime_seconds", "120")),
+    }
+
+
+def _parse_script_plan(yaml_path: Path) -> Optional[dict]:
+    """Parse a script plan from a .yaml sidecar + .sh/.py script file.
+
+    The YAML sidecar contains metadata; the script body is in the sibling
+    .sh or .py file referenced by the ``script`` key (defaults to same stem + .sh).
+    """
+    try:
+        yaml_text = yaml_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    # Minimal YAML parser (key: value lines only — no external dependency)
+    meta: dict = {}
+    for line in yaml_text.splitlines():
+        line = line.strip()
+        if line.startswith("#") or not line:
+            continue
+        if ":" in line:
+            key, _, val = line.partition(":")
+            meta[key.strip()] = val.strip()
+
+    if "name" not in meta:
+        return None
+
+    # Load script body from sibling file
+    script_filename = meta.get("script", f"{yaml_path.stem}.sh")
+    script_path = yaml_path.parent / script_filename
+    try:
+        script_body = script_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    # Infer interpreter from extension if not specified
+    interpreter = meta.get("interpreter", "")
+    if not interpreter:
+        if script_filename.endswith(".py"):
+            interpreter = "python3"
+        else:
+            interpreter = "bash"
+
+    def _bool_flag(key: str) -> bool:
+        return meta.get(key, "false").lower() in ("true", "1", "yes")
+
+    return {
+        "name":                  meta["name"],
+        "description":           meta.get("description", ""),
+        "tool":                  "script",
+        "prompt":                script_body,   # script body stored in prompt field
+        "max_tool_calls":        0,             # not applicable for script plans
+        "interpreter":           interpreter,
+        "max_runtime_seconds":   int(meta.get("max_runtime_seconds", "600")),
+        # Discovery capabilities — what this plan emits via [FERRET:MANIFEST]
+        "discovers_hosts":       _bool_flag("discovers_hosts"),
+        "discovers_paths":       _bool_flag("discovers_paths"),
+        # Eligibility — what target types this plan can be run against
+        "runs_on_hosts":         _bool_flag("runs_on_hosts"),
+        "runs_on_paths":         _bool_flag("runs_on_paths"),
+        "_script_file":          str(script_path),
     }
 
 
 def _write_plan_file(path: Path, plan: dict) -> None:
-    """Write a plan dict to a .md file with YAML front-matter."""
+    """Write a prompt plan dict to a .md file with YAML front-matter."""
     path.parent.mkdir(parents=True, exist_ok=True)
     content = (
         "---\n"
@@ -103,11 +166,18 @@ def _safe_slug(name: str) -> str:
 
 
 def _load_all_plans() -> list:
-    """Return all plans (built-ins first, then user plans), sorted by name."""
+    """Return all plans (built-ins first, then user plans), sorted by name.
+
+    Built-in prompt plans:  {PLANS_BUILTIN_DIR}/prompts/*.md
+    Built-in script plans:  {PLANS_BUILTIN_DIR}/scripts/*.yaml  (+ sibling .sh/.py)
+    Legacy built-in plans:  {PLANS_BUILTIN_DIR}/*.md  (backwards compat)
+    User plans:             {PLANS_USER_DIR}/*.md
+    """
     plans: list = []
 
-    # Built-in plans
     builtin_dir = deps.PLANS_BUILTIN_DIR
+
+    # Legacy built-in prompt plans (*.md directly in plans/)
     if builtin_dir.exists():
         for md_file in sorted(builtin_dir.glob("*.md")):
             plan = _parse_plan_file(md_file)
@@ -117,7 +187,29 @@ def _load_all_plans() -> list:
                 plan["created_at"] = None
                 plans.append(plan)
 
-    # User plans
+    # Built-in prompt plans in plans/prompts/
+    prompts_dir = builtin_dir / "prompts"
+    if prompts_dir.exists():
+        for md_file in sorted(prompts_dir.glob("*.md")):
+            plan = _parse_plan_file(md_file)
+            if plan:
+                plan["id"] = f"builtin:{md_file.stem}"
+                plan["is_builtin"] = True
+                plan["created_at"] = None
+                plans.append(plan)
+
+    # Built-in script plans in plans/scripts/
+    scripts_dir = builtin_dir / "scripts"
+    if scripts_dir.exists():
+        for yaml_file in sorted(scripts_dir.glob("*.yaml")):
+            plan = _parse_script_plan(yaml_file)
+            if plan:
+                plan["id"] = f"builtin:{yaml_file.stem}"
+                plan["is_builtin"] = True
+                plan["created_at"] = None
+                plans.append(plan)
+
+    # User plans (prompt plans only — user script plans not yet supported)
     user_dir = deps.PLANS_USER_DIR
     if user_dir.exists():
         for md_file in sorted(user_dir.glob("*.md")):
@@ -125,7 +217,6 @@ def _load_all_plans() -> list:
             if plan:
                 plan["id"] = md_file.stem
                 plan["is_builtin"] = False
-                # created_at stored in front-matter if present, else file mtime
                 try:
                     plan["created_at"] = datetime.fromtimestamp(
                         md_file.stat().st_mtime, tz=timezone.utc
@@ -138,11 +229,37 @@ def _load_all_plans() -> list:
 
 
 def _find_plan(plan_id: str) -> Optional[dict]:
-    """Look up a single plan by ID. Returns None if not found."""
+    """Look up a single plan by ID. Returns None if not found.
+
+    Search order for builtin: prefix:
+      1. plans/scripts/{stem}.yaml  (script plans)
+      2. plans/prompts/{stem}.md    (prompt plans in subdirectory)
+      3. plans/{stem}.md            (legacy prompt plans)
+    """
     if plan_id.startswith("builtin:"):
         stem = plan_id[len("builtin:"):]
-        path = deps.PLANS_BUILTIN_DIR / f"{stem}.md"
-        plan = _parse_plan_file(path)
+
+        # Try script plan first
+        yaml_path = deps.PLANS_BUILTIN_DIR / "scripts" / f"{stem}.yaml"
+        plan = _parse_script_plan(yaml_path)
+        if plan:
+            plan["id"] = plan_id
+            plan["is_builtin"] = True
+            plan["created_at"] = None
+            return plan
+
+        # Try prompts subdirectory
+        md_path = deps.PLANS_BUILTIN_DIR / "prompts" / f"{stem}.md"
+        plan = _parse_plan_file(md_path)
+        if plan:
+            plan["id"] = plan_id
+            plan["is_builtin"] = True
+            plan["created_at"] = None
+            return plan
+
+        # Legacy: plans/*.md
+        legacy_path = deps.PLANS_BUILTIN_DIR / f"{stem}.md"
+        plan = _parse_plan_file(legacy_path)
         if plan:
             plan["id"] = plan_id
             plan["is_builtin"] = True
@@ -173,6 +290,8 @@ class PlanCreate(BaseModel):
     tool: str = "hunt"
     prompt: str
     max_tool_calls: int = 15
+    interpreter: str = ""
+    max_runtime_seconds: int = 120
 
 
 class PlanUpdate(BaseModel):
@@ -181,6 +300,8 @@ class PlanUpdate(BaseModel):
     tool: Optional[str] = None
     prompt: Optional[str] = None
     max_tool_calls: Optional[int] = None
+    interpreter: Optional[str] = None
+    max_runtime_seconds: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

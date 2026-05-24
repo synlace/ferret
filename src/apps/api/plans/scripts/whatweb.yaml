@@ -1,0 +1,7 @@
+name: WhatWeb
+description: Identify web technologies, CMS, frameworks, and server software running on a target. Detects over 1800 plugins including jQuery, Drupal, Nginx, and more. Works against both hostnames and full URL paths.
+interpreter: bash
+max_runtime_seconds: 120
+script: whatweb.sh
+runs_on_hosts: true
+runs_on_paths: true

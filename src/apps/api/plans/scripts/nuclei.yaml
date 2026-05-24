@@ -1,0 +1,7 @@
+name: Nuclei
+description: Run Nuclei vulnerability scanner with tags covering exposure, misconfiguration, default credentials, subdomain takeover, CVEs, and technology detection. Works against both hostnames and full URL paths.
+interpreter: bash
+max_runtime_seconds: 600
+script: nuclei.sh
+runs_on_hosts: true
+runs_on_paths: true

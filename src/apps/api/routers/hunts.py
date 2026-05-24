@@ -218,38 +218,37 @@ async def run_workspace_file(session_id: str, file_path: str, project_id: str = 
     if subdir in NON_RUNNABLE_SUBDIRS:
         raise HTTPException(status_code=400, detail=f"{subdir.capitalize()} files cannot be run")
 
-    # Build the docker exec command
-    cmd = ["docker", "exec"]
+    # Build the execute command
+    env = {}
     if via_proxy:
         proxy_addr = "http://api:1337"
-        cmd += [
-            "-e", f"HTTP_PROXY={proxy_addr}",
-            "-e", f"HTTPS_PROXY={proxy_addr}",
-            "-e", "FERRET_SOURCE=test",
-        ]
+        env = {
+            "HTTP_PROXY": proxy_addr,
+            "HTTPS_PROXY": proxy_addr,
+            "FERRET_SOURCE": "test",
+        }
 
     container_path = f"/workspaces/{pid}/{session_id}/{file_path}"
 
     if subdir == "tests" and file_path.endswith(".py"):
-        cmd += [deps.SANDBOX_CONTAINER, "python3", "-m", "pytest", "-v", "--tb=short", container_path]
+        exec_cmd = ["python3", "-m", "pytest", "-v", "--tb=short", container_path]
     elif file_path.endswith(".py"):
         # scripts/*.py and workspace/*.py both run with python3
-        cmd += [deps.SANDBOX_CONTAINER, "python3", container_path]
+        exec_cmd = ["python3", container_path]
     elif file_path.endswith(".sh"):
-        cmd += [deps.SANDBOX_CONTAINER, "bash", container_path]
+        exec_cmd = ["bash", container_path]
     else:
         # Generic: try to execute directly
-        cmd += [deps.SANDBOX_CONTAINER, container_path]
+        exec_cmd = [container_path]
 
     run_id = str(uuid.uuid4())
 
     async def event_stream():
         yield f"data: {{\"run_id\": \"{run_id}\", \"status\": \"running\"}}\n\n"
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
+            proc = await deps.sandbox_executor.execute_command(
+                exec_cmd,
+                env=env
             )
             assert proc.stdout is not None
             async for line in proc.stdout:

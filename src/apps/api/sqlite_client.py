@@ -251,6 +251,34 @@ class SQLiteClient(ProjectsMixin):
             );
             CREATE INDEX IF NOT EXISTS idx_gnaw_tabs_project ON gnaw_tabs(project_id, position ASC);
 
+            -- Workspaces: named directories shared by Runs and Hunts
+            CREATE TABLE IF NOT EXISTS workspaces (
+                id          TEXT PRIMARY KEY,
+                project_id  TEXT NOT NULL DEFAULT 'temp',
+                parent_id   TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+                name        TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workspaces_project ON workspaces(project_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_workspaces_parent  ON workspaces(parent_id);
+
+            -- Runs: automated script executions associated with a workspace
+            CREATE TABLE IF NOT EXISTS runs (
+                id            TEXT PRIMARY KEY,
+                workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                project_id    TEXT NOT NULL DEFAULT 'temp',
+                plan_id       TEXT NOT NULL DEFAULT '',
+                target_url    TEXT NOT NULL DEFAULT '',
+                status        TEXT NOT NULL DEFAULT 'pending',
+                exit_code     INTEGER,
+                run_log_path  TEXT,
+                started_at    TEXT,
+                finished_at   TEXT,
+                created_at    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_runs_project   ON runs(project_id, created_at DESC);
+
             -- Authentication: single-row credentials table (id=1 enforced by CHECK)
             CREATE TABLE IF NOT EXISTS auth_credentials (
                 id            INTEGER PRIMARY KEY CHECK (id = 1),
@@ -359,6 +387,61 @@ class SQLiteClient(ProjectsMixin):
             await self._db.commit()
         except Exception:
             pass  # column already exists
+
+        # Migration: add workspace_id to chat_sessions (workspaces are now first-class)
+        try:
+            await self._db.execute(
+                "ALTER TABLE chat_sessions ADD COLUMN workspace_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add follow_on_plan_id to runs (streaming manifest follow-on plans)
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN follow_on_plan_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add follow_on_path_plan_id to runs (path-discovery follow-on plans)
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN follow_on_path_plan_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: seed workspaces table from existing chat_sessions
+        # Each existing session owns its own workspace; session_id becomes workspace_id
+        # so the filesystem path ({project_id}/{session_id}) is unchanged.
+        try:
+            await self._db.execute("""
+                INSERT OR IGNORE INTO workspaces (id, project_id, name, created_at)
+                SELECT id,
+                       COALESCE(project_id, 'temp'),
+                       name,
+                       created_at
+                FROM chat_sessions
+                WHERE workspace_dir IS NOT NULL
+            """)
+            await self._db.commit()
+        except Exception:
+            pass
+
+        # Migration: backfill workspace_id = session id for all existing sessions
+        try:
+            await self._db.execute("""
+                UPDATE chat_sessions
+                SET workspace_id = id
+                WHERE workspace_id IS NULL AND workspace_dir IS NOT NULL
+            """)
+            await self._db.commit()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Temp-project seed (idempotent)

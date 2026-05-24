@@ -24,17 +24,16 @@ interface Plan {
   created_at: string
 }
 
-type ToolFilter = "all" | "hunt" | "gnaw" | "pounce" | "snare"
+type ToolFilter = "all" | "script" | "hunt" | "gnaw" | "pounce" | "snare"
 
 const TOOL_TABS: { key: ToolFilter; label: string }[] = [
   { key: "all",    label: "All" },
-  { key: "hunt",   label: "Hunts" },
-  { key: "gnaw",   label: "Gnaw" },
-  { key: "pounce", label: "Pounce" },
-  { key: "snare",  label: "Snare" },
+  { key: "script", label: "Scripts" },
+  { key: "hunt",   label: "Prompts" },
 ]
 
 const TOOL_BADGE: Record<string, string> = {
+  script: "bg-orange-500/20 text-orange-300 border-orange-500/40",
   hunt:   "bg-brand-500/20 text-brand-300 border-brand-500/40",
   gnaw:   "bg-blue-500/20 text-blue-300 border-blue-500/40",
   pounce: "bg-purple-500/20 text-purple-300 border-purple-500/40",

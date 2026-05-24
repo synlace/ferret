@@ -130,7 +130,7 @@ RUN git clone --depth 1 https://github.com/guelfoweb/knock.git /opt/knock && \
     /opt/knock-venv/bin/pip install --quiet /opt/knock && \
     ln -s /opt/knock-venv/bin/knockpy /usr/local/bin/knockpy
 
-# ── Layer 10: Python test/HTTP libraries ─────────────────────────────────────
+# ── Layer 10: Python test/HTTP libraries + security tools ────────────────────
 RUN pip3 install --no-cache-dir --break-system-packages \
     pytest \
     pytest-asyncio \
@@ -140,7 +140,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     websocket-client \
     urllib3 \
     cryptography \
-    paramiko
+    paramiko \
+    arjun
 
 # ── Layer 11: Data directory & entrypoint ────────────────────────────────────
 RUN mkdir -p /data/tests

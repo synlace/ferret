@@ -35,6 +35,14 @@ interface Plan {
   tool: string
 }
 
+interface Workspace {
+  id: string
+  name: string
+  run_count: number
+  hunt_count: number
+  file_counts: Record<string, number>
+}
+
 interface NewChatModalProps {
   activeProjectId: string
   onClose: () => void
@@ -60,6 +68,14 @@ export function NewChatModal({
   const [plans, setPlans] = useState<Plan[]>([])
   const [plansLoading, setPlansLoading] = useState(false)
   const [validationError, setValidationError] = useState("")
+
+  // Workspace picker state
+  const [workspaceMode, setWorkspaceMode] = useState<"new" | "existing">("new")
+  const [workspaceName, setWorkspaceName] = useState("")
+  const [workspaceId, setWorkspaceId] = useState("")
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspacesLoading, setWorkspacesLoading] = useState(false)
+
   const modalRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -68,7 +84,7 @@ export function NewChatModal({
     inputRef.current?.focus()
   }, [])
 
-  // Fetch hunt plans
+  // Fetch hunt plans (prompts only — tool === "hunt")
   useEffect(() => {
     if (!activeProjectId) return
     setPlansLoading(true)
@@ -77,6 +93,17 @@ export function NewChatModal({
       .then((data: Plan[]) => setPlans(Array.isArray(data) ? data.filter(p => p.tool === "hunt") : []))
       .catch(() => setPlans([]))
       .finally(() => setPlansLoading(false))
+  }, [activeProjectId])
+
+  // Fetch existing workspaces for the picker
+  useEffect(() => {
+    if (!activeProjectId) return
+    setWorkspacesLoading(true)
+    apiFetch(`${API_BASE}/api/workspaces?project_id=${activeProjectId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: Workspace[]) => setWorkspaces(Array.isArray(data) ? data : []))
+      .catch(() => setWorkspaces([]))
+      .finally(() => setWorkspacesLoading(false))
   }, [activeProjectId])
 
   // Esc key
@@ -104,6 +131,10 @@ export function NewChatModal({
       setValidationError("Target URL is required when a plan is selected.")
       return
     }
+    if (workspaceMode === "existing" && !workspaceId) {
+      setValidationError("Please select an existing workspace.")
+      return
+    }
     const baseName = name.trim() || "New Hunt"
     const chatName = `${emoji} ${baseName}`
     setCreating(true)
@@ -116,6 +147,11 @@ export function NewChatModal({
       }
       if (targetUrl.trim()) body.target_url = targetUrl.trim()
       if (planId) body.plan_id = planId
+      if (workspaceMode === "existing" && workspaceId) {
+        body.workspace_id = workspaceId
+      } else {
+        body.workspace_name = workspaceName.trim() || baseName
+      }
       const res = await apiFetch(`${API_BASE}/api/hunts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -132,11 +168,14 @@ export function NewChatModal({
     }
   }
 
+  const totalFiles = (ws: Workspace) =>
+    Object.values(ws.file_counts).reduce((a, b) => a + b, 0)
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" data-modal>
       <div
         ref={modalRef}
-        className="bg-neutral-900 border border-neutral-700 rounded-lg w-[400px] p-5 shadow-2xl"
+        className="bg-neutral-900 border border-neutral-700 rounded-lg w-[420px] p-5 shadow-2xl"
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-white">New Hunt</h2>
@@ -179,6 +218,60 @@ export function NewChatModal({
               onClose={() => setShowEmojiPicker(false)}
             />
           )}
+
+          {/* Workspace picker */}
+          <div>
+            <label className="text-xs text-neutral-400 block mb-1.5">Workspace</label>
+            <div className="flex gap-3 mb-2">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="workspaceMode"
+                  value="new"
+                  checked={workspaceMode === "new"}
+                  onChange={() => setWorkspaceMode("new")}
+                  className="accent-brand-500"
+                />
+                <span className="text-xs text-neutral-300">Create new</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="workspaceMode"
+                  value="existing"
+                  checked={workspaceMode === "existing"}
+                  onChange={() => setWorkspaceMode("existing")}
+                  className="accent-brand-500"
+                  disabled={workspaces.length === 0}
+                />
+                <span className={`text-xs ${workspaces.length === 0 ? "text-neutral-600" : "text-neutral-300"}`}>
+                  Use existing {workspaces.length > 0 ? `(${workspaces.length})` : "(none)"}
+                </span>
+              </label>
+            </div>
+            {workspaceMode === "new" ? (
+              <Input
+                value={workspaceName}
+                onChange={e => setWorkspaceName(e.target.value)}
+                placeholder="e.g. hilton.com (optional)"
+                className="bg-neutral-800 border-neutral-600 text-white text-sm placeholder:text-neutral-600"
+              />
+            ) : (
+              <select
+                value={workspaceId}
+                onChange={e => setWorkspaceId(e.target.value)}
+                disabled={workspacesLoading}
+                className="w-full bg-neutral-800 border border-neutral-600 text-sm text-white px-2 py-1.5 focus:outline-none focus:border-brand-500/60 disabled:opacity-50"
+              >
+                <option value="">Select workspace…</option>
+                {workspaces.map(ws => (
+                  <option key={ws.id} value={ws.id}>
+                    {ws.name} ({totalFiles(ws)} files, {ws.run_count} runs, {ws.hunt_count} hunts)
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           {/* Target URL */}
           <div>

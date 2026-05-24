@@ -126,11 +126,8 @@ async def execute_tool_call(
         if not safe_packages:
             return "[FERRET] No valid package names provided."
         try:
-            proc = await _asyncio.create_subprocess_exec(
-                "docker", "exec", deps.SANDBOX_CONTAINER,
-                "pip3", "install", "--quiet", "--break-system-packages", *safe_packages,
-                stdout=_asyncio.subprocess.PIPE,
-                stderr=_asyncio.subprocess.STDOUT,
+            proc = await deps.sandbox_executor.execute_command(
+                ["pip3", "install", "--quiet", "--break-system-packages"] + safe_packages
             )
             stdout, _ = await proc.communicate()
             output = stdout.decode("utf-8", errors="replace").strip()

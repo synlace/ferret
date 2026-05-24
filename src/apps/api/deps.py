@@ -20,6 +20,7 @@ from fastapi import HTTPException, Request
 from starlette.requests import HTTPConnection
 from sqlite_client import SQLiteClient
 from mitmproxy_manager import MitmproxyManager
+from sandbox import DockerSandboxExecutor
 
 _log = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ _log = logging.getLogger(__name__)
 
 db_client = SQLiteClient()
 mitm_manager = MitmproxyManager()
+sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab"))
 
 
 # ---------------------------------------------------------------------------
@@ -217,13 +219,7 @@ async def run_pytest(test_path: Path) -> str:
     AI agent: without it, diagnostic prints (e.g. cart totals, HTTP status
     codes) are swallowed by pytest and never reach the model's context window.
     """
-    proc = await asyncio.create_subprocess_exec(
-        "docker", "exec", SANDBOX_CONTAINER,
-        "python3", "-m", "pytest", str(test_path),
-        "--tb=short", "-v", "--no-header", "-s",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
+    proc = await sandbox_executor.run_pytest(test_path)
     stdout, _ = await proc.communicate()
     return stdout.decode("utf-8", errors="replace")
 

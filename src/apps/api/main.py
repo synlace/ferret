@@ -34,7 +34,7 @@ _log = logging.getLogger(__name__)
 import deps
 from routers import requests, proxy, findings, tests, projects, settings, hunts, setup, plans, sources
 from routers import auth as auth_router
-from routers import chats_crud, chats_litellm
+from routers import chats_crud, chats_litellm, workspaces, runs
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +248,8 @@ app.include_router(projects.router)
 app.include_router(settings.router)
 app.include_router(plans.router)
 app.include_router(sources.router)
+app.include_router(workspaces.router)
+app.include_router(runs.router)
 
 
 # ---------------------------------------------------------------------------

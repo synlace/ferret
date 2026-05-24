@@ -731,7 +731,7 @@ async def test_move_file_promotes_workspace_to_tests(client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_create_chat_creates_workspace_dirs(client, tmp_path):
-    """POST /api/hunts creates all 7 workspace subdirectories."""
+    """POST /api/hunts creates the workspace root directory."""
     import deps as deps_module
     with patch.object(deps_module, "WORKSPACES_DIR", tmp_path):
         resp = await client.post("/api/hunts", json={"name": "My Workspace"})
@@ -741,10 +741,9 @@ async def test_create_chat_creates_workspace_dirs(client, tmp_path):
     assert "workspace_dir" in data
     assert data["workspace_dir"] is not None
 
-    # Verify all 7 directories were created
+    # Verify the workspace root directory was created
     workspace_root = tmp_path / data["workspace_dir"]
-    for subdir in ("workspace", "scripts", "tests", "notes", "credentials", "source", "docs"):
-        assert (workspace_root / subdir).is_dir(), f"Missing subdir: {subdir}"
+    assert workspace_root.is_dir(), "Workspace root was not created"
 
 
 @pytest.mark.asyncio

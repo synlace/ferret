@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import typography from '@tailwindcss/typography'
 
 // all in fixtures is set to tailwind v3 as interims solutions
 
@@ -106,6 +107,6 @@ const config: Config = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), typography],
 }
 export default config

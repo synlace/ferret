@@ -1,0 +1,6 @@
+name: Passive Subdomain Enum
+description: Discover subdomains passively using subfinder only. No active probing, no DNS brute-force, no outbound traffic to the target. Emits a workspace manifest entry per discovered host so follow-on plans can be chained automatically.
+interpreter: bash
+max_runtime_seconds: 300
+script: passive_subdomain_enum.sh
+discovers_hosts: true

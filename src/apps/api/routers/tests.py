@@ -100,16 +100,6 @@ async def run_tests(body: TestRunRequest):
     if not test_path.exists():
         raise HTTPException(status_code=404, detail="Test file not found")
 
-    cmd = ["docker", "exec"]
-    if body.via_proxy:
-        proxy_addr = "http://api:1337"
-        cmd += ["-e", f"HTTP_PROXY={proxy_addr}", "-e", f"HTTPS_PROXY={proxy_addr}", "-e", "FERRET_SOURCE=test"]
-    cmd += [deps.SANDBOX_CONTAINER, "python3", "-m", "pytest", "-v", "--tb=short"]
-    if body.test_name:
-        cmd.append(f"{test_path}::{body.test_name}")
-    else:
-        cmd.append(str(test_path))
-
     async def event_stream():
         run = TestRun(
             id=run_id,
@@ -121,10 +111,10 @@ async def run_tests(body: TestRunRequest):
         )
         await deps.db_client.store_test_run(run)
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+        proc = await deps.sandbox_executor.run_pytest(
+            test_path=test_path,
+            test_name=body.test_name,
+            via_proxy=body.via_proxy
         )
 
         output_lines = []

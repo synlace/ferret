@@ -213,21 +213,34 @@ async def _run_plan_in_background(
 
 @router.post("/api/hunts", status_code=201)
 async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp"):
-    """Create a new chat session / workspace.
+    """Create a new chat session (hunt).
 
-    If ``plan_id`` is provided in the request body, the plan's prompt is
-    looked up, ``{{target}}`` is substituted with ``target_url``, and the
-    agentic loop is fired as a background task with ``hunt_status`` set to
-    ``'running'``.
+    Workspace resolution:
+    - If ``workspace_id`` is supplied, the existing workspace is reused (no mkdir).
+    - Otherwise a new workspace is created (using ``workspace_name`` or the
+      session name as the workspace name).
+
+    If ``plan_id`` is provided, the plan's prompt is looked up, ``{{target}}``
+    is substituted with ``target_url``, and the agentic loop is fired as a
+    background task with ``hunt_status`` set to ``'running'``.
     """
     try:
-        session_id = str(uuid.uuid4())
-        workspace_dir = f"{project_id}/{session_id}"
+        from workspaces import create_workspace as _create_workspace
 
-        # Create workspace subdirectories on the host filesystem
-        workspace_root = deps.WORKSPACES_DIR / workspace_dir
-        for subdir in ("workspace", "scripts", "tests", "notes", "credentials", "source", "docs"):
-            (workspace_root / subdir).mkdir(parents=True, exist_ok=True)
+        session_id = str(uuid.uuid4())
+
+        # Resolve or create workspace
+        if body.workspace_id:
+            ws = await deps.db_client.get_workspace(body.workspace_id)
+            if not ws:
+                raise deps.server_error(ValueError(f"Workspace '{body.workspace_id}' not found"))
+            workspace_id = body.workspace_id
+            workspace_dir = f"{project_id}/{workspace_id}"
+        else:
+            ws_name = body.workspace_name or body.name or "workspace"
+            ws_obj = await _create_workspace(name=ws_name, project_id=project_id)
+            workspace_id = ws_obj.id
+            workspace_dir = f"{project_id}/{workspace_id}"
 
         # Determine initial hunt_status
         hunt_status = "idle"
@@ -249,6 +262,8 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
             hunt_status=hunt_status,
             created_at=datetime.utcnow(),
         )
+        # Attach workspace_id for the new column (set via direct attribute)
+        session.__dict__["workspace_id"] = workspace_id
         await deps.db_client.create_chat_session(session)
 
         # Fire the agentic loop in the background if a valid plan was found

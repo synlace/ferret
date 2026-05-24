@@ -1,0 +1,6 @@
+name: Nmap
+description: Port scan a target host with service and version detection (-sV -sC). Identifies open ports, running services, and software versions. Only applicable to hostnames or IP addresses — not URL paths.
+interpreter: bash
+max_runtime_seconds: 300
+script: nmap.sh
+runs_on_hosts: true

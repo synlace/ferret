@@ -1,0 +1,7 @@
+name: Katana
+description: Crawl a target URL using Katana web crawler. Discovers endpoints, JavaScript files, forms, and URLs with parameters up to 3 levels deep. Emits a manifest entry per interesting path so follow-on plans can be chained automatically.
+interpreter: bash
+max_runtime_seconds: 300
+script: katana.sh
+runs_on_hosts: true
+discovers_paths: true

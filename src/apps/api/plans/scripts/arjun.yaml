@@ -1,0 +1,6 @@
+name: Arjun
+description: Discover hidden HTTP parameters on a target URL using Arjun. Tests GET, POST (form/JSON/XML) methods against a large wordlist to find undocumented parameters that may expose hidden functionality or vulnerabilities. Best run against specific URL paths rather than bare hostnames.
+interpreter: bash
+max_runtime_seconds: 600
+script: arjun.sh
+runs_on_paths: true
