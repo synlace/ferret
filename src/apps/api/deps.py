@@ -22,6 +22,7 @@ from sqlite_client import SQLiteClient
 from mitmproxy_manager import MitmproxyManager
 from sandbox import DockerSandboxExecutor
 from services.workspace_service import WorkspaceService
+from services.script_execution_engine import ScriptExecutionEngine
 
 _log = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ db_client = SQLiteClient()
 mitm_manager = MitmproxyManager()
 sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab"))
 workspace_service = WorkspaceService()
+script_execution_engine = ScriptExecutionEngine()
 
 
 # ---------------------------------------------------------------------------

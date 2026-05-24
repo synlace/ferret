@@ -1,18 +1,24 @@
 """
-Chat session CRUD endpoints.
+Chats router — CRUD and streaming endpoints for hunt/chat sessions.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import time as _time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 import deps
-from models import ChatSession, ChatSessionCreate, ChatSessionUpdate
-from routers.chats_ai import clean_messages_for_display
+from models import ChatSession, ChatSessionCreate, ChatSessionUpdate, ChatSendRequest
+from routers.chats_ai import clean_messages_for_display, _NO_KEY_NOTICE
+from routers.chats_ai_litellm import _resolve_project_and_key, stream_ai_completion
 from routers.plans import _find_plan
 
 _log = logging.getLogger(__name__)
@@ -20,14 +26,9 @@ _log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/api/hunts")
-async def get_chat_sessions(project_id: str = "temp"):
-    """List all chat sessions."""
-    try:
-        return await deps.db_client.get_chat_sessions(project_id=project_id)
-    except Exception as e:
-        raise deps.server_error(e)
-
+# ---------------------------------------------------------------------------
+# Background Task Execution
+# ---------------------------------------------------------------------------
 
 async def _run_plan_in_background(
     session_id: str,
@@ -35,19 +36,11 @@ async def _run_plan_in_background(
     prompt: str,
     max_tool_calls: int,
 ) -> None:
-    """Run the agentic loop non-streaming in the background for a hunt session.
-
-    The prompt is injected as the first user message.  We build the OR message
-    list directly (system prompt + user prompt) rather than loading history,
-    because the session is brand-new and the history is empty at this point.
-    All messages are persisted to the DB as they are produced so the UI can
-    poll for progress.
-    """
+    """Run the agentic loop non-streaming in the background for a hunt session."""
     try:
         from chats_engine import AgenticOrchestrator
 
         # Simply consume the generator to execute the loop.
-        # Since is_background=True, database updates and final Done/Error statuses are handled inside.
         async for _ in AgenticOrchestrator.run_loop(
             session_id=session_id,
             project_id=project_id,
@@ -65,19 +58,22 @@ async def _run_plan_in_background(
             pass
 
 
+# ---------------------------------------------------------------------------
+# CRUD Routes
+# ---------------------------------------------------------------------------
+
+@router.get("/api/hunts")
+async def get_chat_sessions(project_id: str = "temp"):
+    """List all chat sessions."""
+    try:
+        return await deps.db_client.get_chat_sessions(project_id=project_id)
+    except Exception as e:
+        raise deps.server_error(e)
+
+
 @router.post("/api/hunts", status_code=201)
 async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp"):
-    """Create a new chat session (hunt).
-
-    Workspace resolution:
-    - If ``workspace_id`` is supplied, the existing workspace is reused (no mkdir).
-    - Otherwise a new workspace is created (using ``workspace_name`` or the
-      session name as the workspace name).
-
-    If ``plan_id`` is provided, the plan's prompt is looked up, ``{{target}}``
-    is substituted with ``target_url``, and the agentic loop is fired as a
-    background task with ``hunt_status`` set to ``'running'``.
-    """
+    """Create a new chat session (hunt)."""
     try:
         session_id = str(uuid.uuid4())
 
@@ -114,7 +110,6 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
             hunt_status=hunt_status,
             created_at=datetime.utcnow(),
         )
-        # Attach workspace_id for the new column (set via direct attribute)
         session.__dict__["workspace_id"] = workspace_id
         await deps.db_client.create_chat_session(session)
 
@@ -142,8 +137,6 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
 async def update_chat_session(session_id: str, body: ChatSessionUpdate):
     """Update a chat session's name, scope, and/or scope_data."""
     try:
-        # Use exclude_unset=True so that explicitly-passed null values (e.g.
-        # enabled_tools=null to re-enable all tools) are included in the update.
         updates = body.model_dump(exclude_unset=True)
         ok = await deps.db_client.update_chat_session(session_id, updates)
         if not ok:
@@ -177,3 +170,67 @@ async def get_session_messages(session_id: str):
         return {"messages": clean_messages_for_display(msgs)}
     except Exception as e:
         raise deps.server_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Streaming Route
+# ---------------------------------------------------------------------------
+
+@router.post("/api/hunts/{session_id}/messages/stream")
+async def stream_session_message(
+    session_id: str,
+    body: ChatSendRequest,
+    project_id: str = "temp",
+):
+    """Stream a chat response as Server-Sent Events using LiteLLM."""
+    try:
+        project_id, _api_key, _ai_cfg, _project = await _resolve_project_and_key(
+            session_id, project_id
+        )
+    except Exception as e:
+        # Handle no-key 503 gracefully — persist notice and stream error event
+        if isinstance(e, HTTPException) and e.status_code == 503 and "provisioned key" in str(e.detail):
+            _detail = str(e.detail)
+            _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+            await deps.db_client.append_chat_message(
+                session_id, {"role": "user", "content": body.message, "timestamp": _ts}
+            )
+            await deps.db_client.append_chat_message(
+                session_id, {"role": "notice", "content": _NO_KEY_NOTICE, "timestamp": _ts}
+            )
+
+            async def _no_key_stream():
+                yield f"data: {json.dumps({'type': 'error', 'detail': _detail})}\n\n"
+
+            return StreamingResponse(_no_key_stream(), media_type="text/event-stream")
+        raise
+
+    _project_model = (
+        (_project.get("default_model") if _project else None)
+        or _ai_cfg.get("model")
+        or deps.OPENROUTER_MODEL
+    )
+    model = body.model or _project_model
+    _log.info(
+        "[chat/stream] session=%s model=%s provider=%s",
+        session_id, model, _ai_cfg.get("provider"),
+    )
+
+    async def _generate():
+        try:
+            from chats_engine import AgenticOrchestrator
+
+            async for event in AgenticOrchestrator.run_loop(
+                session_id=session_id,
+                project_id=project_id,
+                message=body.message,
+                max_tool_calls=body.max_tool_calls or 10,
+                model=model,
+                is_background=False,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            _log.error("[chat/stream] error in generator: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")

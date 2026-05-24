@@ -18,7 +18,8 @@ from routers.chats_ai import (
     _build_or_messages,
     clean_messages_for_display,
 )
-import routers.chats_litellm
+import routers.chats_ai_litellm
+from routers.chats_execute import execute_tool_call
 
 _log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class AgenticOrchestrator:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Unified agentic orchestration execution loop."""
         try:
-            resolved_project_id, _api_key, _ai_cfg, _project = await routers.chats_litellm._resolve_project_and_key(
+            resolved_project_id, _api_key, _ai_cfg, _project = await routers.chats_ai_litellm._resolve_project_and_key(
                 session_id, project_id
             )
         except Exception as e:
@@ -112,7 +113,7 @@ class AgenticOrchestrator:
             accumulated_tool_calls: List[Dict[str, Any]] = []
 
             try:
-                async for text_delta, tool_calls, _usage in routers.chats_litellm.stream_ai_completion(
+                async for text_delta, tool_calls, _usage in routers.chats_ai_litellm.stream_ai_completion(
                     _ai_cfg,
                     _api_key or "",
                     resolved_model,
@@ -253,7 +254,7 @@ class AgenticOrchestrator:
                     _recent_outputs = [
                         m.get("content", "") for m in new_messages if m.get("role") == "tool"
                     ]
-                    tool_result = await routers.chats_litellm.execute_tool_call(
+                    tool_result = await execute_tool_call(
                         tc,
                         project_id=resolved_project_id,
                         session_id=session_id,

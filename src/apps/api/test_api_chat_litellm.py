@@ -104,7 +104,7 @@ class TestLiteLLMStreamBasic:
         await _seed_project_key(mem_db)
         session_id = await _create_session(client)
 
-        with patch("routers.chats_litellm.stream_ai_completion",
+        with patch("routers.chats_ai_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("Hello!")):
             resp = await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -120,7 +120,7 @@ class TestLiteLLMStreamBasic:
         await _seed_project_key(mem_db)
         session_id = await _create_session(client)
 
-        with patch("routers.chats_litellm.stream_ai_completion",
+        with patch("routers.chats_ai_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("Hello from AI!")):
             resp = await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -138,7 +138,7 @@ class TestLiteLLMStreamBasic:
         await _seed_project_key(mem_db)
         session_id = await _create_session(client)
 
-        with patch("routers.chats_litellm.stream_ai_completion",
+        with patch("routers.chats_ai_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("Done!")):
             resp = await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -156,7 +156,7 @@ class TestLiteLLMStreamBasic:
         await _seed_project_key(mem_db)
         session_id = await _create_session(client)
 
-        with patch("routers.chats_litellm.stream_ai_completion",
+        with patch("routers.chats_ai_litellm.stream_ai_completion",
                    return_value=_fake_stream_text("I am the AI.")):
             await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -192,7 +192,7 @@ class TestLiteLLMStreamEmptyResponse:
         session_id = await _create_session(client)
         # enabled_tools=null means all tools enabled (default)
 
-        with patch("routers.chats_litellm.stream_ai_completion",
+        with patch("routers.chats_ai_litellm.stream_ai_completion",
                    return_value=_fake_stream_empty()):
             resp = await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -221,7 +221,7 @@ class TestLiteLLMStreamEmptyResponse:
             json={"enabled_tools": []},
         )
 
-        with patch("routers.chats_litellm.stream_ai_completion",
+        with patch("routers.chats_ai_litellm.stream_ai_completion",
                    return_value=_fake_stream_empty()):
             resp = await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -282,8 +282,8 @@ class TestLiteLLMStreamAgenticLoop:
 
         mock_tool_result = "[FERRET] No requests found matching your query."
 
-        with patch("routers.chats_litellm.stream_ai_completion", side_effect=_two_turn_stream), \
-             patch("routers.chats_litellm.execute_tool_call",
+        with patch("routers.chats_ai_litellm.stream_ai_completion", side_effect=_two_turn_stream), \
+             patch("chats_engine.execute_tool_call",
                    new=AsyncMock(return_value=mock_tool_result)):
             resp = await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
@@ -336,8 +336,8 @@ class TestLiteLLMStreamAgenticLoop:
                 async for chunk in _fake_stream_text("Done."):
                     yield chunk
 
-        with patch("routers.chats_litellm.stream_ai_completion", side_effect=_two_turn_stream), \
-             patch("routers.chats_litellm.execute_tool_call",
+        with patch("routers.chats_ai_litellm.stream_ai_completion", side_effect=_two_turn_stream), \
+             patch("chats_engine.execute_tool_call",
                    new=AsyncMock(return_value="tool output")):
             await client.post(
                 f"/api/hunts/{session_id}/messages/stream",
