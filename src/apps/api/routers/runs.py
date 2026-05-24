@@ -82,8 +82,7 @@ async def create_run(body: RunCreate, project_id: str = "temp"):
     using workspace_name (or the target_url as a fallback name).
     """
     try:
-        from plans import _find_plan
-        from workspaces import create_workspace as _create_workspace
+        from routers.plans import _find_plan
 
         plan = _find_plan(body.plan_id)
         if not plan:
@@ -102,7 +101,7 @@ async def create_run(body: RunCreate, project_id: str = "temp"):
             workspace_id = body.workspace_id
         else:
             ws_name = body.workspace_name or body.target_url or "workspace"
-            ws_obj = await _create_workspace(name=ws_name, project_id=project_id)
+            ws_obj = await deps.workspace_service.create_workspace(name=ws_name, project_id=project_id)
             workspace_id = ws_obj.id
 
         run_id = str(uuid.uuid4())
@@ -285,7 +284,7 @@ async def get_run_files(run_id: str):
 async def rerun_run(run_id: str):
     """Create a new run using the same plan, target, and workspace as an existing run."""
     try:
-        from plans import _find_plan
+        from routers.plans import _find_plan
 
         source = await deps.db_client.get_run(run_id)
         if not source:
@@ -352,7 +351,7 @@ async def cancel_run(run_id: str):
     cancellation notice, mark the run as 'error' (exit_code=-1), and signal SSE
     subscribers.  No-op if the run is already finished.
     """
-    from chats_runners import _run_procs
+    from routers.chats_runners import _run_procs
 
     run = await deps.db_client.get_run(run_id)
     if not run:
@@ -399,7 +398,7 @@ async def _run_script_in_background(
     workspace is created and any follow-on run is fired — without waiting for
     the script to finish.  Duplicate workspace names are deduplicated.
     """
-    from chats_runners import stream_run_script
+    from routers.chats_runners import stream_run_script
 
     try:
         # Register a cancellation event for this run
@@ -627,8 +626,7 @@ async def _process_manifest_entry(
         seen_workspaces: Shared dict mapping name→workspace_id for deduplication.
                          Updated in-place when a new workspace is created.
     """
-    from workspaces import create_workspace as _create_workspace
-    from plans import _find_plan
+    from routers.plans import _find_plan
 
     ws_name = ws_spec.get("name", "").strip()
     if not ws_name:
@@ -642,7 +640,7 @@ async def _process_manifest_entry(
         effective_target = f"https://{ws_name}"
 
     try:
-        child_ws = await _create_workspace(
+        child_ws = await deps.workspace_service.create_workspace(
             name=ws_name,
             project_id=project_id,
             parent_id=parent_workspace_id,

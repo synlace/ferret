@@ -129,12 +129,7 @@ class TestAssertSafeUrl:
     """Unit tests for the _assert_safe_url helper in proxy.py."""
 
     def _get_fn(self):
-        import sys
-        from pathlib import Path
-        routers_dir = str(Path(__file__).parent / "routers")
-        if routers_dir not in sys.path:
-            sys.path.insert(0, routers_dir)
-        from proxy import _assert_safe_url
+        from routers.proxy import _assert_safe_url
         return _assert_safe_url
 
     def test_safe_external_url_passes(self):

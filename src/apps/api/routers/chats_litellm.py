@@ -28,9 +28,9 @@ from fastapi.responses import StreamingResponse
 import deps
 from models import ChatSendRequest
 
-from chats_ai import _NO_KEY_NOTICE
-from chats_ai_litellm import _resolve_project_and_key, stream_ai_completion
-from chats_execute import execute_tool_call
+from routers.chats_ai import _NO_KEY_NOTICE
+from routers.chats_ai_litellm import _resolve_project_and_key, stream_ai_completion
+from routers.chats_execute import execute_tool_call
 
 _log = logging.getLogger(__name__)
 

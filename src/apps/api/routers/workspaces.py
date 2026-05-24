@@ -49,27 +49,12 @@ async def create_workspace(
     project_id: str,
     parent_id: Optional[str] = None,
 ) -> Workspace:
-    """Create a workspace DB row and its root directory on disk.
-
-    No subdirectories are pre-created.  They are created on demand when runs,
-    hunts, or the user write files into them.
-
-    Returns the created Workspace.  Raises on DB or filesystem errors.
-    """
-    ws_id = str(uuid.uuid4())
-    workspace_root = deps.WORKSPACES_DIR / project_id / ws_id
-    workspace_root.mkdir(parents=True, exist_ok=True)
-
-    ws = Workspace(
-        id=ws_id,
+    """Create a workspace DB row and its root directory on disk."""
+    return await deps.workspace_service.create_workspace(
+        name=name,
         project_id=project_id,
         parent_id=parent_id,
-        name=name,
-        created_at=datetime.utcnow(),
     )
-    await deps.db_client.create_workspace(ws)
-    _log.info("workspace created id=%s project=%s name=%r", ws_id, project_id, name)
-    return ws
 
 
 # ---------------------------------------------------------------------------

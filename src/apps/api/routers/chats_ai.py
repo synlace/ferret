@@ -329,7 +329,7 @@ def _build_or_messages(
     # ---------------------------------------------------------------------------
     elif tools is not None:
         # tools is a non-empty subset — compare against the full catalog size
-        from chats_tools import SESSION_CHAT_TOOLS as _ALL_TOOLS
+        from routers.chats_tools import SESSION_CHAT_TOOLS as _ALL_TOOLS
         if len(tools) < len(_ALL_TOOLS):
             _enabled_names = ", ".join(f"`{t['function']['name']}`" for t in tools)
             system_prompt += (

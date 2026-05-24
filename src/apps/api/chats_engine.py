@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, Dict, Any, List, Optional
 
 import deps
-from chats_tools import resolve_tools
-from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana, stream_run_nuclei
-from chats_ai import (
+from routers.chats_tools import resolve_tools
+from routers.chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana, stream_run_nuclei
+from routers.chats_ai import (
     _NO_KEY_NOTICE,
     _extract_thinking,
     extract_nonstandard_tool_calls,

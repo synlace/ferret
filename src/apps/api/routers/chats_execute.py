@@ -11,8 +11,8 @@ from typing import List, Dict, Any, Optional
 import httpx
 
 import deps
-from chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana, stream_run_nuclei
-from proxy import _assert_safe_url
+from routers.chats_runners import stream_run_script, stream_run_ffuf, stream_run_katana, stream_run_nuclei
+from routers.proxy import _assert_safe_url
 
 _log = logging.getLogger(__name__)
 

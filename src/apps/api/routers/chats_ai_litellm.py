@@ -23,7 +23,7 @@ from fastapi import HTTPException
 import deps
 
 # Re-export shared helpers so callers only need to import from chats_ai_v2
-from chats_ai import (
+from routers.chats_ai import (
     _extract_thinking,
     clean_messages_for_display,
     _build_or_messages,

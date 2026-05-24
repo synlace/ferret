@@ -12,8 +12,8 @@ from fastapi import APIRouter, HTTPException
 
 import deps
 from models import ChatSession, ChatSessionCreate, ChatSessionUpdate
-from chats_ai import clean_messages_for_display
-from plans import _find_plan
+from routers.chats_ai import clean_messages_for_display
+from routers.plans import _find_plan
 
 _log = logging.getLogger(__name__)
 
@@ -79,8 +79,6 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
     background task with ``hunt_status`` set to ``'running'``.
     """
     try:
-        from workspaces import create_workspace as _create_workspace
-
         session_id = str(uuid.uuid4())
 
         # Resolve or create workspace
@@ -92,7 +90,7 @@ async def create_chat_session(body: ChatSessionCreate, project_id: str = "temp")
             workspace_dir = f"{project_id}/{workspace_id}"
         else:
             ws_name = body.workspace_name or body.name or "workspace"
-            ws_obj = await _create_workspace(name=ws_name, project_id=project_id)
+            ws_obj = await deps.workspace_service.create_workspace(name=ws_name, project_id=project_id)
             workspace_id = ws_obj.id
             workspace_dir = f"{project_id}/{workspace_id}"
 

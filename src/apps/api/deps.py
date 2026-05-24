@@ -21,6 +21,7 @@ from starlette.requests import HTTPConnection
 from sqlite_client import SQLiteClient
 from mitmproxy_manager import MitmproxyManager
 from sandbox import DockerSandboxExecutor
+from services.workspace_service import WorkspaceService
 
 _log = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ _log = logging.getLogger(__name__)
 db_client = SQLiteClient()
 mitm_manager = MitmproxyManager()
 sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab"))
+workspace_service = WorkspaceService()
 
 
 # ---------------------------------------------------------------------------
