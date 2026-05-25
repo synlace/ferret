@@ -43,12 +43,14 @@ def _resolve_log_path(run: dict) -> Optional[Path]:
 async def list_runs(
     project_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
+    limit: int = 1000,
 ):
     """List runs, filtered by workspace_id or project_id."""
     try:
         runs = await deps.db_client.get_runs(
             workspace_id=workspace_id,
             project_id=project_id or "temp",
+            limit=limit,
         )
         return runs
     except Exception as e:

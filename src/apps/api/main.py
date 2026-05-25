@@ -85,6 +85,8 @@ async def lifespan(app: FastAPI):
     await deps.reload_ai_config()
     loop = asyncio.get_running_loop()
     await deps.mitm_manager.start(db_client=deps.db_client, loop=loop, ws_manager=ws_manager)
+    # Start background scheduler for execution engine
+    asyncio.create_task(deps.script_execution_engine.start_scheduler())
     print("FERRET API started successfully")
     yield
     print("Shutting down FERRET API...")

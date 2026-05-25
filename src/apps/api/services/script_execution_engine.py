@@ -2,6 +2,8 @@ import asyncio
 import logging
 import json
 import re
+import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -41,10 +43,16 @@ class ScriptExecutionEngine:
 
     def __init__(self, db_client=None):
         self._db_client = db_client
+        # Concurrency limit semaphore
+        max_concurrent = int(os.getenv("FERRET_MAX_CONCURRENT_RUNS", "5"))
+        self._execution_semaphore = asyncio.Semaphore(max_concurrent)
+        # Semaphore to limit concurrent manifest processing database writes
+        self._manifest_semaphore = asyncio.Semaphore(5)
         # run_id -> list of asyncio.Queue[str | None]
         self._live_queues: Dict[str, List[asyncio.Queue]] = {}
         # run_id -> asyncio.Event
         self._cancel_events: Dict[str, asyncio.Event] = {}
+        self._scheduled_run_ids = set()
 
     @property
     def db_client(self):
@@ -83,6 +91,31 @@ class ScriptExecutionEngine:
                 pass
 
     async def execute_run_in_background(
+        self,
+        run_id: str,
+        workspace_id: str,
+        project_id: str,
+        plan: dict,
+        target_url: str,
+        follow_on_plan_ids: Optional[List[str]] = None,
+        follow_on_path_plan_ids: Optional[List[str]] = None,
+    ) -> None:
+        self._scheduled_run_ids.add(run_id)
+        try:
+            async with self._execution_semaphore:
+                await self._execute_run_in_background_raw(
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    plan=plan,
+                    target_url=target_url,
+                    follow_on_plan_ids=follow_on_plan_ids,
+                    follow_on_path_plan_ids=follow_on_path_plan_ids,
+                )
+        finally:
+            self._scheduled_run_ids.discard(run_id)
+
+    async def _execute_run_in_background_raw(
         self,
         run_id: str,
         workspace_id: str,
@@ -181,8 +214,8 @@ class ScriptExecutionEngine:
                                 payload_str = stripped[len("[FERRET:MANIFEST]"):].strip()
                                 try:
                                     ws_spec = json.loads(payload_str)
-                                except Exception:
-                                    _log.warning("run %s: malformed [FERRET:MANIFEST] line: %s", run_id, stripped)
+                                except Exception as json_err:
+                                    _log.warning("run %s: malformed [FERRET:MANIFEST] line: %s, err: %s", run_id, stripped, json_err)
                                     continue
 
                                 ws_name = ws_spec.get("name", "").strip()
@@ -234,6 +267,30 @@ class ScriptExecutionEngine:
             if exit_code == 0:
                 await self._process_manifest(ws_root, workspace_id, project_id, seen_workspaces=seen_workspaces)
 
+                # Parse HTTP status code from whatweb_raw.json if it exists and update the workspace
+                whatweb_json = ws_root / "notes" / "whatweb_raw.json"
+                if whatweb_json.exists():
+                    try:
+                        with open(whatweb_json) as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    entry = json.loads(line)
+                                    status_code = None
+                                    if isinstance(entry, list) and len(entry) >= 2:
+                                        status_code = entry[1].get("http_status")
+                                    elif isinstance(entry, dict):
+                                        status_code = entry.get("http_status")
+                                    if status_code:
+                                        await self.db_client.update_workspace_http_status(workspace_id, int(status_code))
+                                        break
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        _log.warning("Failed to parse whatweb_raw.json for workspace %s: %s", workspace_id, e)
+
             status = "done" if exit_code == 0 else "error"
             await self.db_client.update_run_status(
                 run_id,
@@ -264,6 +321,24 @@ class ScriptExecutionEngine:
             self._cancel_events.pop(run_id, None)
 
     async def _process_manifest_entry(
+        self,
+        ws_spec: dict,
+        parent_workspace_id: str,
+        project_id: str,
+        follow_on_plan_ids: Optional[List[str]] = None,
+        seen_workspaces: Optional[dict] = None,
+    ) -> None:
+        """Create a single child workspace and schedule follow-on runs with database write throttling."""
+        async with self._manifest_semaphore:
+            await self._process_manifest_entry_raw(
+                ws_spec=ws_spec,
+                parent_workspace_id=parent_workspace_id,
+                project_id=project_id,
+                follow_on_plan_ids=follow_on_plan_ids,
+                seen_workspaces=seen_workspaces,
+            )
+
+    async def _process_manifest_entry_raw(
         self,
         ws_spec: dict,
         parent_workspace_id: str,
@@ -368,3 +443,83 @@ class ScriptExecutionEngine:
                 project_id=project_id,
                 seen_workspaces=seen_workspaces,
             )
+
+    async def start_scheduler(self) -> None:
+        """Clean up orphaned 'running' runs and launch the background pending runs scheduler."""
+        try:
+            async with self.db_client._db.execute("SELECT id FROM runs WHERE status = 'running'") as cur:
+                rows = await cur.fetchall()
+            for row in rows:
+                run_id = row[0]
+                await self.db_client.update_run_status(
+                    run_id,
+                    status="error",
+                    finished_at=datetime.utcnow(),
+                )
+                _log.info("Reset orphaned running run %s to error status", run_id)
+        except Exception as e:
+            _log.warning("Failed to clean up orphaned running runs: %s", e)
+
+        asyncio.create_task(self._scheduler_loop())
+
+    async def _scheduler_loop(self) -> None:
+        """Poll database for pending runs and dispatch them asynchronously."""
+        from routers.plans import _find_plan
+
+        while True:
+            try:
+                # Query all pending runs in creation order (oldest first)
+                async with self.db_client._db.execute(
+                    "SELECT id, workspace_id, project_id, plan_id, target_url, follow_on_plan_id, follow_on_path_plan_id FROM runs WHERE status = 'pending' ORDER BY created_at ASC"
+                ) as cur:
+                    rows = await cur.fetchall()
+
+                for row in rows:
+                    run_id = row[0]
+                    if run_id in self._scheduled_run_ids:
+                        continue
+
+                    workspace_id = row[1]
+                    project_id = row[2]
+                    plan_id = row[3]
+                    target_url = row[4]
+
+                    def _parse_ids(raw):
+                        if not raw:
+                            return []
+                        try:
+                            parsed = json.loads(raw)
+                            return parsed if isinstance(parsed, list) else [parsed]
+                        except Exception:
+                            return [raw]
+
+                    follow_on_plan_ids = _parse_ids(row[5])
+                    follow_on_path_plan_ids = _parse_ids(row[6])
+
+                    plan = _find_plan(plan_id)
+                    if not plan:
+                        _log.warning("Scheduler: plan %s not found for pending run %s", plan_id, run_id)
+                        await self.db_client.update_run_status(
+                            run_id,
+                            status="error",
+                            finished_at=datetime.utcnow(),
+                        )
+                        continue
+
+                    # Dispatch the run in the background
+                    asyncio.create_task(
+                        self.execute_run_in_background(
+                            run_id=run_id,
+                            workspace_id=workspace_id,
+                            project_id=project_id,
+                            plan=plan,
+                            target_url=target_url,
+                            follow_on_plan_ids=follow_on_plan_ids,
+                            follow_on_path_plan_ids=follow_on_path_plan_ids,
+                        )
+                    )
+
+            except Exception as e:
+                _log.error("Scheduler loop error: %s", e, exc_info=True)
+
+            await asyncio.sleep(5)

@@ -49,6 +49,34 @@ async def list_workspaces(project_id: str = "temp"):
         # Attach file counts for each workspace
         for ws in workspaces:
             ws["file_counts"] = deps.workspace_service.count_workspace_files(ws["id"], project_id)
+            
+            # Backfill http_status if None but whatweb_raw.json exists
+            if ws.get("http_status") is None:
+                ws_root = deps.workspace_service.workspaces_dir / project_id / ws["id"]
+                whatweb_json = ws_root / "notes" / "whatweb_raw.json"
+                if whatweb_json.exists():
+                    try:
+                        import json
+                        with open(whatweb_json) as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    entry = json.loads(line)
+                                    status_code = None
+                                    if isinstance(entry, list) and len(entry) >= 2:
+                                        status_code = entry[1].get("http_status")
+                                    elif isinstance(entry, dict):
+                                        status_code = entry.get("http_status")
+                                    if status_code:
+                                        ws["http_status"] = int(status_code)
+                                        await deps.db_client.update_workspace_http_status(ws["id"], int(status_code))
+                                        break
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
         return workspaces
     except Exception as e:
         raise deps.server_error(e)
@@ -81,6 +109,26 @@ async def get_workspace(workspace_id: str):
             raise HTTPException(status_code=404, detail="Workspace not found")
         ws["file_counts"] = deps.workspace_service.count_workspace_files(workspace_id, ws.get("project_id", "temp"))
         return ws
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise deps.server_error(e)
+
+
+@router.post("/api/workspaces/{workspace_id}/probe")
+async def probe_workspace_liveness(workspace_id: str):
+    """Trigger a manual liveness probe on a workspace's host/domain."""
+    import asyncio
+    try:
+        ws = await deps.db_client.get_workspace(workspace_id)
+        if not ws:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+
+        await deps.db_client.update_workspace_status(workspace_id, "checking")
+        asyncio.create_task(
+            deps.workspace_service._run_background_liveness_probe(workspace_id, ws["name"])
+        )
+        return {"status": "checking"}
     except HTTPException:
         raise
     except Exception as e:

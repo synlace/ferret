@@ -231,10 +231,12 @@ class ChatSendRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 class Workspace(BaseModel):
-    id: str = Field(..., description="Unique workspace identifier")
-    project_id: str = Field("temp", description="Owning project ID")
+    id: str
+    project_id: str
     parent_id: Optional[str] = Field(None, description="Parent workspace ID (for child workspaces)")
-    name: str = Field(..., description="Human-readable workspace name, e.g. 'hilton.com'")
+    name: str
+    status: str = Field("checking", description="Liveness status of the workspace's target ('live', 'unreachable', 'checking', 'unknown')")
+    http_status: Optional[int] = Field(None, description="HTTP status code from liveness probe or scan")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:

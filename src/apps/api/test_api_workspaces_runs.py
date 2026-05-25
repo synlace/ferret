@@ -75,7 +75,7 @@ async def _create_run(client, tmp_path, workspace_id: str, plan_id="subdomain_en
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),  # prevent background task from running
     ):
         resp = await client.post(
@@ -324,7 +324,7 @@ async def test_list_runs_returns_created(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -362,7 +362,7 @@ async def test_create_run_success(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -396,7 +396,7 @@ async def test_create_run_plan_not_found(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=None),
+        patch("routers.plans._find_plan", return_value=None),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -422,7 +422,7 @@ async def test_create_run_unknown_workspace(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         resp = await client.post(
@@ -444,7 +444,7 @@ async def test_create_run_non_script_plan_rejected(client, tmp_path):
     prompt_plan = {**_FAKE_SCRIPT_PLAN, "tool": "prompt"}
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=prompt_plan),
+        patch("routers.plans._find_plan", return_value=prompt_plan),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -474,7 +474,7 @@ async def test_get_run_detail(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -515,7 +515,7 @@ async def test_delete_run(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -557,7 +557,7 @@ async def test_get_run_files_empty(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -587,7 +587,7 @@ async def test_get_run_files_lists_files(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -639,7 +639,7 @@ async def test_rerun_creates_new_run(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -684,7 +684,7 @@ async def test_create_run_with_follow_on_plan_ids(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -714,7 +714,7 @@ async def test_create_run_follow_on_plan_ids_defaults_empty(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -743,7 +743,7 @@ async def test_rerun_preserves_follow_on_plan_ids(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(
@@ -813,7 +813,7 @@ async def test_workspace_run_count(client, tmp_path):
     import deps as deps_module
     with (
         patch.object(deps_module, "WORKSPACES_DIR", tmp_path),
-        patch("plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
+        patch("routers.plans._find_plan", return_value=_FAKE_SCRIPT_PLAN),
         patch("asyncio.create_task"),
     ):
         ws = (await client.post(

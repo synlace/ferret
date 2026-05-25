@@ -257,6 +257,8 @@ class SQLiteClient(ProjectsMixin):
                 project_id  TEXT NOT NULL DEFAULT 'temp',
                 parent_id   TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
                 name        TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'checking',
+                http_status INTEGER,
                 created_at  TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_workspaces_project ON workspaces(project_id, created_at DESC);
@@ -410,6 +412,15 @@ class SQLiteClient(ProjectsMixin):
         try:
             await self._db.execute(
                 "ALTER TABLE runs ADD COLUMN follow_on_path_plan_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add http_status to workspaces
+        try:
+            await self._db.execute(
+                "ALTER TABLE workspaces ADD COLUMN http_status INTEGER"
             )
             await self._db.commit()
         except Exception:

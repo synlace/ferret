@@ -211,16 +211,32 @@ class ProjectsMixin:
     async def create_workspace(self, workspace: "Workspace") -> None:
         await self._db.execute(
             """
-            INSERT INTO workspaces (id, project_id, parent_id, name, created_at)
-            VALUES (:id, :project_id, :parent_id, :name, :created_at)
+            INSERT INTO workspaces (id, project_id, parent_id, name, status, http_status, created_at)
+            VALUES (:id, :project_id, :parent_id, :name, :status, :http_status, :created_at)
             """,
             {
                 "id": workspace.id,
                 "project_id": workspace.project_id,
                 "parent_id": workspace.parent_id,
                 "name": workspace.name,
+                "status": workspace.status,
+                "http_status": workspace.http_status,
                 "created_at": workspace.created_at.isoformat(),
             },
+        )
+        await self._db.commit()
+
+    async def update_workspace_status(self, workspace_id: str, status: str) -> None:
+        await self._db.execute(
+            "UPDATE workspaces SET status = ? WHERE id = ?",
+            (status, workspace_id),
+        )
+        await self._db.commit()
+
+    async def update_workspace_http_status(self, workspace_id: str, http_status: Optional[int]) -> None:
+        await self._db.execute(
+            "UPDATE workspaces SET http_status = ? WHERE id = ?",
+            (http_status, workspace_id),
         )
         await self._db.commit()
 

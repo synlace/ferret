@@ -1,6 +1,7 @@
 import logging
 import shutil
 import uuid
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -9,6 +10,60 @@ from models import Workspace
 import deps
 
 _log = logging.getLogger(__name__)
+
+
+async def _probe_host_liveness(host_or_ip: str, timeout: float = 3.0) -> tuple[bool, Optional[int]]:
+    """Attempt an HTTP / HTTPS request first, falling back to a raw TCP handshake on standard ports."""
+    import httpx
+    host = host_or_ip.strip()
+    if "://" in host:
+        url = host
+        host_domain = host.split("://")[1].split("/")[0].split(":")[0]
+    else:
+        host_domain = host.split("/")[0].split(":")[0]
+        url = f"http://{host_domain}"
+
+    # 1. Try a real HTTP/HTTPS request with httpx first to fetch actual http status code
+    for schema in ("https", "http"):
+        probe_url = url if "://" in url else f"{schema}://{host_domain}"
+        try:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=timeout) as client:
+                resp = await client.head(probe_url)
+                return True, resp.status_code
+        except Exception:
+            try:
+                async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=timeout) as client:
+                    resp = await client.get(probe_url)
+                    return True, resp.status_code
+            except Exception:
+                continue
+
+    # 2. Try raw TCP fallback on common web ports
+    for port in (443, 80, 8080):
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host_domain, port),
+                timeout=timeout
+            )
+            writer.close()
+            await writer.wait_closed()
+            return True, None
+        except Exception:
+            continue
+
+    # Try SSH fallback on port 22
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host_domain, 22),
+            timeout=timeout
+        )
+        writer.close()
+        await writer.wait_closed()
+        return True, None
+    except Exception:
+        pass
+
+    return False, None
 
 
 class WorkspaceService:
@@ -20,6 +75,7 @@ class WorkspaceService:
     def __init__(self, db_client=None, workspaces_dir: Optional[Path] = None):
         self._db_client = db_client
         self._workspaces_dir = workspaces_dir
+        self._liveness_semaphore = None
 
     @property
     def db_client(self):
@@ -28,6 +84,22 @@ class WorkspaceService:
     @property
     def workspaces_dir(self) -> Path:
         return self._workspaces_dir or deps.WORKSPACES_DIR
+
+    async def _run_background_liveness_probe(self, ws_id: str, host_name: str) -> None:
+        """Asynchronously probe the host and persist status to DB."""
+        if self._liveness_semaphore is None:
+            import os
+            max_probes = int(os.getenv("FERRET_MAX_CONCURRENT_LIVENESS_PROBES", "3"))
+            self._liveness_semaphore = asyncio.Semaphore(max_probes)
+
+        async with self._liveness_semaphore:
+            try:
+                is_live, http_status = await _probe_host_liveness(host_name)
+                status = "live" if is_live else "unreachable"
+                await self.db_client.update_workspace_status(ws_id, status)
+                await self.db_client.update_workspace_http_status(ws_id, http_status)
+            except Exception as e:
+                _log.warning("Liveness probe failed for ws=%s: %s", ws_id, e)
 
     async def create_workspace(
         self,
@@ -49,6 +121,7 @@ class WorkspaceService:
         )
         await self.db_client.create_workspace(ws)
         _log.info("workspace created id=%s project=%s name=%r", ws_id, project_id, name)
+        asyncio.create_task(self._run_background_liveness_probe(ws_id, name))
         return ws
 
     def count_workspace_files(self, workspace_id: str, project_id: str) -> Dict[str, int]:

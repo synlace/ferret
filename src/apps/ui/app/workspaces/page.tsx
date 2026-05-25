@@ -6,7 +6,7 @@ import { js as beautifyJs } from "js-beautify"
 import {
   Plus, Trash2, Loader2, FolderOpen, FolderClosed, Play, MessageSquare,
   RefreshCw, ChevronRight, ChevronDown, File,
-  Copy, Download, X, Check, ExternalLink,
+  Copy, Download, X, Check, ExternalLink, AlertTriangle, WifiOff,
 } from "lucide-react"
 import { useProject } from "../context/project-context"
 import { NewRunModal } from "../runs/NewRunModal"
@@ -86,6 +86,8 @@ interface Workspace {
   project_id: string
   parent_id: string | null              // explicit DB parent (e.g. wildcard enum child)
   name: string
+  status?: "checking" | "live" | "unreachable" | "unknown"
+  http_status?: number | null
   created_at: string
   run_count: number
   hunt_count: number
@@ -192,6 +194,70 @@ function buildTree(workspaces: Workspace[]): TreeNode[] {
   })
 
   return roots
+}
+
+function filterTreeNodes(roots: TreeNode[], hideDeadHosts: boolean): TreeNode[] {
+  if (!hideDeadHosts) return roots
+
+  function hasLiveChildren(node: TreeNode): boolean {
+    return node.ws.status !== "unreachable" || node.children.some(hasLiveChildren)
+  }
+
+  function filterNode(node: TreeNode): TreeNode | null {
+    const isUnreachable = node.ws.status === "unreachable"
+    
+    // Filter down the children first
+    const filteredChildren = node.children
+      .map(filterNode)
+      .filter((n): n is TreeNode => n !== null)
+    
+    // If the node itself is unreachable AND has no live children left, hide it entirely
+    if (isUnreachable && filteredChildren.length === 0) {
+      return null
+    }
+
+    return {
+      ...node,
+      children: filteredChildren
+    }
+  }
+
+  return roots
+    .map(filterNode)
+    .filter((n): n is TreeNode => n !== null)
+}
+
+function sortTreeNodes(roots: TreeNode[], sortBy: "name" | "status"): TreeNode[] {
+  function compareNodes(a: TreeNode, b: TreeNode) {
+    if (sortBy === "status") {
+      const aHasStatus = a.ws.http_status !== undefined && a.ws.http_status !== null
+      const bHasStatus = b.ws.http_status !== undefined && b.ws.http_status !== null
+      
+      if (aHasStatus && bHasStatus) {
+        return a.ws.http_status! - b.ws.http_status!
+      }
+      if (aHasStatus && !bHasStatus) return -1
+      if (!aHasStatus && bHasStatus) return 1
+      
+      const statusOrder = { "live": 0, "checking": 1, "unreachable": 2, "unknown": 3 }
+      const aStatusVal = statusOrder[a.ws.status || "unknown"] ?? 99
+      const bStatusVal = statusOrder[b.ws.status || "unknown"] ?? 99
+      if (aStatusVal !== bStatusVal) {
+        return aStatusVal - bStatusVal
+      }
+    }
+    return a.ws.name.localeCompare(b.ws.name)
+  }
+
+  function sortNodeAndChildren(node: TreeNode): TreeNode {
+    const sortedChildren = node.children.map(sortNodeAndChildren).sort(compareNodes)
+    return {
+      ...node,
+      children: sortedChildren
+    }
+  }
+
+  return roots.map(sortNodeAndChildren).sort(compareNodes)
 }
 
 function flattenTree(roots: TreeNode[], expandedIds: Set<string>): TreeNode[] {
@@ -498,13 +564,14 @@ type CtxMenuItem =
   | { type: "separator" }
 
 function WorkspaceCtxMenu({
-  ctx, onClose, onNewRun, onNewHunt, onDelete,
+  ctx, onClose, onNewRun, onNewHunt, onDelete, onProbe,
 }: {
   ctx: CtxMenuState
   onClose: () => void
   onNewRun: (ws: Workspace) => void
   onNewHunt: (ws: Workspace) => void
   onDelete: (ws: Workspace) => void
+  onProbe: (ws: Workspace) => void
 }) {
   const { ws, x, y } = ctx
   const isWildcard = ws.name.startsWith("*.")
@@ -531,6 +598,7 @@ function WorkspaceCtxMenu({
     [
       { type: "item", Icon: Copy,         label: "Copy name",        action: () => navigator.clipboard.writeText(ws.name).catch(() => {}) },
       { type: "item", Icon: ExternalLink, label: "Open in browser",  action: () => window.open(`https://${ws.name}`, "_blank", "noopener"), disabled: isWildcard },
+      { type: "item", Icon: RefreshCw,    label: "Check liveness",   action: () => onProbe(ws) },
     ],
     [
       { type: "item", Icon: Trash2, label: "Delete workspace…", action: () => onDelete(ws), danger: true },
@@ -595,11 +663,12 @@ interface WorkspaceTreeProps {
   onNewRun: (ws: Workspace) => void
   onNewHunt: (ws: Workspace) => void
   onDelete: (id: string) => void
+  onProbe: (ws: Workspace) => void
 }
 
 function WorkspaceTree({
   nodes, selectedId, expandedIds, onSelect, onToggleExpand,
-  onNewRun, onNewHunt, onDelete,
+  onNewRun, onNewHunt, onDelete, onProbe,
 }: WorkspaceTreeProps) {
   const [ctx, setCtx] = useState<CtxMenuState | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -622,6 +691,7 @@ function WorkspaceTree({
           onNewRun={onNewRun}
           onNewHunt={onNewHunt}
           onDelete={ws => { setCtx(null); handleDelete(ws) }}
+          onProbe={onProbe}
         />
       )}
       {nodes.map(node => {
@@ -642,6 +712,21 @@ function WorkspaceTree({
                 e.stopPropagation()
                 onSelect(ws)
                 setCtx({ ws, x: e.clientX, y: e.clientY })
+              }}
+              onMouseDown={e => {
+                if (e.button === 1) {
+                  e.preventDefault()
+                }
+              }}
+              onAuxClick={e => {
+                if (e.button === 1) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const url = ws.name.startsWith("http://") || ws.name.startsWith("https://")
+                    ? ws.name
+                    : `https://${ws.name}`
+                  window.open(url, "_blank")
+                }
               }}
               className={`flex items-center gap-1.5 h-7 pr-2 cursor-pointer border-l-2 transition-colors ${
                 isSelected
@@ -674,9 +759,40 @@ function WorkspaceTree({
               </span>
 
               {/* Name */}
-              <span className={`text-[12px] font-mono flex-1 truncate ${isSelected ? "text-white" : "text-neutral-400 hover:text-neutral-200"}`}>
+              <span className={`text-[12px] font-mono flex-1 truncate ${
+                ws.status === "unreachable"
+                  ? "text-neutral-500 line-through decoration-red-500/40"
+                  : isSelected ? "text-white" : "text-neutral-400 hover:text-neutral-200"
+              }`}>
                 {displayName}
               </span>
+
+              {/* HTTP Status Code Badge */}
+              {ws.http_status !== undefined && ws.http_status !== null && (
+                <span className={`text-[9px] px-1 font-mono rounded font-medium mr-1.5 flex-shrink-0 ${
+                  ws.http_status >= 200 && ws.http_status < 300
+                    ? "bg-green-950/40 text-green-400 border border-green-900/30"
+                    : ws.http_status >= 300 && ws.http_status < 400
+                    ? "bg-blue-950/40 text-blue-400 border border-blue-900/30"
+                    : ws.http_status >= 400 && ws.http_status < 500
+                    ? "bg-yellow-950/40 text-yellow-400 border border-yellow-900/30"
+                    : "bg-red-950/40 text-red-400 border border-red-900/30"
+                }`} title={`HTTP Status: ${ws.http_status}`}>
+                  {ws.http_status}
+                </span>
+              )}
+
+              {/* Status Indicators */}
+              {ws.status === "checking" && (
+                <span title="Checking reachability..." className="flex-shrink-0 text-yellow-500/70 mr-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                </span>
+              )}
+              {ws.status === "unreachable" && (
+                <span title="Unreachable" className="flex-shrink-0 text-red-500/70 mr-1">
+                  <WifiOff className="w-3 h-3" />
+                </span>
+              )}
             </div>
 
             {/* Render children if expanded */}
@@ -690,6 +806,7 @@ function WorkspaceTree({
                 onNewRun={onNewRun}
                 onNewHunt={onNewHunt}
                 onDelete={onDelete}
+                onProbe={onProbe}
               />
             )}
           </div>
@@ -712,6 +829,38 @@ export default function WorkspacesPage() {
   const [selectedWs, setSelectedWs] = useState<Workspace | null>(null)
   const [selectedFile, setSelectedFile] = useState<WorkspaceFile | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  // Persist filter state in localStorage to show all or only active/live hosts
+  const [hideDeadHosts, setHideDeadHosts] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("ferret_hide_unreachable_hosts") === "true"
+    }
+    return false
+  })
+
+  const toggleHideDeadHosts = () => {
+    setHideDeadHosts(prev => {
+      const next = !prev
+      localStorage.setItem("ferret_hide_unreachable_hosts", String(next))
+      return next
+    })
+  }
+
+  // Persist sorting state in localStorage: "name" (alphabetical) or "status" (numerical by HTTP status)
+  const [sortBy, setSortBy] = useState<"name" | "status">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("ferret_workspaces_sort_by") as "name" | "status") || "name"
+    }
+    return "name"
+  })
+
+  const toggleSortBy = () => {
+    setSortBy(prev => {
+      const next = prev === "name" ? "status" : "name"
+      localStorage.setItem("ferret_workspaces_sort_by", next)
+      return next
+    })
+  }
 
   // Persist selected workspace + file across page navigations.
   // Each workspace stores its own last-opened file under a per-workspace key,
@@ -754,9 +903,9 @@ export default function WorkspacesPage() {
   const startPctRef  = useRef(40)
   const rightPanelRef = useRef<HTMLDivElement>(null)
 
-  const fetchWorkspaces = useCallback(async () => {
+  const fetchWorkspaces = useCallback(async (isBackground = false) => {
     if (!activeProjectId) return
-    setLoading(true)
+    if (!isBackground) setLoading(true)
     try {
       const res = await apiFetch(`${API_BASE}/api/workspaces?project_id=${activeProjectId}`)
       if (res.ok) {
@@ -783,10 +932,22 @@ export default function WorkspacesPage() {
         }
         // Note: selected file is restored by FileBrowser once it loads the file list
       }
-    } catch { /* ignore */ } finally { setLoading(false) }
+    } catch { /* ignore */ } finally { if (!isBackground) setLoading(false) }
   }, [activeProjectId])
 
-  useEffect(() => { fetchWorkspaces() }, [fetchWorkspaces])
+  useEffect(() => { fetchWorkspaces(false) }, [fetchWorkspaces])
+
+  // Poll periodically if any workspace is in "checking" status
+  useEffect(() => {
+    const hasChecking = workspaces.some(w => w.status === "checking")
+    if (!hasChecking) return
+
+    const interval = setInterval(() => {
+      fetchWorkspaces(true)
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [workspaces, fetchWorkspaces])
 
   // Horizontal resize
   const onResizeMouseDown = (e: React.MouseEvent) => {
@@ -848,6 +1009,13 @@ export default function WorkspacesPage() {
   const handleNewRun = (ws: Workspace) => { setTargetWorkspace(ws); setShowNewRunModal(true) }
   const handleNewHunt = (ws: Workspace) => { setTargetWorkspace(ws); setShowNewHuntModal(true) }
 
+  const handleProbe = async (ws: Workspace) => {
+    setWorkspaces(prev => prev.map(w => w.id === ws.id ? { ...w, status: "checking" } : w))
+    try {
+      await apiFetch(`${API_BASE}/api/workspaces/${ws.id}/probe`, { method: "POST" })
+    } catch { /* ignore */ }
+  }
+
   const handleRunCreated = (_run: { id: string }) => {
     setShowNewRunModal(false); setTargetWorkspace(null); router.push("/runs")
   }
@@ -855,7 +1023,9 @@ export default function WorkspacesPage() {
     setShowNewHuntModal(false); setTargetWorkspace(null); router.push(`/hunts?session=${session.id}`)
   }
 
-  const tree = buildTree(workspaces)
+  const rawTree = buildTree(workspaces)
+  const filteredTree = filterTreeNodes(rawTree, hideDeadHosts)
+  const tree = sortTreeNodes(filteredTree, sortBy)
 
   const totalRuns  = workspaces.reduce((a, w) => a + w.run_count, 0)
   const totalHunts = workspaces.reduce((a, w) => a + w.hunt_count, 0)
@@ -875,7 +1045,25 @@ export default function WorkspacesPage() {
             Workspaces
           </span>
           <button
-            onClick={fetchWorkspaces}
+            onClick={toggleSortBy}
+            className="text-[9px] px-1.5 py-0.5 rounded border border-neutral-800 text-neutral-500 hover:text-neutral-300 hover:border-neutral-600 transition-colors flex-shrink-0"
+            title={`Sorting by ${sortBy === "name" ? "alphabetical name" : "HTTP status code"}`}
+          >
+            {sortBy === "name" ? "Name ↑" : "Status ↑"}
+          </button>
+          <button
+            onClick={toggleHideDeadHosts}
+            className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors flex-shrink-0 ${
+              hideDeadHosts
+                ? "border-orange-500/50 text-orange-500 bg-orange-950/20 hover:bg-orange-950/30"
+                : "border-neutral-800 text-neutral-500 hover:text-neutral-300 hover:border-neutral-600"
+            }`}
+            title={hideDeadHosts ? "Showing active hosts only" : "Showing all hosts"}
+          >
+            {hideDeadHosts ? "Active Only" : "Show All"}
+          </button>
+          <button
+            onClick={() => fetchWorkspaces(false)}
             className="text-neutral-600 hover:text-neutral-400 transition-colors"
             title="Refresh"
           >
@@ -936,6 +1124,7 @@ export default function WorkspacesPage() {
             onNewRun={handleNewRun}
             onNewHunt={handleNewHunt}
             onDelete={handleDelete}
+            onProbe={handleProbe}
           />
         </div>
       </div>
