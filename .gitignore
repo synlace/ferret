@@ -13,3 +13,4 @@ mockups/
 __pycache__/
 *.pyc
 *.pyo
+src/apps/api/runner.py

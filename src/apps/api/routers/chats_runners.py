@@ -61,13 +61,15 @@ _ferret_atexit.register(_ferret_save_session)
 """
 
 
-async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", session_id: str = ""):
+async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", session_id: str = "", executor = None):
     """Async generator: stream run_script output line-by-line, then yield final result."""
     import asyncio as _asyncio
     import tempfile as _tempfile
     import os as _os
     import json as _json
     import time as _time
+
+    exec_engine = executor or deps.sandbox_executor
 
     interpreter = fn_args.get("interpreter", "bash")
     if interpreter not in ("bash", "python3"):
@@ -127,13 +129,13 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
             tf.write(script)
             tmp_path = tf.name
         container_path = f"/tmp/ferret_script_{_os.path.basename(tmp_path)}"
-        success = await deps.sandbox_executor.copy_to_sandbox(tmp_path, container_path)
+        success = await exec_engine.copy_to_sandbox(tmp_path, container_path)
         _os.unlink(tmp_path)
         if not success:
             msg = "[FERRET] Failed to copy script into sandbox."
             yield (msg, True, msg)
             return
-        exec_proc = await deps.sandbox_executor.execute_command(
+        exec_proc = await exec_engine.execute_command(
             [interpreter, container_path],
             env={"PYTHONUNBUFFERED": "1"}
         )

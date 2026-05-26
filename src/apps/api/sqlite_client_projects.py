@@ -9,11 +9,14 @@ Imported by SQLiteClient via multiple inheritance:
 
 import json
 import uuid
+import logging
 import aiosqlite
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from models import Finding, ChatSession, TestRun, Project, ProjectApiKey, Workspace, Run
+
+_log = logging.getLogger(__name__)
 
 
 class ProjectsMixin:
@@ -279,6 +282,69 @@ class ProjectsMixin:
         return changed > 0
 
     # ------------------------------------------------------------------
+    # Runners CRUD
+    # ------------------------------------------------------------------
+
+    async def register_runner_heartbeat(self, runner_id: str, url: Optional[str] = None, logs: Optional[str] = None) -> None:
+        now_str = datetime.utcnow().isoformat()
+        # Insert or update runner status/last_heartbeat
+        await self._db.execute(
+            """
+            INSERT INTO runners (id, url, status, last_heartbeat, logs)
+            VALUES (?, ?, 'active', ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                url = excluded.url,
+                status = 'active',
+                last_heartbeat = excluded.last_heartbeat,
+                logs = COALESCE(excluded.logs, runners.logs)
+            """,
+            (runner_id, url, now_str, logs),
+        )
+        await self._db.commit()
+
+    async def get_active_runners(self, timeout_seconds: int = 30) -> List[Dict[str, Any]]:
+        # Retrieve runners with recent heartbeat
+        import datetime as _dt
+        cutoff = (datetime.utcnow() - _dt.timedelta(seconds=timeout_seconds)).isoformat()
+        async with self._db.execute(
+            "SELECT * FROM runners WHERE last_heartbeat >= ? AND status = 'active'",
+            (cutoff,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def update_runner_status(self, runner_id: str, status: str) -> None:
+        await self._db.execute(
+            "UPDATE runners SET status = ? WHERE id = ?",
+            (status, runner_id),
+        )
+        await self._db.commit()
+
+    async def create_runner_key(self, key: str, name: str) -> None:
+        now_str = datetime.utcnow().isoformat()
+        await self._db.execute(
+            "INSERT INTO runner_keys (key, name, status, created_at) VALUES (?, ?, 'active', ?)",
+            (key, name, now_str),
+        )
+        await self._db.commit()
+
+    async def get_runner_keys(self) -> List[Dict[str, Any]]:
+        async with self._db.execute("SELECT * FROM runner_keys ORDER BY created_at DESC") as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def delete_runner_key(self, key: str) -> bool:
+        async with self._db.execute("DELETE FROM runner_keys WHERE key = ?", (key,)) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        return changed > 0
+
+    async def validate_runner_key(self, key: str) -> bool:
+        async with self._db.execute("SELECT 1 FROM runner_keys WHERE key = ? AND status = 'active'", (key,)) as cur:
+            row = await cur.fetchone()
+        return row is not None
+
+    # ------------------------------------------------------------------
     # Runs CRUD
     # ------------------------------------------------------------------
 
@@ -286,16 +352,17 @@ class ProjectsMixin:
         import json as _json
         follow_on_plan_ids = getattr(run, "follow_on_plan_ids", None) or []
         follow_on_path_plan_ids = getattr(run, "follow_on_path_plan_ids", None) or []
+        den_id = getattr(run, "den_id", "local") or "local"
         await self._db.execute(
             """
             INSERT INTO runs
                 (id, workspace_id, project_id, plan_id, target_url, status,
                  exit_code, run_log_path, started_at, finished_at, created_at,
-                 follow_on_plan_id, follow_on_path_plan_id)
+                 follow_on_plan_id, follow_on_path_plan_id, den_id)
             VALUES
                 (:id, :workspace_id, :project_id, :plan_id, :target_url, :status,
                  :exit_code, :run_log_path, :started_at, :finished_at, :created_at,
-                 :follow_on_plan_id, :follow_on_path_plan_id)
+                 :follow_on_plan_id, :follow_on_path_plan_id, :den_id)
             """,
             {
                 "id": run.id,
@@ -312,6 +379,7 @@ class ProjectsMixin:
                 # Store as JSON arrays
                 "follow_on_plan_id": _json.dumps(follow_on_plan_ids) if follow_on_plan_ids else None,
                 "follow_on_path_plan_id": _json.dumps(follow_on_path_plan_ids) if follow_on_path_plan_ids else None,
+                "den_id": den_id,
             },
         )
         await self._db.commit()
@@ -397,6 +465,53 @@ class ProjectsMixin:
             changed = cur.rowcount
         await self._db.commit()
         return changed > 0
+
+    async def lease_pending_run(self, runner_id: str) -> Optional[Dict[str, Any]]:
+        """Atomically find the oldest pending run matching the runner's Den ID configuration, assigning it to the runner and setting status to 'running'."""
+        _log.debug("[RUNNER_LEASE] [START] Runner ID %s polling for runs", runner_id)
+        await self._db.execute("BEGIN IMMEDIATE")
+        try:
+            # Check if this runner belongs to a specific Den ID. If the runner_id starts with a den-specific prefix or we default to local.
+            # Local dev runner keys or standard runner registrations will ask for jobs belonging to 'local'.
+            # A runner_id of format 'runner-fargate-{den_id}-...' identifies its Fargate Den. Let's parse den_id from runner_id if present:
+            target_den = "local"
+            if "runner-fargate-" in runner_id:
+                parts = runner_id.split("-")
+                # Format is: runner-fargate-{den_id}-{uuid}
+                if len(parts) >= 4:
+                    target_den = parts[2]
+
+            _log.debug("[RUNNER_LEASE] Runner ID %s parsed as targeting Den ID: %s", runner_id, target_den)
+
+            async with self._db.execute(
+                "SELECT * FROM runs WHERE status = 'pending' AND COALESCE(den_id, 'local') = ? ORDER BY created_at ASC LIMIT 1",
+                (target_den,)
+            ) as cur:
+                row = await cur.fetchone()
+            if not row:
+                _log.debug("[RUNNER_LEASE] [NO_JOBS] No pending runs found for Den ID: %s", target_den)
+                await self._db.commit()
+                return None
+            
+            run_id = row["id"]
+            _log.info("[RUNNER_LEASE] [FOUND_JOB] Runner ID %s found pending Run ID %s for Den ID: %s", runner_id, run_id, target_den)
+            now_str = datetime.utcnow().isoformat()
+            
+            await self._db.execute(
+                "UPDATE runs SET status = 'running', started_at = ?, runner_id = ? WHERE id = ?",
+                (now_str, runner_id, run_id),
+            )
+            await self._db.commit()
+            
+            async with self._db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)) as cur:
+                updated_row = await cur.fetchone()
+            
+            _log.info("[RUNNER_LEASE] [SUCCESS] Atomically leased Run ID %s to Runner ID %s", run_id, runner_id)
+            return self._deserialise_run(updated_row) if updated_row else None
+        except Exception as e:
+            _log.error("[RUNNER_LEASE] [FAILED] Transaction rolled back due to error: %s", e)
+            await self._db.rollback()
+            raise
 
     # ------------------------------------------------------------------
     # Test Runs CRUD
@@ -584,7 +699,7 @@ class ProjectsMixin:
             color=(temp or {}).get("color", "#f97316"),
             emoji=(temp or {}).get("emoji", ""),
             labels=(temp or {}).get("labels", []),
-            default_model=(temp or {}).get("default_model", "google/gemini-flash-1.5"),
+            default_model=(temp or {}).get("default_model", "x-ai/grok-4.3"),
             is_temp=False,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -1006,6 +1121,64 @@ class ProjectsMixin:
             (key, value),
         )
         await self._db.commit()
+
+    # ------------------------------------------------------------------
+    # Dens CRUD
+    # ------------------------------------------------------------------
+
+    async def get_dens(self) -> List[Dict[str, Any]]:
+        async with self._db.execute("SELECT * FROM dens ORDER BY created_at ASC") as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_den(self, den_id: str) -> Optional[Dict[str, Any]]:
+        async with self._db.execute("SELECT * FROM dens WHERE id = ?", (den_id,)) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def create_or_update_den(
+        self,
+        den_id: str,
+        name: str,
+        type_: str,
+        max_runners: int,
+        aws_access_key: Optional[str] = "",
+        aws_secret_key: Optional[str] = "",
+        aws_region: Optional[str] = "eu-west-1",
+    ) -> None:
+        now = datetime.utcnow().isoformat()
+        await self._db.execute(
+            """
+            INSERT INTO dens (id, name, type, max_runners, aws_access_key, aws_secret_key, aws_region, created_at)
+            VALUES (:id, :name, :type, :max_runners, :aws_access_key, :aws_secret_key, :aws_region, :created_at)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                type = excluded.type,
+                max_runners = excluded.max_runners,
+                aws_access_key = excluded.aws_access_key,
+                aws_secret_key = CASE WHEN excluded.aws_secret_key != '' AND excluded.aws_secret_key NOT LIKE '%•••%' THEN excluded.aws_secret_key ELSE dens.aws_secret_key END,
+                aws_region = excluded.aws_region
+            """,
+            {
+                "id": den_id,
+                "name": name,
+                "type": type_,
+                "max_runners": max_runners,
+                "aws_access_key": aws_access_key or "",
+                "aws_secret_key": aws_secret_key or "",
+                "aws_region": aws_region or "eu-west-1",
+                "created_at": now,
+            },
+        )
+        await self._db.commit()
+
+    async def delete_den(self, den_id: str) -> bool:
+        if den_id == "local":
+            return False  # Do not allow deleting the built-in Local Den
+        async with self._db.execute("DELETE FROM dens WHERE id = ?", (den_id,)) as cur:
+            changed = cur.rowcount
+        await self._db.commit()
+        return changed > 0
 
     # ------------------------------------------------------------------
     # Gnaw Tabs CRUD (project-scoped)

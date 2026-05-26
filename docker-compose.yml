@@ -28,8 +28,12 @@ services:
       context: src/apps/api
       dockerfile: Dockerfile
     image: ferret-api:latest
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
       - "127.0.0.1:1337:1337"
     environment:
       PROXY_HOST: ${PROXY_HOST:-127.0.0.1}
@@ -44,6 +48,7 @@ services:
       # on Docker bind mounts where host inotify events are not propagated into
       # the container (common on Linux with overlayfs).
       WATCHFILES_FORCE_POLLING: "true"
+      FERRET_RUNNER_IMAGE: "b64"
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       # Mount source over the built image so Python changes are picked up
@@ -58,7 +63,7 @@ services:
       - python
       - -m
       - watchfiles
-      - "uvicorn main:app --host 0.0.0.0 --port 8000"
+      - "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --ws websockets"
       - /app
     networks:
       - default

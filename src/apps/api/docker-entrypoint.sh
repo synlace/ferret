@@ -22,5 +22,14 @@ if [ -S /var/run/docker.sock ]; then
     fi
 fi
 
+# If a persistent WireGuard client profile exists, copy and bring it up before dropping privileges
+if [ -f /data/wg0.conf ]; then
+    echo "[Entrypoint] WireGuard client configuration found at /data/wg0.conf. Restoring VPN connection..."
+    mkdir -p /etc/wireguard
+    cp /data/wg0.conf /etc/wireguard/wg0.conf
+    # Bring up the interface as root
+    wg-quick up wg0 || echo "[Entrypoint] WARNING: Failed to bring up WireGuard interface. Proceeding anyway..."
+fi
+
 # Drop privileges and exec the real command as ferret
 exec gosu ferret "$@"

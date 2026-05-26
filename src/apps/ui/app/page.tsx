@@ -33,7 +33,7 @@ export default function RootPage() {
         if (setupRes.ok) {
           const data = await setupRes.json()
           if (!data.setup_complete) {
-            router.replace("/setup/password")
+            router.replace("/setup")
             return
           }
         }

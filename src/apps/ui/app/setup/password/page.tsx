@@ -7,7 +7,7 @@ import { Eye, EyeOff } from "lucide-react"
 
 const SETUP_PW_KEY = "ferret:setup:pw"
 
-const steps = ["Password", "Provider", "Configure", "Model", "Done"]
+const steps = ["Password", "Provider", "Model", "Den", "Done"]
 
 export default function SetupPasswordPage() {
   const router = useRouter()
@@ -37,41 +37,41 @@ export default function SetupPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex flex-col items-center pt-8 pb-12 px-4">
+    <div className="min-h-screen bg-neutral-950 flex flex-col items-center pt-4 pb-6 px-4 animate-fade-in">
       <div className="w-full max-w-lg">
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <Image src="/ferret.png" alt="Ferret" width={56} height={56} className="rounded-xl flex-shrink-0" />
+        <div className="flex items-center gap-3 mb-5">
+          <Image src="/ferret.png" alt="Ferret" width={40} height={40} className="rounded-lg flex-shrink-0" />
           <div>
-            <h1 className="text-2xl font-bold text-white">Welcome to Ferret</h1>
-            <p className="mt-0.5 text-sm text-neutral-400">
+            <h1 className="text-xl font-bold text-white">Welcome to Ferret</h1>
+            <p className="text-xs text-neutral-400">
               Set up your AI provider to get started
             </p>
           </div>
         </div>
 
         {/* Step indicator — step 0 active */}
-        <div className="mb-6 flex items-center">
+        <div className="mb-4 flex items-center">
           {steps.map((label, i) => {
             const active = i === 0
             const done   = false
             return (
               <div key={label} className="flex items-center flex-1 last:flex-none">
-                <div className="flex flex-col items-center gap-1">
-                  <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors
+                <div className="flex flex-col items-center gap-0.5">
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors
                     ${done   ? "bg-brand-500 text-neutral-900"
                     : active ? "border-2 border-brand-500 text-brand-400"
                     :          "border border-neutral-700 text-neutral-600"}`}
                   >
                     {done ? "✓" : i + 1}
                   </div>
-                  <span className={`text-[10px] ${active ? "text-brand-400" : "text-neutral-600"}`}>
+                  <span className={`text-[9px] ${active ? "text-brand-400" : "text-neutral-600"}`}>
                     {label}
                   </span>
                 </div>
                 {i < steps.length - 1 && (
-                  <div className="flex-1 h-px mx-2 mb-4 bg-neutral-700" />
+                  <div className="flex-1 h-px mx-1.5 mb-3.5 bg-neutral-700" />
                 )}
               </div>
             )
@@ -79,8 +79,8 @@ export default function SetupPasswordPage() {
         </div>
 
         {/* Card */}
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-          <div className="mb-5 h-[52px] flex flex-col justify-center">
+        <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5 shadow-2xl">
+          <div className="mb-4 h-[44px] flex flex-col justify-center">
             <h2 className="text-base font-semibold text-white leading-tight">Set a Password</h2>
             <p className="mt-0.5 text-xs text-neutral-500 leading-tight">
               Protect your Ferret instance with a password. Minimum 8 characters.

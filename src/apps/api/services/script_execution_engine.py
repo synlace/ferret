@@ -135,6 +135,17 @@ class ScriptExecutionEngine:
             cancel_event = asyncio.Event()
             self._cancel_events[run_id] = cancel_event
 
+            # Resolve targeted Den ID for this run first
+            run_record = await self.db_client.get_run(run_id)
+            target_den_id = run_record.get("den_id", "local") if run_record else "local"
+
+            # If targeting a non-local Fargate Den, the script execution engine should NOT
+            # run the job locally. Instead, it should wait for the polling cloud runner
+            # to fetch it.
+            if target_den_id != "local":
+                _log.info("Run %s: targeting AWS Fargate Den '%s' — bypassing local scheduling execution flow.", run_id, target_den_id)
+                return
+
             # Deduplicate workspaces from existing children
             existing_children = await self.db_client.get_workspaces(project_id)
             seen_workspaces: Dict[str, str] = {
@@ -192,8 +203,22 @@ class ScriptExecutionEngine:
 
             exit_code = 0
 
+            # Load-balance sandbox executor across active runners if any are registered
+            active_runners = await self.db_client.get_active_runners(timeout_seconds=30)
+            runner_executor = deps.sandbox_executor
+            
+            # Filter active runners to only select local ones (non-fargate) when running locally
+            local_runners = [r for r in active_runners if "runner-fargate-" not in r["id"]]
+            if local_runners:
+                import random
+                chosen_runner = random.choice(local_runners)
+                _log.info("Run %s: scheduling execution on local runner %s", run_id, chosen_runner["id"])
+                runner_executor = deps.sandbox_executor.with_container(chosen_runner["id"])
+            else:
+                _log.info("Run %s: no active local runners registered — using default sandbox container %s", run_id, deps.sandbox_executor.container_name)
+
             with log_path.open("w", encoding="utf-8") as log_fh:
-                streamer = stream_run_script(fn_args, project_id=project_id, session_id=run_id)
+                streamer = stream_run_script(fn_args, project_id=project_id, session_id=run_id, executor=runner_executor)
                 async for chunk, is_final, final_result in streamer:
                     if cancel_event.is_set():
                         cancelled_msg = "\r\n[FERRET] Run cancelled by user.\r\n"

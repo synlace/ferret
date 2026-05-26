@@ -276,7 +276,8 @@ class SQLiteClient(ProjectsMixin):
                 run_log_path  TEXT,
                 started_at    TEXT,
                 finished_at   TEXT,
-                created_at    TEXT NOT NULL
+                created_at    TEXT NOT NULL,
+                runner_id     TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_runs_project   ON runs(project_id, created_at DESC);
@@ -297,8 +298,50 @@ class SQLiteClient(ProjectsMixin):
                 expires_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+            -- Runners: dynamic keepalive subscription
+            CREATE TABLE IF NOT EXISTS runners (
+                id             TEXT PRIMARY KEY,
+                url            TEXT,
+                status         TEXT NOT NULL DEFAULT 'active',
+                last_heartbeat TEXT NOT NULL,
+                logs           TEXT
+            );
+
+            -- Runner Keys: unique subscription keys
+            CREATE TABLE IF NOT EXISTS runner_keys (
+                key        TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                status     TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL
+            );
+
+            -- Dens: runner providers (Local vs. multiple AWS Fargate environments)
+            CREATE TABLE IF NOT EXISTS dens (
+                id                 TEXT PRIMARY KEY,
+                name               TEXT NOT NULL,
+                type               TEXT NOT NULL DEFAULT 'local', -- 'local' or 'aws'
+                max_runners        INTEGER NOT NULL DEFAULT 10,
+                aws_access_key     TEXT DEFAULT '',
+                aws_secret_key     TEXT DEFAULT '',
+                aws_region         TEXT DEFAULT 'eu-west-1',
+                created_at         TEXT NOT NULL
+            );
         """)
         await self._db.commit()
+
+        # Seed default local key
+        try:
+            await self._db.execute(
+                """
+                INSERT OR IGNORE INTO runner_keys (key, name, status, created_at)
+                VALUES ('fr_local_dev_key_default_33794b', 'Default Local Runner', 'active', ?)
+                """,
+                (datetime.utcnow().isoformat(),),
+            )
+            await self._db.commit()
+        except Exception:
+            pass
 
         # Migration guards: add columns to existing databases created before
         # these columns existed.
@@ -425,6 +468,46 @@ class SQLiteClient(ProjectsMixin):
             await self._db.commit()
         except Exception:
             pass  # column already exists
+
+        # Migration: add runner_id to runs
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN runner_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add logs to runners
+        try:
+            await self._db.execute(
+                "ALTER TABLE runners ADD COLUMN logs TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add den_id to runs
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN den_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Seed default Local Den if not exists
+        try:
+            await self._db.execute(
+                """
+                INSERT OR IGNORE INTO dens (id, name, type, max_runners, created_at)
+                VALUES ('local', 'Local Den', 'local', 10, ?)
+                """,
+                (datetime.utcnow().isoformat(),),
+            )
+            await self._db.commit()
+        except Exception:
+            pass
 
         # Migration: seed workspaces table from existing chat_sessions
         # Each existing session owns its own workspace; session_id becomes workspace_id

@@ -21,10 +21,22 @@ from pathlib import Path
 from datetime import datetime
 from typing import List
 
+# Configure logging level based on dev vs prod environment variables
+_LOG_LEVEL_STR = os.getenv("FERRET_LOG_LEVEL", "").upper()
+if not _LOG_LEVEL_STR:
+    _LOG_LEVEL_STR = "DEBUG" if os.getenv("WATCHFILES_FORCE_POLLING") == "true" else "WARNING"
+
+_LOG_LEVEL = getattr(logging, _LOG_LEVEL_STR, logging.WARNING)
+logging.basicConfig(
+    level=_LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+
 _log = logging.getLogger(__name__)
 
 import deps
-from routers import requests, proxy, findings, tests, projects, settings, hunts, setup, plans, sources
+from routers import requests, proxy, findings, tests, projects, settings, hunts, setup, plans, sources, runners
 from routers import auth as auth_router
 from routers import chats, workspaces, runs
 
@@ -135,11 +147,21 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> Resp
     )
 
 
-@app.exception_handler(HTTPException)
-async def _http_exception_handler(request: Request, exc: HTTPException) -> Response:
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> Response:
+    body_str = ""
+    if hasattr(request, "_body"):
+        body_str = request._body.decode(errors='replace')
+    elif exc.body is not None:
+        body_str = str(exc.body)
+    print(f"VALIDATION ERROR on {request.method} {request.url.path}: {exc.errors()}", flush=True)
+    print(f"REQUEST HEADERS: {dict(request.headers)}", flush=True)
+    print(f"REQUEST BODY: {body_str}", flush=True)
     return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body)},
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "*",
@@ -243,6 +265,7 @@ app.include_router(plans.router)
 app.include_router(sources.router)
 app.include_router(workspaces.router)
 app.include_router(runs.router)
+app.include_router(runners.router)
 
 
 # ---------------------------------------------------------------------------

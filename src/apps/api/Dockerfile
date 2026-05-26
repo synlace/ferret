@@ -19,6 +19,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     gosu \
+    wireguard-tools \
+    iptables \
+    iproute2 \
+    procps \
+    sudo \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
@@ -40,7 +45,9 @@ COPY . .
 # The entrypoint will dynamically add ferret to the docker socket group at runtime.
 RUN useradd -m -u 1000 ferret \
     && mkdir -p /data \
-    && chown -R ferret:ferret /app /data
+    && chown -R ferret:ferret /app /data \
+    && echo "ferret ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ferret \
+    && chmod 0440 /etc/sudoers.d/ferret
 
 # Copy and configure the entrypoint (runs as root to fix socket GID, then drops to ferret)
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

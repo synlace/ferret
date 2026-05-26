@@ -300,6 +300,89 @@ export default function SettingsPage() {
   const [disableStatus, setDisableStatus] = useState<"idle" | "saving" | "ok" | "error">("idle")
   const [disableError, setDisableError] = useState<string | null>(null)
 
+  // Den State Variables
+  const [denType, setDenType]         = useState<"local" | "aws">("local")
+  const [denMaxRunners, setDenMaxRunners] = useState<number>(10)
+  const [denAwsKey, setDenAwsKey]     = useState("")
+  const [denAwsSecret, setDenAwsSecret] = useState("")
+  const [denAwsRegion, setDenAwsRegion] = useState("eu-west-1")
+  const [denStatus, setDenStatus]     = useState<"idle" | "saving" | "ok" | "error">("idle")
+  const [denError, setDenError]       = useState<string | null>(null)
+
+  const [testingDen, setTestingDen]   = useState(false)
+  const [testDenResult, setTestDenResult] = useState<{ ok: boolean; detail: string } | null>(null)
+
+  // Fetch current den settings on mount
+  useEffect(() => {
+    apiFetch(`${API_BASE}/api/settings/den`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d) {
+          setDenType(d.den_type)
+          setDenMaxRunners(d.den_max_runners)
+          setDenAwsKey(d.den_aws_access_key)
+          setDenAwsSecret(d.den_aws_secret_key)
+          setDenAwsRegion(d.den_aws_region)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const saveDenSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setDenError(null)
+    setDenStatus("saving")
+    try {
+      const res = await apiFetch(`${API_BASE}/api/settings/den`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          den_type: denType,
+          den_max_runners: denMaxRunners,
+          den_aws_access_key: denAwsKey || undefined,
+          den_aws_secret_key: denAwsSecret || undefined,
+          den_aws_region: denAwsRegion || "eu-west-1"
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: "Unknown error" }))
+        throw new Error(body.detail ?? `HTTP ${res.status}`)
+      }
+      setDenStatus("ok")
+    } catch (err) {
+      setDenError(err instanceof Error ? err.message : "Failed to update Den settings")
+      setDenStatus("error")
+    }
+  }
+
+  const testDenSettings = async () => {
+    setTestingDen(true)
+    setTestDenResult(null)
+    try {
+      const res = await apiFetch(`${API_BASE}/api/settings/den/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          den_type: denType,
+          den_max_runners: denMaxRunners,
+          den_aws_access_key: denAwsKey || undefined,
+          den_aws_secret_key: denAwsSecret || undefined,
+          den_aws_region: denAwsRegion || "eu-west-1"
+        }),
+      })
+      const d = await res.json()
+      if (res.ok) {
+        setTestDenResult({ ok: d.ok, detail: d.detail })
+      } else {
+        setTestDenResult({ ok: false, detail: d.detail ?? "Test request failed" })
+      }
+    } catch (err) {
+      setTestDenResult({ ok: false, detail: err instanceof Error ? err.message : "Test request failed" })
+    } finally {
+      setTestingDen(false)
+    }
+  }
+
   useEffect(() => {
     apiFetch(`${API_BASE}/api/setup`)
       .then(r => r.ok ? r.json() : null)
@@ -787,6 +870,154 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Den (Runner Providers) Section Header */}
+        <div className="grid grid-cols-1 items-stretch border-b border-neutral-800">
+          <StaticSectionHeader
+            icon={<Cpu className="w-4 h-4 text-brand-400 flex-shrink-0" />}
+            label="Den (Runner Providers) Configuration"
+          />
+        </div>
+
+        {/* Den Configuration Content */}
+        <div className="px-4 py-4 space-y-4 border-b border-neutral-800 max-w-xl">
+          <p className="text-xs text-neutral-400">
+            Configure how Ferret scales and manages scanning environments. Fallback to Local Den if AWS Fargate is not configured or disabled.
+          </p>
+
+          <form onSubmit={saveDenSettings} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setDenType("local")}
+                className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
+                  ${denType === "local"
+                    ? "border-brand-500 bg-brand-500/10 text-white"
+                    : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
+                  }`}
+              >
+                <span className="text-sm font-semibold text-white leading-tight">🖥️ Local Den</span>
+                <span className="text-[10px] text-neutral-500 mt-0.5">Run scanning tasks inside the local sandbox container</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDenType("aws")}
+                className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
+                  ${denType === "aws"
+                    ? "border-brand-500 bg-brand-500/10 text-white"
+                    : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
+                  }`}
+              >
+                <span className="text-sm font-semibold text-white leading-tight">☁️ AWS Fargate Den</span>
+                <span className="text-[10px] text-neutral-500 mt-0.5">Deploy ephemeral dynamic unprivileged cloud runner tasks</span>
+              </button>
+            </div>
+
+            {denType === "aws" && (
+              <div className="space-y-3 bg-neutral-900/40 p-3 border border-neutral-800">
+                <div className="space-y-1">
+                  <label className="block text-[11px] text-neutral-400">AWS Access Key ID</label>
+                  <Input
+                    type="text"
+                    value={denAwsKey}
+                    onChange={e => setDenAwsKey(e.target.value)}
+                    placeholder="AKIA..."
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] text-neutral-400">AWS Secret Access Key</label>
+                  <Input
+                    type="password"
+                    value={denAwsSecret}
+                    onChange={e => setDenAwsSecret(e.target.value)}
+                    placeholder={denAwsSecret ? "••••••••••••••••" : "Enter AWS Secret Key"}
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] text-neutral-400">AWS Region</label>
+                  <Input
+                    type="text"
+                    value={denAwsRegion}
+                    onChange={e => setDenAwsRegion(e.target.value)}
+                    placeholder="eu-west-1"
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="block text-[11px] text-neutral-400">Global Max Concurrent Runners</label>
+              <Input
+                type="number"
+                value={denMaxRunners}
+                onChange={e => setDenMaxRunners(Math.max(1, parseInt(e.target.value) || 1))}
+                className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 max-w-xs"
+              />
+              <p className="text-[10px] text-neutral-500">
+                Enforces a strict upper ceiling on concurrently active scanning tasks.
+              </p>
+            </div>
+
+            {denStatus === "ok" && (
+              <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
+                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>Den configuration updated successfully.</span>
+              </div>
+            )}
+
+            {denError && (
+              <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{denError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <Button
+                type="submit"
+                disabled={denStatus === "saving"}
+                size="sm"
+                className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
+              >
+                {denStatus === "saving" ? (
+                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
+                ) : (
+                  "Save Den Settings"
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                onClick={testDenSettings}
+                disabled={testingDen}
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white rounded-none"
+              >
+                {testingDen ? (
+                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Testing...</>
+                ) : (
+                  "Test Connection"
+                )}
+              </Button>
+            </div>
+
+            {testDenResult && (
+              <div className={`text-xs p-2 border ${
+                testDenResult.ok
+                  ? "bg-green-900/20 border-green-800 text-green-300"
+                  : "bg-red-900/20 border-red-800 text-red-300"
+              }`}>
+                {testDenResult.ok ? "✓ " : "✗ "}
+                {testDenResult.detail}
+              </div>
+            )}
+          </form>
         </div>
 
       </div>

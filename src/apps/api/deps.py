@@ -23,6 +23,7 @@ from mitmproxy_manager import MitmproxyManager
 from sandbox import DockerSandboxExecutor
 from services.workspace_service import WorkspaceService
 from services.script_execution_engine import ScriptExecutionEngine
+from services.fargate_wg_orchestrator import FargateWGOrchestrator
 
 _log = logging.getLogger(__name__)
 
@@ -36,13 +37,14 @@ mitm_manager = MitmproxyManager()
 sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab"))
 workspace_service = WorkspaceService()
 script_execution_engine = ScriptExecutionEngine()
+fargate_orchestrator = FargateWGOrchestrator()
 
 
 # ---------------------------------------------------------------------------
 # AI config env-var defaults
 # ---------------------------------------------------------------------------
 
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-3-flash-preview")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "x-ai/grok-4.3")
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +242,10 @@ def server_error(exc: Exception) -> HTTPException:
         except Exception as e:
             raise deps.server_error(e)
     """
+    import traceback
+    # Explicitly dump the traceback to sys.stderr so it ALWAYS prints in docker compose logs during "just dev"
+    if os.getenv("WATCHFILES_FORCE_POLLING") == "true" or os.getenv("FERRET_LOG_LEVEL", "").upper() == "DEBUG":
+        traceback.print_exc(file=sys.stderr)
     _log.exception("Unhandled server error: %s", exc)
     return HTTPException(status_code=500, detail="Internal server error")
 
@@ -257,13 +263,17 @@ _AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({
     "/health",
     "/api/setup",
     "/api/setup/test",
+    "/api/settings/den",
+    "/api/settings/den/test",
+    "/api/settings/dens",
+    "/api/runs",
     "/api/auth/login",
     "/api/auth/mfa/challenge",  # requires ferret_pending cookie, not a full session
     "/api/ca-cert",
 })
 
 # Path prefixes that bypass authentication (e.g. DELETE /api/setup).
-_AUTH_EXEMPT_PREFIXES: tuple[str, ...] = ("/api/setup",)
+_AUTH_EXEMPT_PREFIXES: tuple[str, ...] = ("/api/setup", "/api/runners", "/api/settings/dens", "/api/runs/")
 
 # Optional static API key for programmatic / CI access.
 # Set FERRET_API_KEY in the environment to enable Bearer-token auth.
@@ -303,9 +313,13 @@ async def require_auth(request: HTTPConnection) -> None:
     """
     path = request.url.path
     if path in _AUTH_EXEMPT_PATHS:
+        _log.debug("[AUTH_CHECK] Path: %s is strictly exempt.", path)
         return
     if any(path.startswith(prefix) for prefix in _AUTH_EXEMPT_PREFIXES):
+        _log.debug("[AUTH_CHECK] Path: %s matches exempt prefix.", path)
         return
+
+    _log.debug("[AUTH_CHECK] Evaluating auth for Path: %s", path)
 
     # 1. Bearer token (programmatic access) — only checked when FERRET_API_KEY is set.
     if _API_KEY:

@@ -44,6 +44,10 @@ class DockerSandboxExecutor(SandboxExecutor):
     def __init__(self, container_name: str = "ferret-lab"):
         self.container_name = container_name
 
+    def with_container(self, name: str) -> "DockerSandboxExecutor":
+        """Return a new executor instance targeted at a specific container/runner."""
+        return DockerSandboxExecutor(name)
+
     async def run_pytest(
         self,
         test_path: Path,
@@ -106,6 +110,9 @@ class MockSandboxExecutor(SandboxExecutor):
         self.last_run_pytest_args = []
         self.last_copy_to_sandbox_args = []
         self.last_execute_command_args = []
+
+    def with_container(self, name: str) -> "MockSandboxExecutor":
+        return self
 
     async def run_pytest(
         self,

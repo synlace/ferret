@@ -25,6 +25,8 @@ up:
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Syncing lab runner.py to api/runner.py..."
+    cp src/apps/lab/runner.py src/apps/api/runner.py
     LAB_IMG="${FERRET_LAB_IMAGE:-}"
     if [[ -z "$LAB_IMG" || "$LAB_IMG" == ghcr.io/* ]]; then
         echo "Pulling latest ferret-lab image from GHCR..."
@@ -54,6 +56,7 @@ down:
 
 # Build images without starting (no k3s import)
 build:
+    cp src/apps/lab/runner.py src/apps/api/runner.py
     docker compose build
 
 # Tail logs from all services
@@ -108,6 +111,7 @@ test component="":
           test_api_security2.py \
           test_api_setup.py \
           test_api_plans.py \
+          test_api_runners.py \
           -v --tb=short
         ;;
       ui)
@@ -157,6 +161,12 @@ reset:
     echo ""
     read -r -p "⚠️  This will wipe ALL Ferret data. Type 'yes' to confirm: " confirm
     [[ "$confirm" == "yes" ]] || { echo "Aborted."; exit 1; }
+    echo ""
+    read -r -p "Do you also want to destroy all AWS resources first? (y/N): " destroy_aws
+    if [[ "$destroy_aws" =~ ^[Yy](es)?$ ]]; then
+        echo "Wiping AWS resources before deleting the database..."
+        just destroy-aws
+    fi
     echo "Stopping API container..."
     docker compose stop api
     if [[ -f "${DATA_DIR}/ferret.db" ]]; then
@@ -217,6 +227,32 @@ restart-lab:
     docker compose stop lab
     docker buildx build -t ferret-lab:local src/apps/lab
     docker compose start lab
+
+# Start an isolated outbound polling runner container using a subscription key.
+# Usage:
+#   just runner KEY [API_URL]
+# Example:
+#   just runner fr_7c9be939527ec318c61e479c4a5dc3b1 http://192.168.1.50:8000
+runner key api_url="http://localhost:8000":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IMAGE="${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}"
+    KEY_SHORT=$(echo -n "{{key}}" | md5sum | cut -c1-6)
+    NAME="ferret-runner-${KEY_SHORT}"
+    echo "Starting isolated outbound runner container: ${NAME}"
+    echo "Connecting to platform: {{api_url}}"
+    docker run -d \
+        --name "${NAME}" \
+        --restart unless-stopped \
+        --cap-add NET_ADMIN \
+        --cap-add NET_RAW \
+        --cap-add SYS_PTRACE \
+        -e FERRET_API_URL="{{api_url}}" \
+        -e FERRET_RUNNER_KEY="{{key}}" \
+        -e FERRET_RUNNER_ID="${NAME}" \
+        "${IMAGE}"
+    echo "Runner started successfully. To view its logs, run:"
+    echo "  docker logs -f ${NAME}"
 
 # Push a new ferret-lab image to GHCR (maintainers only).
 # Requires docker login to ghcr.io and write access to the repo packages.
@@ -332,3 +368,124 @@ test-docker-proxy:
     echo ""
     echo "=== Results: ${PASS} passed, ${FAIL} failed ==="
     [[ $FAIL -eq 0 ]] || exit 1
+
+# Destroy all AWS resources created by the AWS Den (EC2 Hub, SG, IAM, ECS, Logs)
+destroy-aws region="eu-west-1":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Running AWS resource teardown for region '{{region}}'..."
+    docker compose exec -T api python3 -c '
+    import boto3, sys, logging, os, asyncio, time
+    from botocore.config import Config
+    
+    logging.basicConfig(level=logging.INFO, format="[CLEANUP] %(asctime)s - %(message)s")
+    _log = logging.getLogger()
+
+    async def get_credentials():
+        aws_key = os.environ.get("AWS_ACCESS_KEY_ID")
+        aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
+        aws_region = os.environ.get("AWS_DEFAULT_REGION") or "{{region}}"
+        if aws_key and aws_secret:
+            return aws_key, aws_secret, aws_region
+        try:
+            sys.path.append("/app")
+            import deps
+            await deps.db_client.initialize()
+            den = await deps.db_client.get_den("aws")
+            await deps.db_client.close()
+            if den:
+                return den.get("aws_access_key"), den.get("aws_secret_key"), den.get("aws_region") or "{{region}}"
+        except Exception as db_err:
+            _log.warning(f"DB credential load failed: {db_err}")
+        return None, None, "{{region}}"
+
+    async def run_cleanup():
+        aws_key, aws_secret, aws_region = await get_credentials()
+        if not aws_key or not aws_secret:
+            _log.error("Could not find AWS credentials in environment or database.")
+            sys.exit(1)
+        _log.info(f"Loaded credentials. Initializing AWS clients in region: {aws_region}")
+        config = Config(region_name=aws_region)
+        kwargs = {"aws_access_key_id": aws_key, "aws_secret_access_key": aws_secret, "config": config}
+        ec2 = boto3.client("ec2", **kwargs)
+        ecs = boto3.client("ecs", **kwargs)
+        iam = boto3.client("iam", **kwargs)
+        logs = boto3.client("logs", **kwargs)
+
+        # 1. Terminate EC2 WireGuard Hub
+        try:
+            instances = ec2.describe_instances(Filters=[
+                {"Name": "tag:Name", "Values": ["ferret-wg-hub"]},
+                {"Name": "instance-state-name", "Values": ["pending", "running", "stopping", "stopped"]}
+            ])
+            instance_ids = [inst["InstanceId"] for res in instances.get("Reservations", []) for inst in res.get("Instances", [])]
+            if instance_ids:
+                _log.info(f"Terminating active EC2 Hub instances: {instance_ids}")
+                ec2.terminate_instances(InstanceIds=instance_ids)
+                _log.info("Waiting for termination to complete...")
+                ec2.get_waiter("instance_terminated").wait(InstanceIds=instance_ids)
+        except Exception as e: _log.warning(f"EC2 cleanup: {e}")
+
+        # 2. Stop running Fargate Runner Tasks
+        try:
+            tasks = ecs.list_tasks(cluster="ferret-runners").get("taskArns", [])
+            for arn in tasks:
+                ecs.stop_task(cluster="ferret-runners", task=arn, reason="just destroy-aws")
+        except Exception as e: _log.warning(f"ECS task cleanup: {e}")
+
+        # 3. Clean up ECS Task Definitions & Cluster
+        try:
+            families = ecs.list_task_definition_families().get("families", [])
+            for f in families:
+                if f.startswith("ferret-runner"):
+                    for td_arn in ecs.list_task_definitions(familyPrefix=f).get("taskDefinitionArns", []):
+                        ecs.deregister_task_definition(taskDefinition=td_arn)
+            if any(c.endswith("/ferret-runners") for c in ecs.list_clusters().get("clusterArns", [])):
+                ecs.delete_cluster(cluster="ferret-runners")
+        except Exception as e: _log.warning(f"ECS cluster cleanup: {e}")
+
+        # 4. Delete Security Groups (with retry loop to handle eventual consistency & ENI detachment)
+        for sg_name in ("ferret-ec2-wg-sg", "ferret-runner-outbound-sg"):
+            try:
+                sgs = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [sg_name]}])
+                for sg in sgs.get("SecurityGroups", []):
+                    sg_id = sg["GroupId"]
+                    _log.info(f"Deleting Security Group: {sg_name} ({sg_id})...")
+                    for attempt in range(6):
+                        try:
+                            ec2.delete_security_group(GroupId=sg_id)
+                            _log.info(f"Successfully deleted Security Group: {sg_name}")
+                            break
+                        except Exception as e:
+                            if "DependencyViolation" in str(e) and attempt < 5:
+                                sleep_time = attempt * 3 + 2
+                                _log.info(f"Security Group {sg_name} has dependent objects (detaching ENIs). Retrying in {sleep_time}s...")
+                                time.sleep(sleep_time)
+                            else:
+                                raise e
+            except Exception as e: _log.warning(f"Security Group cleanup ({sg_name}): {e}")
+
+        # 5. Delete IAM Role & Policies
+        try:
+            for p in ("arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy", "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"):
+                try: iam.detach_role_policy(RoleName="ferretExecutionRole", PolicyArn=p)
+                except Exception: pass
+            iam.delete_role(RoleName="ferretExecutionRole")
+            _log.info("Deleted IAM role ferretExecutionRole")
+        except Exception as e: _log.warning(f"IAM cleanup: {e}")
+
+        # 6. Clean up CloudWatch Log Group
+        try:
+            logs.delete_log_group(logGroupName="/ecs/ferret-polling-mesh")
+            _log.info("Deleted CloudWatch log group")
+        except Exception as e:
+            if "AccessDenied" in str(e):
+                _log.info("Bypassed CloudWatch log group deletion (insufficient IAM permissions for logs:DeleteLogGroup).")
+            else:
+                _log.warning(f"Log Group cleanup: {e}")
+
+        _log.info("AWS teardown complete.")
+
+    asyncio.run(run_cleanup())
+    '
+

@@ -146,7 +146,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ── Layer 11: Data directory & entrypoint ────────────────────────────────────
 RUN mkdir -p /data/tests
 
+COPY runner.py /runner.py
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh /runner.py
 
 CMD ["/entrypoint.sh"]

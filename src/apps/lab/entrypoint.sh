@@ -15,4 +15,5 @@ else
     echo "[ferret-lab] Start the FERRET proxy at least once to generate the cert."
 fi
 
-exec tail -f /dev/null
+echo "[ferret-lab] Starting outbound polling runner daemon..."
+exec python3 -u /runner.py

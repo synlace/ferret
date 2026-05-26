@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Request
 
 import deps
 from models import Run, RunCreate
@@ -39,14 +39,23 @@ def _resolve_log_path(run: dict) -> Optional[Path]:
 # Routes
 # ---------------------------------------------------------------------------
 
+async def _assert_setup_or_authenticated(request: Request):
+    """Enforce authentication on run creation endpoints ONLY IF setup has been completed."""
+    complete = await deps.db_client.get_setting("setup_complete")
+    if complete == "1":
+        await deps.require_auth(request)
+
+
 @router.get("/api/runs")
 async def list_runs(
+    request: Request,
     project_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
     limit: int = 1000,
 ):
     """List runs, filtered by workspace_id or project_id."""
     try:
+        await _assert_setup_or_authenticated(request)
         runs = await deps.db_client.get_runs(
             workspace_id=workspace_id,
             project_id=project_id or "temp",
@@ -58,9 +67,10 @@ async def list_runs(
 
 
 @router.post("/api/runs", status_code=201)
-async def create_run(body: RunCreate, project_id: str = "temp"):
+async def create_run(body: RunCreate, request: Request, project_id: str = "temp"):
     """Create a new run and fire execution in the background."""
     try:
+        await _assert_setup_or_authenticated(request)
         from routers.plans import _find_plan
 
         plan = _find_plan(body.plan_id)
@@ -94,10 +104,11 @@ async def create_run(body: RunCreate, project_id: str = "temp"):
             created_at=datetime.utcnow(),
             follow_on_plan_ids=body.follow_on_plan_ids,
             follow_on_path_plan_ids=body.follow_on_path_plan_ids,
+            den_id=body.den_id or "local",
         )
         await deps.db_client.create_run(run)
 
-        # Fire the script runner as a background task
+        # Fire the script runner as a background task (which handles scheduling/leasing filtering)
         asyncio.create_task(
             deps.script_execution_engine.execute_run_in_background(
                 run_id=run_id,
@@ -110,6 +121,11 @@ async def create_run(body: RunCreate, project_id: str = "temp"):
             )
         )
 
+        # Spawns Fargate task runners over ECS in the background if the targeted Den is an AWS Den
+        asyncio.create_task(
+            deps.fargate_orchestrator.spawn_runners_if_needed(run.den_id, body.runner_count or 1)
+        )
+
         return run.model_dump()
     except HTTPException:
         raise
@@ -118,9 +134,10 @@ async def create_run(body: RunCreate, project_id: str = "temp"):
 
 
 @router.get("/api/runs/{run_id}")
-async def get_run(run_id: str):
+async def get_run(run_id: str, request: Request):
     """Get a single run by ID."""
     try:
+        await _assert_setup_or_authenticated(request)
         run = await deps.db_client.get_run(run_id)
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
@@ -134,9 +151,11 @@ async def get_run(run_id: str):
 @router.websocket("/api/runs/{run_id}/ws")
 async def stream_run_output_ws(websocket: WebSocket, run_id: str):
     """WebSocket endpoint: stream live output or replay logs."""
+    _log.info("[WEBSOCKET_STREAM] [CONNECT] Client attempting connection for Run ID: %s", run_id)
     await websocket.accept()
     run = await deps.db_client.get_run(run_id)
     if not run:
+        _log.warning("[WEBSOCKET_STREAM] [CONNECT_REJECTED] Run ID: %s not found in DB.", run_id)
         await websocket.close(code=1008, reason="Run not found")
         return
 
@@ -144,32 +163,41 @@ async def stream_run_output_ws(websocket: WebSocket, run_id: str):
         # --- Completed run: replay log file then close ---
         if run["status"] in ("done", "error"):
             log_path = _resolve_log_path(run)
+            _log.info("[WEBSOCKET_STREAM] [REPLAY] Run %s is completed (status=%s). Replaying log file: %s", run_id, run["status"], log_path)
             if log_path and log_path.exists():
                 content = log_path.read_text(encoding="utf-8", errors="replace")
-                for line in content.splitlines(keepends=True):
+                lines = content.splitlines(keepends=True)
+                _log.debug("[WEBSOCKET_STREAM] [REPLAY] Replaying %d lines to WebSocket for Run ID: %s", len(lines), run_id)
+                for line in lines:
                     await websocket.send_text(json.dumps({"line": line}))
             await websocket.send_text(json.dumps({"status": run["status"], "exit_code": run.get("exit_code")}))
+            _log.info("[WEBSOCKET_STREAM] [CLOSE] Replay complete. Closing WebSocket for Run ID: %s", run_id)
             await websocket.close()
             return
 
         # --- Active / pending run: replay partial log then subscribe to live queue ---
         log_path = _resolve_log_path(run)
+        _log.info("[WEBSOCKET_STREAM] [SUBSCRIBE] Run %s is active (status=%s). Replaying partial logs then subscribing.", run_id, run["status"])
         if log_path and log_path.exists():
             try:
                 content = log_path.read_text(encoding="utf-8", errors="replace")
-                for line in content.splitlines(keepends=True):
+                lines = content.splitlines(keepends=True)
+                _log.debug("[WEBSOCKET_STREAM] [SUBSCRIBE] Sending %d bytes of partial logs for Run %s", len(content), run_id)
+                for line in lines:
                     await websocket.send_text(json.dumps({"line": line}))
             except Exception as replay_exc:
-                _log.warning("ws replay error run_id=%s: %s", run_id, replay_exc)
+                _log.warning("[WEBSOCKET_STREAM] [SUBSCRIBE] WebSocket replay error on Run ID %s: %s", run_id, replay_exc)
 
         # Re-check status after replay
         run = await deps.db_client.get_run(run_id)
         if run and run["status"] in ("done", "error"):
+            _log.info("[WEBSOCKET_STREAM] [SUBSCRIBE_COMPLETED] Run ID %s transitioned to completed during replay. Releasing.", run_id)
             await websocket.send_text(json.dumps({"status": run["status"], "exit_code": run.get("exit_code")}))
             await websocket.close()
             return
 
         q: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        _log.debug("[WEBSOCKET_STREAM] [LISTENER_REG] Registering WebSocket log-listener queue for Run ID: %s", run_id)
         deps.script_execution_engine.register_listener_queue(run_id, q)
         try:
             while True:
@@ -178,6 +206,7 @@ async def stream_run_output_ws(websocket: WebSocket, run_id: str):
                 except asyncio.TimeoutError:
                     current = await deps.db_client.get_run(run_id)
                     if current and current["status"] in ("done", "error"):
+                        _log.info("[WEBSOCKET_STREAM] [STREAM_FINISHED] Active run ID %s transitioned to completed.", run_id)
                         while not q.empty():
                             remaining = q.get_nowait()
                             if remaining is None:
@@ -189,20 +218,25 @@ async def stream_run_output_ws(websocket: WebSocket, run_id: str):
                     continue
 
                 if item is None:
+                    _log.info("[WEBSOCKET_STREAM] [STREAM_END] Log stream reached end-of-log signal for Run ID: %s", run_id)
                     current = await deps.db_client.get_run(run_id)
                     status = current["status"] if current else "done"
                     exit_code = current.get("exit_code") if current else None
                     await websocket.send_text(json.dumps({"status": status, "exit_code": exit_code}))
                     await websocket.close()
                     return
+                
+                # Stream the real-time line back
                 await websocket.send_text(json.dumps({"line": item}))
         finally:
+            _log.debug("[WEBSOCKET_STREAM] [LISTENER_UNREG] Unregistering WebSocket log-listener queue for Run ID: %s", run_id)
             deps.script_execution_engine.unregister_listener_queue(run_id, q)
 
     except WebSocketDisconnect:
+        _log.info("[WEBSOCKET_STREAM] [DISCONNECT] Client disconnected from Run ID: %s", run_id)
         pass
     except Exception as exc:
-        _log.error("ws stream error run_id=%s: %s", run_id, exc, exc_info=True)
+        _log.error("[WEBSOCKET_STREAM] [ERROR] Exception on WebSocket for Run ID %s: %s", run_id, exc, exc_info=True)
         try:
             await websocket.close(code=1011)
         except Exception:

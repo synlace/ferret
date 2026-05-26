@@ -68,7 +68,25 @@ export function NewRunModal({
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [workspacesLoading, setWorkspacesLoading] = useState(false)
 
+  // Den picker state
+  const [dens, setDens] = useState<{ id: string; name: string; den_type: string }[]>([])
+  const [targetDenId, setTargetDenId] = useState("local")
+
   const modalRef = useRef<HTMLDivElement>(null)
+
+  // Fetch Dens
+  useEffect(() => {
+    apiFetch(`${API_BASE}/api/settings/dens`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        setDens(Array.isArray(data) ? data : [])
+        if (Array.isArray(data) && data.length > 0) {
+          const hasLocal = data.some(d => d.id === "local")
+          if (!hasLocal) setTargetDenId(data[0].id)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Fetch script plans only
   useEffect(() => {
@@ -193,6 +211,7 @@ export function NewRunModal({
         if (usePathDiscovery && pathFollowOnIds.length > 0) {
           body.follow_on_path_plan_ids = pathFollowOnIds
         }
+        body.den_id = targetDenId
         const res = await apiFetch(`${API_BASE}/api/runs?project_id=${activeProjectId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -214,6 +233,7 @@ export function NewRunModal({
           const body: Record<string, unknown> = {
             plan_id: planId,
             target_url: targetUrl.trim(),
+            den_id: targetDenId,
           }
           if (sharedWorkspaceId) {
             body.workspace_id = sharedWorkspaceId
@@ -363,6 +383,24 @@ export function NewRunModal({
               )}
             </div>
           </div>
+
+          {/* Den Selection */}
+          {dens.length > 0 && (
+            <div>
+              <label className="text-xs text-neutral-400 block mb-1.5">Target Den (Execution Provider)</label>
+              <select
+                value={targetDenId}
+                onChange={e => setTargetDenId(e.target.value)}
+                className="w-full bg-neutral-800 border border-neutral-600 text-sm text-white px-2 py-1.5 focus:outline-none focus:border-brand-500/60"
+              >
+                {dens.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.den_type === "local" ? "Local sandbox" : "AWS Fargate"})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Script checklist — 2-column grid */}
           <div>

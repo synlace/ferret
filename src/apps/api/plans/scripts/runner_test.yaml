@@ -1,0 +1,7 @@
+name: Runner Test
+description: Run a safe, non-invasive diagnostic check that verifies the local or AWS Fargate runner successfully picks up tasks, executes code, writes output logs, and delivers output files back to the Ferret API workspace.
+interpreter: sh
+max_runtime_seconds: 60
+script: runner_test.sh
+runs_on_hosts: true
+runs_on_paths: true

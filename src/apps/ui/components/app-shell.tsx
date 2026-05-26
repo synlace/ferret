@@ -22,6 +22,7 @@ import {
   BookOpen,
   Layers,
   Play,
+  Cpu,
 } from "lucide-react"
 import ProjectSwitcher from "@/components/project-switcher"
 import ProjectSheet from "@/components/project-sheet"
@@ -48,7 +49,7 @@ const navItems = [
   { href: "/pounce",     icon: Swords,            label: "Pounce" },
   { href: "/plans",      icon: BookOpen,          label: "Plans" },
   { href: "/workspaces", icon: Layers,            label: "Workspaces" },
-  { href: "/runs",       icon: Play,              label: "Runs" },
+  { href: "/runs",       icon: Play,              label: "Runs", subItems: [{ href: "/runs/runners", icon: Cpu, label: "Runners" }] },
   { href: "/hunts",      icon: Crosshair,         label: "Hunts" },
   { href: "/findings",   icon: Shield,            label: "Findings" },
   { href: "/projects",   icon: FolderOpen,        label: "Projects" },
@@ -94,7 +95,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         if (!res.ok) return  // API not ready yet — don't block the UI
         const data = await res.json()
         if (!data.setup_complete) {
-          router.replace("/setup/password")
+          router.replace("/setup")
         }
       } catch {
         // Backend unreachable on first load — don't block the UI
@@ -260,29 +261,53 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             next?.focus()
           }}
         >
-          {navItems.map(({ href, icon: Icon, label }, i) => {
-            const active = pathname === href || pathname.startsWith(href + "/")
+          {navItems.map(({ href, icon: Icon, label, subItems }, i) => {
+            const isParentActive = pathname === href || pathname.startsWith(href + "/")
+            const active = pathname === href
             return (
-              <Link
-                key={href}
-                href={href}
-                tabIndex={10 + i}
-                className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors border-b border-neutral-800/60 overflow-hidden ${
-                  active
-                    ? "bg-brand-500/20 text-brand-400 border-l-2 border-l-brand-500"
-                    : "text-neutral-400 hover:text-white hover:bg-neutral-800"
-                }`}
-                title={collapsed ? label : undefined}
-              >
-                <Icon className="w-4 h-4 flex-shrink-0" />
-                <span
-                  className={`font-medium whitespace-nowrap transition-opacity duration-150 ${
-                    collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+              <React.Fragment key={href}>
+                <Link
+                  href={href}
+                  tabIndex={10 + i * 10}
+                  className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors border-b border-neutral-800/60 overflow-hidden ${
+                    active
+                      ? "bg-brand-500/20 text-brand-400 border-l-2 border-l-brand-500"
+                      : isParentActive
+                        ? "text-neutral-200 hover:text-white hover:bg-neutral-800 border-l-2 border-l-neutral-700 bg-neutral-800/20"
+                        : "text-neutral-400 hover:text-white hover:bg-neutral-800"
                   }`}
+                  title={collapsed ? label : undefined}
                 >
-                  {label}
-                </span>
-              </Link>
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span
+                    className={`font-medium whitespace-nowrap transition-opacity duration-150 ${
+                      collapsed ? "opacity-0 pointer-events-none delay-0" : "opacity-100 delay-150"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </Link>
+                {subItems && isParentActive && !collapsed && subItems.map((sub, si) => {
+                  const subActive = pathname === sub.href || pathname.startsWith(sub.href + "/")
+                  const SubIcon = sub.icon
+                  return (
+                    <Link
+                      key={sub.href}
+                      href={sub.href}
+                      tabIndex={10 + i * 10 + si + 1}
+                      className={`flex items-center gap-3 pl-8 pr-3 py-1.5 text-xs transition-colors border-b border-neutral-800/60 overflow-hidden ${
+                        subActive
+                          ? "bg-brand-500/15 text-brand-400 font-semibold"
+                          : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"
+                      }`}
+                      title={sub.label}
+                    >
+                      <SubIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{sub.label}</span>
+                    </Link>
+                  )
+                })}
+              </React.Fragment>
             )
           })}
         </nav>

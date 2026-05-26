@@ -8,9 +8,7 @@ class Runner(BaseModel):
     status: str = Field("active", description="Status of the runner: active|offline")
     last_heartbeat: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
 class RunnerHeartbeat(BaseModel):
     runner_id: str
     url: Optional[str] = None
+    logs: Optional[str] = None

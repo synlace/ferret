@@ -265,6 +265,8 @@ class Run(BaseModel):
     started_at: Optional[datetime] = Field(None)
     finished_at: Optional[datetime] = Field(None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    runner_id: Optional[str] = Field(None, description="Runner identifier that consumed/leased this run")
+    den_id: str = Field("local", description="ID of the Den hosting the runner cluster targeted by this run")
     # Plans to run automatically against each workspace discovered via
     # [FERRET:MANIFEST] streaming lines emitted during this run.
     follow_on_plan_ids: List[str] = Field(default_factory=list, description="Plan IDs to run against each discovered host workspace")
@@ -284,6 +286,8 @@ class RunCreate(BaseModel):
     # Plans to chain against each workspace discovered during this run.
     follow_on_plan_ids: List[str] = Field(default_factory=list)
     follow_on_path_plan_ids: List[str] = Field(default_factory=list)
+    runner_count: Optional[int] = 1
+    den_id: Optional[str] = "local"
 
 
 # ---------------------------------------------------------------------------

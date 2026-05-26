@@ -439,3 +439,76 @@ class TestGetKeyForProject:
 
         resolved = await deps_module.get_key_for_project("temp")
         assert resolved == key_value
+
+
+# ---------------------------------------------------------------------------
+# AWS Den existing infrastructure check tests
+# ---------------------------------------------------------------------------
+
+class TestCheckExistingAWSSetup:
+    async def test_check_existing_no_aws_den_saved(self, client):
+        """Should return exists=False and working=False if no AWS Den is saved in DB."""
+        r = await client.post("/api/settings/dens/check-existing")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["exists"] is False
+        assert data["working"] is False
+        assert "No AWS Den configuration saved" in data["detail"]
+
+    async def test_check_existing_missing_credentials(self, client):
+        """Should return exists=False and working=False if credentials are empty."""
+        # Save a config with empty credentials
+        await client.post("/api/settings/dens", json={
+            "id": "aws",
+            "name": "AWS Fargate Den",
+            "den_type": "aws",
+            "den_max_runners": 10,
+            "den_aws_access_key": "",
+            "den_aws_secret_key": "",
+            "den_aws_region": "eu-west-1"
+        })
+        r = await client.post("/api/settings/dens/check-existing")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["exists"] is False
+        assert data["working"] is False
+        assert "Missing AWS credentials" in data["detail"]
+
+    async def test_check_existing_working_bypassed_mock(self, client):
+        """In testing environments, verify checking for existing works when mocked."""
+        from unittest.mock import MagicMock, patch
+
+        mock_ec2 = MagicMock()
+        mock_ec2.describe_instances.return_value = {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": "i-mock-instance-123",
+                            "PublicIpAddress": "127.0.0.1",
+                            "PrivateIpAddress": "10.0.0.1"
+                        }
+                    ]
+                }
+            ]
+        }
+
+        await client.post("/api/settings/dens", json={
+            "id": "aws",
+            "name": "AWS Fargate Den",
+            "den_type": "aws",
+            "den_max_runners": 10,
+            "den_aws_access_key": "AKIAIOSFODNN7EXAMPLE",
+            "den_aws_secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "den_aws_region": "eu-west-1"
+        })
+
+        with patch("boto3.client", return_value=mock_ec2):
+            r = await client.post("/api/settings/dens/check-existing")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["exists"] is True
+            assert data["instance_id"] == "i-mock-instance-123"
+            assert "working" in data
+
+

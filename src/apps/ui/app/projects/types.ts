@@ -41,7 +41,7 @@ export const PRESET_COLORS = [
   "#a855f7", "#eab308", "#06b6d4", "#ec4899",
 ]
 
-export const DEFAULT_MODEL = "google/gemini-3-flash-preview"
+export const DEFAULT_MODEL = "x-ai/grok-4.3"
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 import { apiFetch } from "@/lib/api-fetch"
