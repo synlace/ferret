@@ -29,6 +29,7 @@ interface Run {
   started_at: string | null
   finished_at: string | null
   created_at: string
+  runner_id?: string | null
 }
 
 interface WorkspaceFile {
@@ -254,8 +255,11 @@ function RunDetail({ run, onDeleted, onRerun }: { run: Run; onDeleted: () => voi
         </div>
       </div>
       {/* Metadata sub-row */}
-      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-neutral-800/60 text-[10px] text-neutral-500 flex-shrink-0 bg-neutral-900/30">
+      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-neutral-800/60 text-[10px] text-neutral-500 flex-shrink-0 bg-neutral-900/30 flex-wrap">
         <span>Plan: <span className="text-neutral-400">{run.plan_id}</span></span>
+        {run.runner_id && (
+          <span>Runner: <span className="text-neutral-400 font-mono">{run.runner_id}</span></span>
+        )}
         <span>Started: <span className="text-neutral-400">{formatTs(run.started_at)}</span></span>
         <span>Duration: <span className="text-neutral-400">{formatDuration(run.started_at, run.finished_at)}</span></span>
         {run.exit_code !== null && (

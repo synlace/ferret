@@ -152,7 +152,7 @@ if plugins:
 else:
     lines.append("_No plugin data parsed from JSON output._")
     lines.append("")
-    lines.append("Check `whatweb_raw.json` for raw output.")
+    lines.append("Check \`whatweb_raw.json\` for raw output.")
     lines.append("")
 
 with open(report_path, "w") as f:

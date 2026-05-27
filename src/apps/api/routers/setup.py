@@ -86,6 +86,9 @@ def _validate_base_url(base_url: str, provider: str) -> None:
     parsed = urlparse(base_url)
     host = (parsed.hostname or "").lower()
     if provider in _CLOUD_PROVIDERS:
+        default_url = _PROVIDER_BASE_URLS.get(provider, "")
+        if base_url.rstrip("/") == default_url.rstrip("/"):
+            return
         # Cloud providers have fixed base URLs; override is not permitted
         raise HTTPException(
             status_code=422,
@@ -142,6 +145,32 @@ async def get_setup_status():
         raise deps.server_error(e)
 
 
+@router.get("/api/setup/config")
+async def get_setup_config():
+    """Get any pre-existing configuration (e.g. from an import) to pre-populate the wizard."""
+    try:
+        provider = await deps.db_client.get_setting(_KEY_AI_PROVIDER)
+        api_key = await deps.db_client.get_setting(_KEY_AI_API_KEY)
+        prov_key = await deps.db_client.get_setting(_KEY_AI_PROV_KEY)
+        base_url = await deps.db_client.get_setting(_KEY_AI_BASE_URL)
+        model = await deps.db_client.get_setting(_KEY_AI_MODEL)
+        
+        # Mask the API key/secret before sending to client
+        masked_key = ""
+        if api_key:
+            masked_key = api_key[:4] + "••••••••" if len(api_key) >= 4 else "••••••••"
+            
+        return {
+            "ai_provider": provider or "",
+            "ai_api_key": masked_key,
+            "ai_provisioning_key": prov_key or "",
+            "ai_base_url": base_url or "",
+            "ai_model": model or "",
+        }
+    except Exception as e:
+        raise deps.server_error(e)
+
+
 # ---------------------------------------------------------------------------
 # POST /api/setup
 # ---------------------------------------------------------------------------
@@ -178,6 +207,10 @@ async def complete_setup(body: SetupConfig):
         # OpenRouter accepts either an api_key (regular key) or a provisioning_key alone.
         # All other cloud providers require an api_key.
         if provider in _CLOUD_PROVIDERS:
+            # If the API key is masked, resolve it from the database
+            if body.api_key and ("•" in body.api_key or "\u2022" in body.api_key or "*" in body.api_key):
+                body.api_key = await deps.db_client.get_setting(_KEY_AI_API_KEY) or ""
+
             if provider == "openrouter":
                 if not body.api_key and not body.provisioning_key:
                     raise HTTPException(
@@ -239,6 +272,11 @@ async def test_setup_connection(body: SetupConfig):
     """
     try:
         provider = body.provider.lower()
+
+        # If the API key is masked, resolve it from the database
+        if body.api_key and ("•" in body.api_key or "\u2022" in body.api_key or "*" in body.api_key):
+            body.api_key = await deps.db_client.get_setting(_KEY_AI_API_KEY) or ""
+
         _validate_base_url(body.base_url or "", provider)
         base_url = body.base_url or _PROVIDER_BASE_URLS.get(provider, "")
         fmt      = _PROVIDER_FORMAT.get(provider, "openai")

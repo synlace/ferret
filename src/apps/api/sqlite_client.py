@@ -9,6 +9,7 @@ spend snapshots, settings) lives in sqlite_client_projects.ProjectsMixin which
 is composed in via multiple inheritance.
 """
 
+import asyncio
 import json
 import uuid
 import aiosqlite
@@ -29,6 +30,9 @@ class SQLiteClient(ProjectsMixin):
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
+        # Serialises concurrent lease_pending_run calls — only one BEGIN IMMEDIATE
+        # can be in flight at a time on a single aiosqlite connection.
+        self._lease_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -325,6 +329,9 @@ class SQLiteClient(ProjectsMixin):
                 aws_access_key     TEXT DEFAULT '',
                 aws_secret_key     TEXT DEFAULT '',
                 aws_region         TEXT DEFAULT 'eu-west-1',
+                runner_image       TEXT DEFAULT '',
+                warm_runners       INTEGER NOT NULL DEFAULT 0,
+                kill_if_unreachable INTEGER NOT NULL DEFAULT 1,
                 created_at         TEXT NOT NULL
             );
         """)
@@ -491,6 +498,33 @@ class SQLiteClient(ProjectsMixin):
         try:
             await self._db.execute(
                 "ALTER TABLE runs ADD COLUMN den_id TEXT"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add runner_image to dens
+        try:
+            await self._db.execute(
+                "ALTER TABLE dens ADD COLUMN runner_image TEXT DEFAULT ''"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add warm_runners to dens
+        try:
+            await self._db.execute(
+                "ALTER TABLE dens ADD COLUMN warm_runners INTEGER NOT NULL DEFAULT 0"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Migration: add kill_if_unreachable to dens
+        try:
+            await self._db.execute(
+                "ALTER TABLE dens ADD COLUMN kill_if_unreachable INTEGER NOT NULL DEFAULT 1"
             )
             await self._db.commit()
         except Exception:

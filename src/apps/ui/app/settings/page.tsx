@@ -18,6 +18,7 @@ import {
   KeyRound,
   ShieldAlert,
   X,
+  Upload,
 } from "lucide-react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -303,14 +304,102 @@ export default function SettingsPage() {
   // Den State Variables
   const [denType, setDenType]         = useState<"local" | "aws">("local")
   const [denMaxRunners, setDenMaxRunners] = useState<number>(10)
-  const [denAwsKey, setDenAwsKey]     = useState("")
-  const [denAwsSecret, setDenAwsSecret] = useState("")
-  const [denAwsRegion, setDenAwsRegion] = useState("eu-west-1")
-  const [denStatus, setDenStatus]     = useState<"idle" | "saving" | "ok" | "error">("idle")
+  const [denAwsKey, setDenAwsKey]         = useState("")
+  const [denAwsSecret, setDenAwsSecret]   = useState("")
+  const [denAwsRegion, setDenAwsRegion]   = useState("eu-west-1")
+  const [denRunnerImage, setDenRunnerImage] = useState("")
+  const [denWarmRunners, setDenWarmRunners] = useState<number>(0)
+  const [denKillIfUnreachable, setDenKillIfUnreachable] = useState<boolean>(true)
+  const [denStatus, setDenStatus]         = useState<"idle" | "saving" | "ok" | "error">("idle")
   const [denError, setDenError]       = useState<string | null>(null)
 
   const [testingDen, setTestingDen]   = useState(false)
   const [testDenResult, setTestDenResult] = useState<{ ok: boolean; detail: string } | null>(null)
+
+  // Backup / Restore state variables
+  const [includeSettings, setIncludeSettings] = useState(true)
+  const [includeDens, setIncludeDens] = useState(true)
+  const [includeProjects, setIncludeProjects] = useState(true)
+  const [backupPassphrase, setBackupPassphrase] = useState("")
+  const [importPassphrase, setImportPassphrase] = useState("")
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [backupStatus, setBackupStatus] = useState<"idle" | "loading" | "ok" | "error">("idle")
+  const [backupError, setBackupError] = useState<string | null>(null)
+
+  const handleExport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!includeSettings && !includeDens && !includeProjects) {
+      setBackupError("Please select at least one component to export.")
+      return
+    }
+    setBackupStatus("loading")
+    setBackupError(null)
+    try {
+      const res = await apiFetch(`${API_BASE}/api/settings/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          passphrase: backupPassphrase || undefined,
+          export_settings: includeSettings,
+          export_dens: includeDens,
+          export_projects: includeProjects
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.detail ?? "Export failed")
+      }
+      const data = await res.json()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `ferret-backup-${new Date().toISOString().slice(0, 10)}${backupPassphrase ? "-encrypted" : ""}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setBackupStatus("ok")
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : "Export failed")
+      setBackupStatus("error")
+    }
+  }
+
+  const handleImport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!importFile) return
+    setBackupStatus("loading")
+    setBackupError(null)
+    try {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const base64Content = (reader.result as string).split(",")[1]
+        try {
+          const res = await apiFetch(`${API_BASE}/api/settings/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file_content: base64Content,
+              passphrase: importPassphrase || undefined
+            }),
+          })
+          if (!res.ok) {
+            const d = await res.json()
+            throw new Error(d.detail ?? "Import failed")
+          }
+          setBackupStatus("ok")
+          window.location.reload()
+        } catch (err) {
+          setBackupError(err instanceof Error ? err.message : "Import failed")
+          setBackupStatus("error")
+        }
+      }
+      reader.readAsDataURL(importFile)
+    } catch (err) {
+      setBackupError("Failed to read file.")
+      setBackupStatus("error")
+    }
+  }
 
   // Fetch current den settings on mount
   useEffect(() => {
@@ -323,6 +412,9 @@ export default function SettingsPage() {
           setDenAwsKey(d.den_aws_access_key)
           setDenAwsSecret(d.den_aws_secret_key)
           setDenAwsRegion(d.den_aws_region)
+          setDenRunnerImage(d.den_runner_image || "")
+          setDenWarmRunners(d.den_warm_runners || 0)
+          setDenKillIfUnreachable(d.den_kill_if_unreachable !== false)
         }
       })
       .catch(() => {})
@@ -341,7 +433,10 @@ export default function SettingsPage() {
           den_max_runners: denMaxRunners,
           den_aws_access_key: denAwsKey || undefined,
           den_aws_secret_key: denAwsSecret || undefined,
-          den_aws_region: denAwsRegion || "eu-west-1"
+          den_aws_region: denAwsRegion || "eu-west-1",
+          den_runner_image: denRunnerImage || undefined,
+          den_warm_runners: denWarmRunners,
+          den_kill_if_unreachable: denKillIfUnreachable
         }),
       })
       if (!res.ok) {
@@ -367,7 +462,10 @@ export default function SettingsPage() {
           den_max_runners: denMaxRunners,
           den_aws_access_key: denAwsKey || undefined,
           den_aws_secret_key: denAwsSecret || undefined,
-          den_aws_region: denAwsRegion || "eu-west-1"
+          den_aws_region: denAwsRegion || "eu-west-1",
+          den_runner_image: denRunnerImage || undefined,
+          den_warm_runners: denWarmRunners,
+          den_kill_if_unreachable: denKillIfUnreachable
         }),
       })
       const d = await res.json()
@@ -947,6 +1045,50 @@ export default function SettingsPage() {
                     className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] text-neutral-400">Custom ECR/Docker Runner Image (Optional)</label>
+                  <Input
+                    type="text"
+                    value={denRunnerImage}
+                    onChange={e => setDenRunnerImage(e.target.value)}
+                    placeholder="e.g. 1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:latest"
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                  />
+                  <p className="text-[9px] text-neutral-500">
+                    Use a pre-cached ECR image inside your AWS account to eliminate internet pull latency.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] text-neutral-400">Warm Idle Runners Count</label>
+                    <Input
+                      type="number"
+                      value={denWarmRunners}
+                      onChange={e => setDenWarmRunners(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                    />
+                    <p className="text-[9px] text-neutral-500">
+                      Keep these running/connected to eliminate scan start delays.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-5">
+                    <input
+                      type="checkbox"
+                      id="kill_if_unreachable"
+                      checked={denKillIfUnreachable}
+                      onChange={e => setDenKillIfUnreachable(e.target.checked)}
+                      className="rounded-none border-neutral-700 bg-neutral-900 text-brand-500 focus:ring-brand-500"
+                    />
+                    <div className="space-y-0.5">
+                      <label htmlFor="kill_if_unreachable" className="block text-[11px] text-neutral-400 cursor-pointer">
+                        Kill on API loss
+                      </label>
+                      <p className="text-[9px] text-neutral-500">
+                        Auto-terminate runners if offline for over 3m (highly recommended).
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1018,6 +1160,118 @@ export default function SettingsPage() {
               </div>
             )}
           </form>
+        </div>
+
+        {/* Backup & Restore Settings Section Header */}
+        <div className="grid grid-cols-1 items-stretch border-b border-neutral-800">
+          <StaticSectionHeader
+            icon={<Download className="w-4 h-4 text-brand-400 flex-shrink-0" />}
+            label="Backup & Restore Settings"
+          />
+        </div>
+
+        {/* Backup & Restore Settings Content */}
+        <div className="px-4 py-4 space-y-6 border-b border-neutral-800 max-w-xl">
+          <p className="text-xs text-neutral-400">
+            Export or import your configurations, custom runner environments, and project workspaces.
+          </p>
+
+          <form onSubmit={handleExport} className="space-y-4">
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Export Settings</h4>
+            <p className="text-xs text-neutral-500">
+              Select the components you want to back up, and specify an optional passphrase to secure your credentials:
+            </p>
+
+            <div className="space-y-2 bg-neutral-900/50 p-3 border border-neutral-800">
+              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeSettings}
+                  onChange={e => setIncludeSettings(e.target.checked)}
+                  className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                />
+                <div>
+                  <span className="font-medium text-neutral-200">Global Configuration & Keys</span>
+                  <p className="text-[10px] text-neutral-500">AI model parameters, API keys, and endpoint variables.</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeDens}
+                  onChange={e => setIncludeDens(e.target.checked)}
+                  className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                />
+                <div>
+                  <span className="font-medium text-neutral-200">Runner Environments</span>
+                  <p className="text-[10px] text-neutral-500">Local and AWS Fargate runner specifications and credentials.</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeProjects}
+                  onChange={e => setIncludeProjects(e.target.checked)}
+                  className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                />
+                <div>
+                  <span className="font-medium text-neutral-200">Projects & Workspace Data</span>
+                  <p className="text-[10px] text-neutral-500">Findings, captured HTTP proxy logs, workspace chats, and test runs.</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="Passphrase (optional encryption)"
+                value={backupPassphrase}
+                onChange={e => setBackupPassphrase(e.target.value)}
+                className="h-7 text-xs bg-neutral-950 border-neutral-800 rounded-none w-full"
+              />
+              <Button type="submit" disabled={backupStatus === "loading"} size="sm" className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none shrink-0">
+                {backupStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Download className="w-3 h-3 mr-1" />}
+                Export Backup
+              </Button>
+            </div>
+          </form>
+
+          <div className="border-t border-neutral-800/60 my-4" />
+
+          <form onSubmit={handleImport} className="space-y-4">
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Import Settings</h4>
+            <p className="text-xs text-neutral-500">Restore settings and project data from a previously saved backup file.</p>
+            
+            <input
+              type="file"
+              accept=".json"
+              onChange={e => setImportFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-neutral-400 file:mr-4 file:py-1 file:px-2 file:border file:border-neutral-800 file:text-xs file:font-semibold file:bg-neutral-900 file:text-neutral-200 hover:file:bg-neutral-800 cursor-pointer"
+            />
+
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="Decryption passphrase (if encrypted)"
+                value={importPassphrase}
+                onChange={e => setImportPassphrase(e.target.value)}
+                className="h-7 text-xs bg-neutral-950 border-neutral-800 rounded-none w-full"
+              />
+              <Button type="submit" disabled={!importFile || backupStatus === "loading"} size="sm" className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none shrink-0">
+                {backupStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Upload className="w-3 h-3 mr-1" />}
+                Import Backup
+              </Button>
+            </div>
+          </form>
+
+          {backupStatus === "error" && backupError && (
+            <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{backupError}</span>
+            </div>
+          )}
         </div>
 
       </div>

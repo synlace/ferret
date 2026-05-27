@@ -3,11 +3,16 @@
 import { apiFetch } from "@/lib/api-fetch"
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import {
-  Key, Plus, Trash2, Cpu, Check, Copy, RefreshCw, Loader2, X, AlertCircle, Play, History, Download, ChevronRight, Search
+  Key, Plus, Trash2, Cpu, Check, Copy, RefreshCw, Loader2, X, AlertCircle, History, Download, Search, Terminal, ChevronDown, ChevronRight, Folder
 } from "lucide-react"
 import { useProject } from "../../context/project-context"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+
+const LIST_WIDTH_KEY = "ferret_runners_list_width"
+const DEFAULT_LIST_WIDTH = 240
+const MIN_LIST_WIDTH = 160
+const MAX_LIST_WIDTH = 400
 
 interface RunnerKey {
   key: string
@@ -38,6 +43,12 @@ interface Run {
   runner_id: string | null
 }
 
+interface Den {
+  id: string
+  name: string
+  den_type: string
+}
+
 function formatDuration(startedAt: string | null, finishedAt: string | null): string {
   if (!startedAt) return "—"
   const start = new Date(startedAt).getTime()
@@ -48,55 +59,70 @@ function formatDuration(startedAt: string | null, finishedAt: string | null): st
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
 }
 
-function formatTs(ts: string | null): string {
-  if (!ts) return "—"
-  try {
-    return new Date(ts).toLocaleTimeString()
-  } catch { return ts }
+function getRunnerDenId(runnerId: string): string {
+  if (runnerId.startsWith("runner-fargate-")) {
+    const parts = runnerId.split("-");
+    if (parts.length >= 4) {
+      return parts[2];
+    }
+  }
+  return "local";
 }
 
-export default function RunnersPage() {
-  const { activeProjectId } = useProject()
+function parseUtcDate(ts: string): Date {
+  if (!ts.endsWith("Z") && !ts.includes("+")) {
+    return new Date(ts + "Z")
+  }
+  return new Date(ts)
+}
+
+// ---------------------------------------------------------------------------
+// Deep Hook Module: useRunnersSync (Encapsulates Data Synchronization)
+// ---------------------------------------------------------------------------
+function useRunnersSync(activeProjectId: string | undefined) {
   const [keys, setKeys] = useState<RunnerKey[]>([])
   const [runners, setRunners] = useState<ActiveRunner[]>([])
   const [runs, setRuns] = useState<Run[]>([])
-  const [loadingKeys, setLoadingLoadingKeys] = useState(true)
+  const [dens, setDens] = useState<Den[]>([])
+
+  const [loadingKeys, setLoadingKeys] = useState(true)
   const [loadingRunners, setLoadingRunners] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
 
-  // Sidebar selection: either "keys" or a runner ID
-  const [selectedItem, setSelectedItem] = useState<string | "keys">("keys")
-
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [newKeyName, setNewName] = useState("")
-  const [createdKey, setCreatedKey] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [copiedKey, setCopiedKey] = useState(false)
-  const [copiedLogs, setCopiedLogs] = useState(false)
+  const [keysError, setKeysError] = useState<string | null>(null)
+  const [runnersError, setRunnersError] = useState<string | null>(null)
 
   const fetchKeys = useCallback(async () => {
+    setKeysError(null)
     try {
       const res = await apiFetch(`${API_BASE}/api/runners/keys`)
       if (res.ok) {
         setKeys(await res.json())
+      } else {
+        const errBody = await res.json().catch(() => ({}))
+        setKeysError(errBody.detail ?? "Failed to load security keys")
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to fetch runner keys", e)
+      setKeysError("Failed to connect to keys API")
     } finally {
-      setLoadingLoadingKeys(false)
+      setLoadingKeys(false)
     }
   }, [])
 
   const fetchRunners = useCallback(async () => {
+    setRunnersError(null)
     try {
       const res = await apiFetch(`${API_BASE}/api/runners`)
       if (res.ok) {
         setRunners(await res.json())
+      } else {
+        const errBody = await res.json().catch(() => ({}))
+        setRunnersError(errBody.detail ?? "Failed to load active agents")
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to fetch runners", e)
+      setRunnersError("Failed to connect to agents API")
     } finally {
       setLoadingRunners(false)
     }
@@ -115,19 +141,178 @@ export default function RunnersPage() {
     }
   }, [activeProjectId])
 
+  const fetchDens = useCallback(async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/settings/dens`)
+      if (res.ok) {
+        setDens(await res.json())
+      }
+    } catch (e) {
+      console.error("Failed to fetch dens", e)
+    }
+  }, [])
+
   const handleRefresh = async () => {
     setRefreshing(true)
-    await Promise.all([fetchKeys(), fetchRunners(), fetchRuns()])
+    await Promise.all([fetchKeys(), fetchRunners(), fetchRuns(), fetchDens()])
     setRefreshing(false)
   }
 
+  // Handle Visibility API to pause polling when tab is inactive
   useEffect(() => {
     fetchKeys()
     fetchRunners()
     fetchRuns()
-    const interval = setInterval(fetchRunners, 4000)
-    return () => clearInterval(interval)
-  }, [fetchKeys, fetchRunners, fetchRuns])
+    fetchDens()
+
+    let intervalId: NodeJS.Timeout | null = null
+
+    const startPolling = () => {
+      if (intervalId) return
+      intervalId = setInterval(fetchRunners, 4000)
+    }
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId)
+        intervalId = null
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling()
+      } else {
+        startPolling()
+      }
+    }
+
+    // Start polling by default if visible
+    if (!document.hidden) {
+      startPolling()
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    return () => {
+      stopPolling()
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [fetchKeys, fetchRunners, fetchRuns, fetchDens])
+
+  // Prevent race conditions when activeProjectId changes
+  useEffect(() => {
+    let active = true
+    const loadRuns = async () => {
+      if (!activeProjectId) return
+      try {
+        const res = await apiFetch(`${API_BASE}/api/runs?project_id=${activeProjectId}`)
+        if (res.ok && active) {
+          const data = await res.json()
+          setRuns(Array.isArray(data) ? data : [])
+        }
+      } catch (e) {
+        console.error("Failed to fetch runs on project change", e)
+      }
+    }
+    loadRuns()
+    return () => {
+      active = false
+    }
+  }, [activeProjectId])
+
+  return {
+    keys,
+    setKeys,
+    runners,
+    runs,
+    dens,
+    loadingKeys,
+    loadingRunners,
+    refreshing,
+    keysError,
+    runnersError,
+    fetchKeys,
+    handleRefresh,
+  }
+}
+
+export default function RunnersPage() {
+  const { activeProjectId } = useProject()
+  const {
+    keys,
+    setKeys,
+    runners,
+    runs,
+    dens,
+    loadingKeys,
+    loadingRunners,
+    refreshing,
+    keysError,
+    runnersError,
+    fetchKeys,
+    handleRefresh,
+  } = useRunnersSync(activeProjectId)
+
+  const [searchQuery, setSearchQuery] = useState("")
+  const [expandedDens, setExpandedDens] = useState<Record<string, boolean>>({})
+
+  const toggleDen = (denId: string) => {
+    setExpandedDens(prev => {
+      const current = prev[denId] ?? true
+      return {
+        ...prev,
+        [denId]: !current
+      }
+    })
+  }
+
+  // Sidebar selection: either "keys" or a runner ID
+  const [selectedItem, setSelectedItem] = useState<string | "keys">("keys")
+
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newKeyName, setNewName] = useState("")
+  const [createdKey, setCreatedKey] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState(false)
+  const [copiedLogs, setCopiedLogs] = useState(false)
+
+  // ── Resizable list panel ──────────────────────────────────────────────────
+  const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
+  const [isDragging, setIsDragging] = useState(false)
+  const listWidthRef = useRef(DEFAULT_LIST_WIDTH)
+  const dragging = useRef(false)
+  const dragStartX = useRef(0)
+  const dragStartWidth = useRef(DEFAULT_LIST_WIDTH)
+
+  useEffect(() => {
+    const saved = parseInt(localStorage.getItem(LIST_WIDTH_KEY) ?? "", 10)
+    if (!isNaN(saved) && saved >= MIN_LIST_WIDTH && saved <= MAX_LIST_WIDTH) {
+      listWidthRef.current = saved; setListWidth(saved)
+    }
+  }, [])
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    dragging.current = true; dragStartX.current = e.clientX
+    dragStartWidth.current = listWidthRef.current; setIsDragging(true); e.preventDefault()
+  }
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return
+      const next = Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, dragStartWidth.current + (e.clientX - dragStartX.current)))
+      listWidthRef.current = next; setListWidth(next)
+    }
+    const onUp = () => {
+      if (!dragging.current) return
+      dragging.current = false; setIsDragging(false)
+      localStorage.setItem(LIST_WIDTH_KEY, String(listWidthRef.current))
+    }
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+    return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp) }
+  }, [])
 
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -202,167 +387,266 @@ export default function RunnersPage() {
   }
 
   // Filter runners list based on query
-  const filteredRunners = runners.filter(r =>
+  const filteredRunners = runners.filter(r => 
     r.id.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const selectedRunner = selectedItem !== "keys" ? (runners.find(r => r.id === selectedItem) ?? null) : null
   const runnerRuns = selectedRunner ? runs.filter(r => r.runner_id === selectedRunner.id) : []
 
-  return (
-    <div className="flex-1 flex h-full bg-neutral-950 overflow-hidden">
-      {/* ── Left Navigation Column ── */}
-      <div className="w-64 border-r border-neutral-800 flex flex-col h-full shrink-0 bg-neutral-900/10">
-        <div className="p-4 border-b border-neutral-800 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">Runners</span>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="text-neutral-500 hover:text-white transition-colors disabled:opacity-50"
-              title="Refresh All"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            </button>
+  // Helper to render the agents tree
+  const renderAgentsTree = () => {
+    if (loadingRunners) {
+      return (
+        <div className="flex items-center gap-2 text-[11px] text-neutral-500 px-2 py-3">
+          <Loader2 className="w-3 h-3 animate-spin text-brand-400" />
+          Loading agents...
+        </div>
+      )
+    }
+
+    if (runnersError) {
+      return (
+        <div className="flex items-start gap-1.5 text-[10px] text-red-400 px-2 py-3 bg-red-950/10 rounded border border-red-950/20">
+          <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+          <span>{runnersError}</span>
+        </div>
+      )
+    }
+
+    const allDenIdsInRunners = Array.from(new Set(runners.map(r => getRunnerDenId(r.id))))
+    const extraDens = allDenIdsInRunners
+      .filter(id => !dens.some(d => d.id === id))
+      .map(id => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), den_type: "fargate" }))
+    
+    const allDens = [...dens, ...extraDens]
+
+    // If filtering and no matches anywhere
+    const totalFilteredCount = runners.filter(r => r.id.toLowerCase().includes(searchQuery.toLowerCase())).length
+    if (totalFilteredCount === 0 && searchQuery) {
+      return <p className="text-[11px] text-neutral-600 px-2 py-3 italic">No agents match criteria.</p>
+    }
+
+    if (runners.length === 0) {
+      return <p className="text-[11px] text-neutral-600 px-2 py-3 italic">No agents connected.</p>
+    }
+
+    return allDens.map(den => {
+      const denRunners = runners
+        .filter(r => getRunnerDenId(r.id) === den.id)
+        .filter(r => r.id.toLowerCase().includes(searchQuery.toLowerCase()))
+
+      if (searchQuery && denRunners.length === 0) {
+        return null
+      }
+
+      const isExpanded = searchQuery ? true : (expandedDens[den.id] ?? true)
+      const onlineCount = denRunners.filter(r => {
+        const lastHb = parseUtcDate(r.last_heartbeat).getTime()
+        return Date.now() - lastHb < 30000
+      }).length
+
+      return (
+        <div key={den.id} className="space-y-1 select-none">
+          {/* Folder Header Row */}
+          <div 
+            onClick={() => toggleDen(den.id)}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800/40 transition-colors text-[11px] font-semibold cursor-pointer"
+          >
+            <span className="text-neutral-500 hover:text-white shrink-0">
+              {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </span>
+            <Folder className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+            <span className="truncate flex-1 uppercase tracking-wider text-[10px]">{den.name}</span>
+            <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
+              {onlineCount}/{denRunners.length}
+            </span>
           </div>
+
+          {/* Folder Children List */}
+          {isExpanded && (
+            <div className="pl-3 border-l border-neutral-800/60 ml-3.5 space-y-1">
+              {denRunners.length === 0 ? (
+                <div className="text-[10px] text-neutral-600 italic px-2 py-1">No agents.</div>
+              ) : (
+                denRunners.map(r => {
+                  const lastHb = parseUtcDate(r.last_heartbeat).getTime()
+                  const isOnline = Date.now() - lastHb < 30000
+                  const active = selectedItem === r.id
+
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => setSelectedItem(r.id)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors text-[11px] ${
+                        active
+                          ? "bg-neutral-800 text-white font-medium"
+                          : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
+                      }`}
+                    >
+                      <Cpu className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate flex-1 font-mono">{r.id}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOnline ? "bg-green-500 animate-pulse" : "bg-neutral-600"}`} />
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )
+    })
+  }
+
+  return (
+    <div className={`flex h-full bg-neutral-950 text-white overflow-hidden${isDragging ? " select-none" : ""}`}>
+      {/* ── Left Navigation Column ── */}
+      <div
+        className="flex-shrink-0 border-r border-neutral-800 flex flex-col h-full overflow-hidden"
+        style={{ width: `${listWidth}px` }}
+      >
+        {/* Left nav header - aligned with Runs page */}
+        <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
+          <span className="text-xs font-semibold text-white">Runners</span>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="text-neutral-500 hover:text-white transition-colors disabled:opacity-50"
+            title="Refresh All"
+          >
+            <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+
+        {/* Filter input */}
+        <div className="p-2 border-b border-neutral-800/60 flex-shrink-0">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-neutral-500" />
+            <Search className="absolute left-2.5 top-2 w-3 h-3 text-neutral-500" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter runners..."
-              className="w-full bg-neutral-950 border border-neutral-800 rounded px-2.5 py-1.5 pl-8 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-brand-500"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 pl-7 text-[11px] text-white placeholder-neutral-500 focus:outline-none focus:border-brand-500"
             />
           </div>
         </div>
 
         {/* List scrollable */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
           {/* Subscription Keys Nav Option */}
           <button
             onClick={() => setSelectedItem("keys")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-left transition-colors text-xs ${
+            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-left transition-colors text-[11px] ${
               selectedItem === "keys"
-                ? "bg-brand-500/10 text-brand-400 font-semibold border-l-2 border-brand-500"
+                ? "bg-neutral-800 text-white font-medium"
                 : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
             }`}
           >
             <Key className="w-3.5 h-3.5 shrink-0" />
             <span>Subscription Keys</span>
-            <span className="ml-auto text-[10px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded-full font-mono font-normal">
+            <span className="ml-auto text-[10px] bg-neutral-900 text-neutral-400 px-1.5 py-0.5 rounded-full font-mono font-normal border border-neutral-800/60">
               {keys.length}
             </span>
           </button>
 
-          <div className="pt-3 pb-1 px-3 border-t border-neutral-800/60 my-2">
-            <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Connected Agents</span>
+          <div className="pt-2 pb-0.5 px-2">
+            <span className="text-[9px] font-bold text-neutral-600 uppercase tracking-wider">Connected Agents</span>
           </div>
 
-          {loadingRunners ? (
-            <div className="flex items-center gap-2 text-[11px] text-neutral-500 px-3 py-4">
-              <Loader2 className="w-3 h-3 animate-spin text-brand-400" />
-              Loading agents...
-            </div>
-          ) : filteredRunners.length === 0 ? (
-            <p className="text-[11px] text-neutral-600 px-3 py-4 italic">No agents connected.</p>
-          ) : (
-            filteredRunners.map(r => {
-              // Determine if runner is active based on 30s timeout
-              const lastHb = new Date(r.last_heartbeat).getTime()
-              const isOnline = Date.now() - lastHb < 30000
-              const active = selectedItem === r.id
-
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => setSelectedItem(r.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-left transition-colors text-xs ${
-                    active
-                      ? "bg-brand-500/10 text-brand-400 font-semibold border-l-2 border-brand-500"
-                      : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
-                  }`}
-                >
-                  <Cpu className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate flex-1 font-mono">{r.id}</span>
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOnline ? "bg-green-500 animate-pulse" : "bg-neutral-600"}`} />
-                </button>
-              )
-            })
-          )}
+          {renderAgentsTree()}
         </div>
       </div>
+
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors cursor-col-resize z-10"
+      />
 
       {/* ── Right Content/Detail Column ── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-950">
         {/* Detail view based on selection */}
         {selectedItem === "keys" ? (
           /* KEY MANAGEMENT VIEW */
-          <div className="flex-1 flex flex-col h-full overflow-y-auto">
-            <div className="border-b border-neutral-800 px-6 py-4 bg-neutral-900/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* Header row — exact same h-9, borders and colors as /runs */}
+            <div className="h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md flex-shrink-0">
               <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-brand-400" />
-                <h2 className="text-sm font-semibold text-white tracking-wide">Subscription Keys</h2>
+                <Key className="w-3.5 h-3.5 text-brand-400" />
+                <span className="text-xs font-semibold text-white">Subscription Keys</span>
               </div>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 text-neutral-955 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors"
+                className="flex items-center gap-1 bg-brand-500 hover:bg-brand-600 text-neutral-950 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" /> Generate Key
+                <Plus className="w-3 h-3" /> Generate Key
               </button>
             </div>
 
-            <div className="p-6 max-w-4xl w-full mx-auto space-y-6">
-              <div className="border border-neutral-800 rounded-lg bg-neutral-900/10 overflow-hidden">
-                <div className="px-4 py-3 bg-neutral-900/30 border-b border-neutral-800">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">Available Security Keys</h3>
-                </div>
-                <div className="p-4">
-                  {loadingKeys ? (
-                    <div className="flex items-center gap-2 text-xs text-neutral-500 py-6 justify-center">
-                      <Loader2 className="w-4 h-4 animate-spin text-brand-400" />
-                      Loading keys...
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="max-w-4xl w-full mx-auto space-y-6">
+                {keysError && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex items-start gap-3 text-red-400 text-xs">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Failed to retrieve subscription keys</p>
+                      <p className="text-neutral-400 mt-1">{keysError}</p>
                     </div>
-                  ) : keys.length === 0 ? (
-                    <p className="text-xs text-neutral-500 text-center py-6">No keys generated yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {keys.map((k) => (
-                        <div
-                          key={k.key}
-                          className="flex items-center justify-between p-3 rounded-lg border border-neutral-800 bg-neutral-900/30 hover:bg-neutral-800/20 transition-all"
-                        >
-                          <div className="flex items-start gap-3">
-                            <Key className="w-4 h-4 text-neutral-500 mt-0.5" />
-                            <div>
-                              <p className="text-xs text-white font-medium">{k.name}</p>
-                              <code className="text-[10px] text-neutral-500 font-mono">
-                                {k.key.substring(0, 10)}...{k.key.substring(k.key.length - 4)}
-                              </code>
+                  </div>
+                )}
+
+                <div className="border border-neutral-800 rounded-lg bg-neutral-900/10 overflow-hidden">
+                  <div className="px-4 py-3 bg-neutral-900/30 border-b border-neutral-800">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">Available Security Keys</h3>
+                  </div>
+                  <div className="p-4">
+                    {loadingKeys ? (
+                      <div className="flex items-center gap-2 text-xs text-neutral-500 py-6 justify-center">
+                        <Loader2 className="w-4 h-4 animate-spin text-brand-400" />
+                        Loading keys...
+                      </div>
+                    ) : keys.length === 0 ? (
+                      <p className="text-xs text-neutral-500 text-center py-6">No keys generated yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {keys.map((k) => (
+                          <div
+                            key={k.key}
+                            className="flex items-center justify-between p-3 rounded-lg border border-neutral-800 bg-neutral-900/30 hover:bg-neutral-800/20 transition-all"
+                          >
+                            <div className="flex items-start gap-3">
+                              <Key className="w-4 h-4 text-neutral-500 mt-0.5" />
+                              <div>
+                                <p className="text-xs text-white font-medium">{k.name}</p>
+                                <code className="text-[10px] text-neutral-500 font-mono">
+                                  {k.key.substring(0, 10)}...{k.key.substring(k.key.length - 4)}
+                                </code>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 font-medium">
+                                {k.status}
+                              </span>
+                              {k.key !== "fr_local_dev_key_default_33794b" ? (
+                                <button
+                                  onClick={() => handleDeleteKey(k.key, k.name)}
+                                  className="p-1.5 rounded text-neutral-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                  title="Revoke Key"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-neutral-600 px-1.5" title="System Key cannot be deleted">
+                                  System Key
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 font-medium">
-                              {k.status}
-                            </span>
-                            {k.key !== "fr_local_dev_key_default_33794b" ? (
-                              <button
-                                onClick={() => handleDeleteKey(k.key, k.name)}
-                                className="p-1.5 rounded text-neutral-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                title="Revoke Key"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-neutral-600 px-1.5" title="System Key cannot be deleted">
-                                System Key
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -370,37 +654,40 @@ export default function RunnersPage() {
         ) : selectedRunner ? (
           /* RUNNER AGENT DETAIL VIEW */
           <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <div className="border-b border-neutral-800 px-6 py-4 bg-neutral-900/20 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md shrink-0">
-              <div className="flex items-center gap-3">
-                <Cpu className="w-5 h-5 text-brand-400" />
-                <div>
-                  <h2 className="text-sm font-semibold text-white tracking-wide font-mono">{selectedRunner.id}</h2>
-                  <p className="text-[10px] text-neutral-500 mt-0.5">
-                    Last Heartbeat: {new Date(selectedRunner.last_heartbeat).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
-                  Date.now() - new Date(selectedRunner.last_heartbeat).getTime() < 30000
-                    ? "bg-green-500/10 text-green-400 border border-green-500/25"
-                    : "bg-neutral-800 text-neutral-400 border border-neutral-700"
+            {/* Header row — exact same h-9, borders and colors as /runs */}
+            <div className="h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <Cpu className="w-3.5 h-3.5 text-brand-400 flex-shrink-0" />
+                <span className="text-xs font-semibold text-white truncate font-mono">{selectedRunner.id}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 ${
+                  Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000
+                    ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                    : "bg-neutral-800 text-neutral-400 border border-neutral-700/60"
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    Date.now() - new Date(selectedRunner.last_heartbeat).getTime() < 30000 ? "bg-green-500 animate-pulse" : "bg-neutral-600"
+                  <span className={`w-1 h-1 rounded-full ${
+                    Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? "bg-green-500 animate-pulse" : "bg-neutral-600"
                   }`} />
-                  {Date.now() - new Date(selectedRunner.last_heartbeat).getTime() < 30000 ? "Online" : "Offline"}
+                  {Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? "Online" : "Offline"}
+                </span>
+                <span className="text-[10px] text-neutral-500 truncate hidden sm:inline">
+                  Last HB: {parseUtcDate(selectedRunner.last_heartbeat).toLocaleTimeString()}
                 </span>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Stats Overview cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 rounded-lg border border-neutral-800 bg-neutral-900/20">
                   <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">Runner Connection</p>
                   <p className="text-xs text-white mt-1 font-mono truncate">
                     {selectedRunner.url || "Outbound Polling Only"}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg border border-neutral-800 bg-neutral-900/20">
+                  <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold">Associated Den</p>
+                  <p className="text-xs text-brand-400 mt-1 font-bold uppercase tracking-wider">
+                    {getRunnerDenId(selectedRunner.id)}
                   </p>
                 </div>
                 <div className="p-4 rounded-lg border border-neutral-800 bg-neutral-900/20">
@@ -416,7 +703,7 @@ export default function RunnersPage() {
                 <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-950">
                   <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between">
                     <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <TerminalIcon className="w-3.5 h-3.5 text-brand-400" />
+                      <Terminal className="w-3.5 h-3.5 text-brand-400" />
                       Rolling Process Logs
                     </span>
                     <div className="flex items-center gap-1.5">
@@ -578,7 +865,7 @@ export default function RunnersPage() {
                   <button
                     type="submit"
                     disabled={creating || !newKeyName.trim()}
-                    className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-neutral-955 text-xs font-semibold py-2 rounded-lg transition-colors"
+                    className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-neutral-950 text-xs font-semibold py-2 rounded-lg transition-colors"
                   >
                     {creating ? "Generating..." : "Generate Key"}
                   </button>
@@ -596,25 +883,5 @@ export default function RunnersPage() {
         </div>
       )}
     </div>
-  )
-}
-
-function TerminalIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="4 17 10 11 4 5" />
-      <line x1="12" x2="20" y1="19" y2="19" />
-    </svg>
   )
 }

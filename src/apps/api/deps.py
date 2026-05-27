@@ -266,6 +266,7 @@ _AUTH_EXEMPT_PATHS: frozenset[str] = frozenset({
     "/api/settings/den",
     "/api/settings/den/test",
     "/api/settings/dens",
+    "/api/settings/import",
     "/api/runs",
     "/api/auth/login",
     "/api/auth/mfa/challenge",  # requires ferret_pending cookie, not a full session

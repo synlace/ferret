@@ -2,11 +2,19 @@
 Application settings endpoints.
 """
 
+import os
+import base64
+import json
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 import deps
+from models import Project
 
 router = APIRouter()
 
@@ -23,6 +31,9 @@ class DenConfigSchema(BaseModel):
     den_aws_access_key: Optional[str] = ""
     den_aws_secret_key: Optional[str] = ""
     den_aws_region: Optional[str] = "eu-west-1"
+    den_runner_image: Optional[str] = ""  # ECR or custom image URI; overrides default ghcr.io image
+    den_warm_runners: Optional[int] = 0
+    den_kill_if_unreachable: Optional[bool] = True
 
 
 async def _assert_setup_or_authenticated(request: Request):
@@ -110,7 +121,10 @@ async def get_den_by_id(den_id: str, request: Request):
             den_max_runners=den["max_runners"],
             den_aws_access_key=den.get("aws_access_key") or "",
             den_aws_secret_key=aws_secret_masked,
-            den_aws_region=den.get("aws_region") or "eu-west-1"
+            den_aws_region=den.get("aws_region") or "eu-west-1",
+            den_runner_image=den.get("runner_image") or "",
+            den_warm_runners=den.get("warm_runners") or 0,
+            den_kill_if_unreachable=bool(den.get("kill_if_unreachable", 1))
         )
     except HTTPException:
         raise
@@ -133,7 +147,10 @@ async def save_den_settings(body: DenConfigSchema, request: Request, den_id: Opt
             max_runners=body.den_max_runners,
             aws_access_key=body.den_aws_access_key or "",
             aws_secret_key=body.den_aws_secret_key or "",
-            aws_region=body.den_aws_region or "eu-west-1"
+            aws_region=body.den_aws_region or "eu-west-1",
+            runner_image=body.den_runner_image or "",
+            warm_runners=body.den_warm_runners or 0,
+            kill_if_unreachable=1 if body.den_kill_if_unreachable else 0
         )
         return {"status": "success", "id": target_id}
     except HTTPException:
@@ -181,7 +198,10 @@ async def get_den_settings(request: Request):
             den_max_runners=den["max_runners"],
             den_aws_access_key=den.get("aws_access_key") or "",
             den_aws_secret_key=aws_secret_masked,
-            den_aws_region=den.get("aws_region") or "eu-west-1"
+            den_aws_region=den.get("aws_region") or "eu-west-1",
+            den_runner_image=den.get("runner_image") or "",
+            den_warm_runners=den.get("warm_runners") or 0,
+            den_kill_if_unreachable=bool(den.get("kill_if_unreachable", 1))
         )
     except HTTPException:
         raise
@@ -252,13 +272,15 @@ async def test_den_config(body: DenConfigSchema, request: Request):
 @router.post("/api/settings/dens/provision-wg")
 async def provision_wireguard_hub(request: Request):
     """
-    Deploys the persistent EC2 WireGuard VPN Hub in AWS, generates keypairs, 
-    creates `/data/wg0.conf` on the local filesystem, and initiates the 
-    container-level client tunnel dynamically.
+    Deploys the persistent EC2 WireGuard VPN Hub in AWS using Terraform, 
+    generates keypairs, creates `/data/wg0.conf` on the local filesystem, 
+    and initiates the container-level client tunnel dynamically.
     """
     import subprocess
     import asyncio
     import logging
+    import os
+    import json
     from pathlib import Path
 
     _log = logging.getLogger(__name__)
@@ -267,7 +289,7 @@ async def provision_wireguard_hub(request: Request):
         await _assert_setup_or_authenticated(request)
         
         # 1. Fetch saved AWS Den settings
-        _log.info("[WG_PROVISION] [START] Initiating WireGuard EC2 Hub deployment.")
+        _log.info("[WG_PROVISION] [START] Initiating WireGuard EC2 Hub deployment via Terraform.")
         den = await deps.db_client.get_den("aws")
         if not den:
             _log.error("[WG_PROVISION] [FAILED] AWS Den configuration not found in DB.")
@@ -280,200 +302,115 @@ async def provision_wireguard_hub(request: Request):
         if not aws_key or not aws_secret:
             _log.error("[WG_PROVISION] [FAILED] Missing AWS credentials in saved AWS Den.")
             raise HTTPException(status_code=400, detail="Missing AWS credentials in saved AWS Den.")
+
+        # 2. Generate WireGuard Keys inside the API container
+        _log.info("[WG_PROVISION] [KEY_GEN] Generating WireGuard cryptographic key pairs...")
+        try:
+            hub_priv = subprocess.check_output(["wg", "genkey"]).decode().strip()
+            hub_pub = subprocess.check_output(["wg", "pubkey"], input=hub_priv.encode()).decode().strip()
             
-        # 2. Run the Boto3 EC2 setup loop in a threadpool
-        def _provision_ec2():
+            local_priv = subprocess.check_output(["wg", "genkey"]).decode().strip()
+            local_pub = subprocess.check_output(["wg", "pubkey"], input=local_priv.encode()).decode().strip()
+            _log.info("[WG_PROVISION] [KEY_GEN] Success. Generated hub_pub and local_pub.")
+        except Exception as key_err:
+            _log.warning("[WG_PROVISION] [KEY_GEN] wireguard-tools not fully configured, falling back to mock keys: %s", key_err)
+            hub_priv = "hub_private_key_placeholder="
+            hub_pub = "hub_public_key_placeholder="
+            local_priv = "local_private_key_placeholder="
+            local_pub = "local_public_key_placeholder="
+
+        # 3. Execute Terraform to provision the static infrastructure
+        terraform_dir = Path("/app/terraform")
+        _log.info("[WG_PROVISION] [TERRAFORM_START] Running Terraform in directory: %s", terraform_dir)
+        
+        # Set AWS credentials for Terraform
+        env = os.environ.copy()
+        env["AWS_ACCESS_KEY_ID"] = aws_key
+        env["AWS_SECRET_ACCESS_KEY"] = aws_secret
+        env["AWS_DEFAULT_REGION"] = aws_region
+
+        # 3a. Run terraform init
+        _log.info("[WG_PROVISION] [TERRAFORM_INIT] Initializing Terraform backend...")
+        init_proc = await asyncio.create_subprocess_exec(
+            "terraform", "init", "-reconfigure",
+            cwd=str(terraform_dir),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        init_stdout, init_stderr = await init_proc.communicate()
+        if init_proc.returncode != 0:
+            _log.error("[WG_PROVISION] [TERRAFORM_INIT_FAILED] %s", init_stderr.decode())
+            raise HTTPException(status_code=500, detail=f"Terraform initialization failed: {init_stderr.decode()}")
+        _log.info("[WG_PROVISION] [TERRAFORM_INIT_SUCCESS] Terraform initialized successfully.")
+
+        # 3b. Run terraform apply
+        _log.info("[WG_PROVISION] [TERRAFORM_APPLY] Applying Terraform configuration...")
+        apply_proc = await asyncio.create_subprocess_exec(
+            "terraform", "apply", "-auto-approve",
+            f"-var=hub_priv={hub_priv}",
+            f"-var=local_pub={local_pub}",
+            f"-var=aws_region={aws_region}",
+            cwd=str(terraform_dir),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        apply_stdout, apply_stderr = await apply_proc.communicate()
+        if apply_proc.returncode != 0:
+            _log.error("[WG_PROVISION] [TERRAFORM_APPLY_FAILED] %s", apply_stderr.decode())
+            raise HTTPException(status_code=500, detail=f"Terraform apply failed: {apply_stderr.decode()}")
+        _log.info("[WG_PROVISION] [TERRAFORM_APPLY_SUCCESS] Terraform apply completed successfully.")
+
+        # 4. Lookup the deployed EC2 Hub instance details using Boto3 (via check helper)
+        _log.info("[WG_PROVISION] [IP_DISCOVERY] Looking up newly deployed EC2 Hub details...")
+        
+        def _check_aws():
             import boto3
-            import base64
             from botocore.config import Config
-            
-            _log.info("[WG_PROVISION] [BOTO3_START] Configuring Boto3 with region: %s", aws_region)
             config = Config(region_name=aws_region)
             ec2_client = boto3.client("ec2", aws_access_key_id=aws_key, aws_secret_access_key=aws_secret, config=config)
-            
-            # Find default VPC
-            _log.info("[WG_PROVISION] [VPC_DISCOVERY] Searching for default or usable VPC...")
-            vpcs = ec2_client.describe_vpcs(Filters=[{"Name": "is-default", "Values": ["true"]}])
-            vpc_id = vpcs["Vpcs"][0]["VpcId"] if vpcs.get("Vpcs") else None
-            if not vpc_id:
-                all_vpcs = ec2_client.describe_vpcs()
-                vpc_id = all_vpcs["Vpcs"][0]["VpcId"] if all_vpcs.get("Vpcs") else ""
-            if not vpc_id:
-                _log.error("[WG_PROVISION] [VPC_DISCOVERY] No usable VPC discovered.")
-                raise Exception("No usable VPC discovered in this AWS account.")
-            _log.info("[WG_PROVISION] [VPC_DISCOVERY] Selected VPC ID: %s", vpc_id)
-                
-            # Find subnet
-            _log.info("[WG_PROVISION] [SUBNET_DISCOVERY] Scanning subnets in VPC: %s", vpc_id)
-            subnets = ec2_client.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc_id]}])
-            subnet_ids = [sub["SubnetId"] for sub in subnets.get("Subnets", [])]
-            if not subnet_ids:
-                _log.error("[WG_PROVISION] [SUBNET_DISCOVERY] No subnets found for VPC '%s'", vpc_id)
-                raise Exception(f"No subnets found for VPC '{vpc_id}'")
-            first_subnet = subnet_ids[0]
-            _log.info("[WG_PROVISION] [SUBNET_DISCOVERY] Selected target subnet: %s", first_subnet)
-            
-            # Create Security Group
-            sg_name = "ferret-ec2-wg-sg"
-            sg_id = None
-            try:
-                _log.info("[WG_PROVISION] [SG_SETUP] Checking if security group '%s' already exists in VPC '%s'...", sg_name, vpc_id)
-                sgs = ec2_client.describe_security_groups(Filters=[
-                    {"Name": "group-name", "Values": [sg_name]},
-                    {"Name": "vpc-id", "Values": [vpc_id]}
-                ])
-                if sgs.get("SecurityGroups"):
-                    sg_id = sgs["SecurityGroups"][0]["GroupId"]
-                    _log.info("[WG_PROVISION] [SG_SETUP] Found existing Security Group ID: %s", sg_id)
-            except Exception as sg_err:
-                _log.warning("[WG_PROVISION] [SG_SETUP] Security Group describe encountered an issue (ignoring): %s", sg_err)
-                pass
-                
-            if not sg_id:
-                _log.info("[WG_PROVISION] [SG_SETUP] Creating new Security Group '%s'...", sg_name)
-                res = ec2_client.create_security_group(
-                    GroupName=sg_name,
-                    Description="Security Group for Ferret EC2 WireGuard Hub",
-                    VpcId=vpc_id
-                )
-                sg_id = res["GroupId"]
-                _log.info("[WG_PROVISION] [SG_SETUP] Created new Security Group ID: %s", sg_id)
-                
-                # Ingress: UDP/51820 (WireGuard)
-                _log.info("[WG_PROVISION] [SG_SETUP] Authorizing ingress rules for UDP 51820 (WireGuard), TCP 22, and TCP 80 (Inter-container)...")
-                ec2_client.authorize_security_group_ingress(
-                    GroupId=sg_id,
-                    IpPermissions=[
-                        {
-                            "IpProtocol": "udp",
-                            "FromPort": 51820,
-                            "ToPort": 51820,
-                            "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
-                        },
-                        {
-                            "IpProtocol": "tcp",
-                            "FromPort": 22,
-                            "ToPort": 22,
-                            "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
-                        },
-                        {
-                            "IpProtocol": "tcp",
-                            "FromPort": 80,
-                            "ToPort": 80,
-                            "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
-                        }
-                    ]
-                )
-                _log.info("[WG_PROVISION] [SG_SETUP] Ingress rules authorized successfully.")
-                
-            # Find Ubuntu 22.04 AMI
-            _log.info("[WG_PROVISION] [AMI_DISCOVERY] Searching for latest Ubuntu 22.04 AMI...")
-            images = ec2_client.describe_images(
-                Owners=["099720109477"],
+
+            # Search for existing running EC2 hub instances
+            res = ec2_client.describe_instances(
                 Filters=[
-                    {"Name": "name", "Values": ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]},
-                    {"Name": "state", "Values": ["available"]}
+                    {"Name": "tag:Name", "Values": ["ferret-wg-hub"]},
+                    {"Name": "instance-state-name", "Values": ["running"]}
                 ]
             )
-            sorted_images = sorted(images.get("Images", []), key=lambda x: x.get("CreationDate", ""), reverse=True)
-            if not sorted_images:
-                _log.error("[WG_PROVISION] [AMI_DISCOVERY] No Ubuntu 22.04 AMI found in this region.")
-                raise Exception("No Ubuntu 22.04 AMI found in this region.")
-            ami_id = sorted_images[0]["ImageId"]
-            _log.info("[WG_PROVISION] [AMI_DISCOVERY] Selected AMI ID: %s", ami_id)
-            
-            # Generate WireGuard Keys
-            _log.info("[WG_PROVISION] [KEY_GEN] Generating WireGuard cryptographic key pairs...")
+
+            reservations = res.get("Reservations", [])
+            for reservation in reservations:
+                for inst in reservation.get("Instances", []):
+                    return {
+                        "instance_id": inst["InstanceId"],
+                        "public_ip": inst.get("PublicIpAddress"),
+                        "private_ip": inst.get("PrivateIpAddress"),
+                    }
+            return None
+
+        # Give AWS a few seconds to boot the EC2 instance up to running state so describe succeeds
+        instance_details = None
+        for attempt in range(12):
             try:
-                hub_priv = subprocess.check_output(["wg", "genkey"]).decode().strip()
-                hub_pub = subprocess.check_output(["wg", "pubkey"], input=hub_priv.encode()).decode().strip()
-                
-                local_priv = subprocess.check_output(["wg", "genkey"]).decode().strip()
-                local_pub = subprocess.check_output(["wg", "pubkey"], input=local_priv.encode()).decode().strip()
-                _log.info("[WG_PROVISION] [KEY_GEN] Success. Generated hub_pub and local_pub.")
-            except Exception as key_err:
-                _log.warning("[WG_PROVISION] [KEY_GEN] wireguard-tools not fully configured, falling back to mock keys: %s", key_err)
-                # Mockup fallback if wireguard-tools is not installed locally
-                hub_priv = "hub_private_key_placeholder="
-                hub_pub = "hub_public_key_placeholder="
-                local_priv = "local_private_key_placeholder="
-                local_pub = "local_public_key_placeholder="
-                
-            # Cloud-Init User Data script
-            _log.info("[WG_PROVISION] [EC2_LAUNCH] Preparing EC2 t3.nano launch with Cloud-Init UserData script (WireGuard + Nginx configurations).")
-            user_data = f"""#!/bin/bash
-set -e
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard nginx iptables jq
+                loop = asyncio.get_event_loop()
+                instance_details = await loop.run_in_executor(None, _check_aws)
+                if instance_details and instance_details.get("public_ip"):
+                    _log.info("[WG_PROVISION] [IP_DISCOVERY] Attempt %d: Found running Hub: %s", attempt + 1, instance_details)
+                    break
+            except Exception as e:
+                _log.warning("[WG_PROVISION] [IP_DISCOVERY] Error checking EC2 details: %s", e)
+            await asyncio.sleep(5)
 
-mkdir -p /etc/wireguard
-cat <<EOWG > /etc/wireguard/wg0.conf
-[Interface]
-PrivateKey = {hub_priv}
-ListenPort = 51820
-Address = 10.0.0.1/24
-MTU = 1280
+        if not instance_details:
+            raise Exception("Timeout waiting for 'ferret-wg-hub' instance to enter running state with public IP.")
 
-[Peer]
-PublicKey = {local_pub}
-AllowedIPs = 10.0.0.2/32
-EOWG
+        public_ip = instance_details["public_ip"]
+        private_ip = instance_details["private_ip"]
+        instance_id = instance_details["instance_id"]
 
-echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-sysctl -p || sysctl --system
-
-cat <<'EON' > /etc/nginx/sites-available/default
-server {{
-    listen 80 default_server;
-    location / {{
-        proxy_pass http://10.0.0.2:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }}
-}}
-EON
-
-systemctl restart nginx
-systemctl enable wg-quick@wg0
-systemctl start wg-quick@wg0
-"""
-            encoded_user_data = base64.b64encode(user_data.encode("utf-8")).decode("utf-8")
-            
-            _log.info("[WG_PROVISION] [EC2_LAUNCH] Executing run_instances...")
-            run_res = ec2_client.run_instances(
-                ImageId=ami_id,
-                InstanceType="t3.nano",
-                MinCount=1,
-                MaxCount=1,
-                SubnetId=first_subnet,
-                SecurityGroupIds=[sg_id],
-                UserData=encoded_user_data,
-                TagSpecifications=[{
-                    "ResourceType": "instance",
-                    "Tags": [{"Key": "Name", "Value": "ferret-wg-hub"}]
-                }]
-            )
-            instance_id = run_res["Instances"][0]["InstanceId"]
-            _log.info("[WG_PROVISION] [EC2_LAUNCH] Instance started. Instance ID: %s. Waiting for 'instance_running' state...", instance_id)
-            
-            # Wait until instance is running
-            waiter = ec2_client.get_waiter("instance_running")
-            waiter.wait(InstanceIds=[instance_id])
-            _log.info("[WG_PROVISION] [EC2_LAUNCH] Instance %s is now running.", instance_id)
-            
-            # Retrieve Public IP
-            _log.info("[WG_PROVISION] [EC2_LAUNCH] Retrieving instance IPs...")
-            instances = ec2_client.describe_instances(InstanceIds=[instance_id])
-            public_ip = instances["Reservations"][0]["Instances"][0].get("PublicIpAddress")
-            private_ip = instances["Reservations"][0]["Instances"][0].get("PrivateIpAddress")
-            _log.info("[WG_PROVISION] [EC2_LAUNCH] Retrieved IPs. Public: %s, Private: %s", public_ip, private_ip)
-            
-            local_wg_profile = f"""[Interface]
+        # 5. Formulate and save the client WireGuard profile to /data/wg0.conf
+        local_wg_profile = f"""[Interface]
 PrivateKey = {local_priv}
 Address = 10.0.0.2/24
 MTU = 1280
@@ -484,39 +421,15 @@ Endpoint = {public_ip}:51820
 AllowedIPs = 10.0.0.0/24
 PersistentKeepalive = 25
 """
-            return {
-                "public_ip": public_ip,
-                "private_ip": private_ip,
-                "instance_id": instance_id,
-                "local_wg_profile": local_wg_profile
-            }
-            
-        try:
-            import boto3
-            _log.info("[WG_PROVISION] [EXECUTOR] Running EC2 provisioning in threadpool executor.")
-            loop = asyncio.get_event_loop()
-            res_details = await loop.run_in_executor(None, _provision_ec2)
-            _log.info("[WG_PROVISION] [EXECUTOR_SUCCESS] EC2 provisioning complete. Instance ID: %s", res_details.get("instance_id"))
-        except ImportError:
-            _log.warning("[WG_PROVISION] [EXECUTOR] boto3 import failed! Falling back to mock mock setup.")
-            # Fallback mock configuration for environments without boto3 installed
-            res_details = {
-                "public_ip": "127.0.0.1",
-                "private_ip": "10.0.0.1",
-                "instance_id": "i-mock-instance",
-                "local_wg_profile": "[Interface]\nPrivateKey=mock\nAddress=10.0.0.2/24\n\n[Peer]\nPublicKey=mock\nEndpoint=127.0.0.1:51820\nAllowedIPs=10.0.0.0/24"
-            }
-            
-        # 3. Write profile to /data/wg0.conf (for persistent boot restorations)
         data_wg_path = Path("/data/wg0.conf")
         _log.info("[WG_PROVISION] [CLIENT_CONF] Writing client WireGuard config profile to %s", data_wg_path)
         if not data_wg_path.parent.exists():
             data_wg_path.parent.mkdir(parents=True, exist_ok=True)
             
-        data_wg_path.write_text(res_details["local_wg_profile"], encoding="utf-8")
+        data_wg_path.write_text(local_wg_profile, encoding="utf-8")
         _log.info("[WG_PROVISION] [CLIENT_CONF] Successfully saved wg0.conf to %s", data_wg_path)
         
-        # 4. Bring up the WireGuard connection immediately inside the API container via sudo
+        # 6. Bring up the WireGuard connection immediately inside the API container via sudo
         try:
             _log.info("[WG_PROVISION] [INTERFACE_UP] Attempting to bring up interface wg0 locally in containerNetwork...")
             # Drop previous wg0 interface if active to avoid conflicts
@@ -526,16 +439,18 @@ PersistentKeepalive = 25
             subprocess.run(["sudo", "cp", "/data/wg0.conf", "/etc/wireguard/wg0.conf"], check=True)
             # Bring up the interface
             subprocess.run(["sudo", "wg-quick", "up", "wg0"], check=True)
-            _log.info("[WG_PROVISION] [INTERFACE_UP_SUCCESS] API container dynamic tunnel established successfully to EC2 Hub at %s", res_details["public_ip"])
+            _log.info("[WG_PROVISION] [INTERFACE_UP_SUCCESS] API container dynamic tunnel established successfully to EC2 Hub at %s", public_ip)
         except Exception as wg_err:
             _log.error("[WG_PROVISION] [INTERFACE_UP_FAILED] Failed to bring up tunnel in container: %s", wg_err)
             
         return {
             "status": "success",
-            "public_ip": res_details["public_ip"],
-            "private_ip": res_details["private_ip"],
-            "instance_id": res_details["instance_id"]
+            "public_ip": public_ip,
+            "private_ip": private_ip,
+            "instance_id": instance_id
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise deps.server_error(e)
 
@@ -647,6 +562,350 @@ async def check_existing_wireguard_hub(request: Request):
     except Exception as e:
         _log.error("Check existing setup failed: %s", e)
         return {"exists": False, "working": False, "detail": str(e)}
+
+
+class ExportRequest(BaseModel):
+    passphrase: Optional[str] = None
+    export_settings: bool = True
+    export_dens: bool = True
+    export_projects: bool = True
+
+
+class ImportRequest(BaseModel):
+    file_content: str  # Base64 encoded JSON file content
+    passphrase: Optional[str] = None
+
+
+def _derive_fernet_key(passphrase: str, salt: bytes) -> bytes:
+    """Derive a 256-bit symmetric key using PBKDF2HMAC."""
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100_000
+    )
+    derived = kdf.derive(passphrase.encode("utf-8"))
+    return base64.urlsafe_b64encode(derived)
+
+
+@router.post("/api/settings/export")
+async def export_settings(body: ExportRequest, request: Request):
+    """
+    Export requested configuration components (settings, runner dens, and project datasets).
+    Supports optional passphrase-based symmetric encryption.
+    """
+    await deps.require_auth(request)
+    
+    try:
+        raw_payload = {
+            "version": "1.0",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        # Option: Global Settings
+        if body.export_settings:
+            async with deps.db_client._db.execute("SELECT key, value FROM settings") as cur:
+                rows = await cur.fetchall()
+            raw_payload["settings"] = {r["key"]: r["value"] for r in rows if r["key"] != "gnaw_current_request"}
+
+        # Option: Runner Environments
+        if body.export_dens:
+            raw_payload["dens"] = await deps.db_client.get_dens()
+
+        # Option: All Projects + Child datasets (findings, proxy requests, sessions, test runs)
+        if body.export_projects:
+            projects = await deps.db_client.get_projects()
+            projects_backup = []
+            for p in projects:
+                p_id = p["id"]
+                project_export = await deps.db_client.export_project(p_id)
+                if project_export:
+                    projects_backup.append(project_export)
+            raw_payload["projects"] = projects_backup
+
+        # Optional Encryption
+        if body.passphrase:
+            salt = os.urandom(16)
+            fernet_key = _derive_fernet_key(body.passphrase, salt)
+            f = Fernet(fernet_key)
+            
+            serialized = json.dumps(raw_payload).encode("utf-8")
+            ciphertext = f.encrypt(serialized).decode("utf-8")
+            
+            return {
+                "encrypted": True,
+                "salt": base64.b64encode(salt).decode("utf-8"),
+                "ciphertext": ciphertext
+            }
+        
+        return {
+            "encrypted": False,
+            "data": raw_payload
+        }
+        
+    except Exception as e:
+        raise deps.server_error(e)
+
+
+@router.post("/api/settings/import")
+async def import_settings(body: ImportRequest, request: Request):
+    """
+    Import settings, custom runner environments, and project workspaces.
+    Bypasses token verification strictly if first-run setup is not complete.
+    """
+    complete = await deps.db_client.get_setting("setup_complete")
+    if complete == "1":
+        await deps.require_auth(request)
+
+    try:
+        file_bytes = base64.b64decode(body.file_content)
+        backup_json = json.loads(file_bytes.decode("utf-8"))
+        
+        # 1. Resolve encrypted vs plaintext backup payload
+        if backup_json.get("encrypted"):
+            if not body.passphrase:
+                raise HTTPException(status_code=400, detail="Passphrase is required for encrypted backups.")
+            try:
+                salt = base64.b64decode(backup_json["salt"])
+                ciphertext = backup_json["ciphertext"].encode("utf-8")
+                fernet_key = _derive_fernet_key(body.passphrase, salt)
+                f = Fernet(fernet_key)
+                
+                decrypted = f.decrypt(ciphertext)
+                raw_payload = json.loads(decrypted.decode("utf-8"))
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid passphrase or corrupted file.")
+        else:
+            raw_payload = backup_json.get("data")
+            if not raw_payload:
+                raise HTTPException(status_code=400, detail="Invalid backup file structure.")
+
+        # 2. Apply key-values to `settings` table and project snapshots inside a transaction
+        try:
+            imported_settings = raw_payload.get("settings", {})
+            for key, value in imported_settings.items():
+                await deps.db_client.set_setting(key, value)
+                
+            # 3. Apply items to `dens` table
+            imported_dens = raw_payload.get("dens", [])
+            for den in imported_dens:
+                await deps.db_client.create_or_update_den(
+                    den_id=den["id"],
+                    name=den["name"],
+                    type_=den["type"],
+                    max_runners=den["max_runners"],
+                    aws_access_key=den.get("aws_access_key") or "",
+                    aws_secret_key=den.get("aws_secret_key") or "",
+                    aws_region=den.get("aws_region") or "eu-west-1",
+                    runner_image=den.get("runner_image") or "",
+                    warm_runners=den.get("warm_runners") or 0,
+                    kill_if_unreachable=1 if den.get("kill_if_unreachable", True) else 0
+                )
+
+            # 4. Apply Project Snapshots
+            imported_projects = raw_payload.get("projects", [])
+            for p_data in imported_projects:
+                src_project = p_data.get("project", {})
+                p_id = src_project.get("id")
+                if not p_id:
+                    continue
+                
+                # Prevent duplicate constraints - drop or update existing matches
+                if p_id == "temp":
+                    # Clear child data for temp manually
+                    async with deps.db_client._db.execute(
+                        "SELECT rowid FROM requests WHERE project_id = 'temp'"
+                    ) as cur:
+                        rowids = [row[0] for row in await cur.fetchall()]
+                    for rowid in rowids:
+                        await deps.db_client._db.execute("DELETE FROM requests WHERE rowid = ?", (rowid,))
+                    await deps.db_client._db.execute("DELETE FROM findings WHERE project_id = 'temp'")
+                    await deps.db_client._db.execute("DELETE FROM chat_sessions WHERE project_id = 'temp'")
+                    await deps.db_client._db.execute("DELETE FROM test_runs WHERE project_id = 'temp'")
+                    
+                    # Update 'temp' project properties instead of creating a new one
+                    await deps.db_client._db.execute(
+                        """
+                        UPDATE projects SET
+                            name = :name,
+                            description = :description,
+                            color = :color,
+                            emoji = :emoji,
+                            labels = :labels,
+                            default_model = :default_model,
+                            is_temp = 1,
+                            updated_at = :updated_at
+                        WHERE id = 'temp'
+                        """,
+                        {
+                            "name": src_project.get("name", "Demo Project"),
+                            "description": src_project.get("description", "Default workspace for uncategorised traffic"),
+                            "color": src_project.get("color", "#6b7280"),
+                            "emoji": src_project.get("emoji", ""),
+                            "labels": json.dumps(src_project.get("labels", "[]")) if isinstance(src_project.get("labels"), str) else json.dumps(src_project.get("labels", [])),
+                            "default_model": src_project.get("default_model"),
+                            "updated_at": datetime.utcnow().isoformat()
+                        }
+                    )
+                else:
+                    # Prevent duplicate constraints - drop existing matches
+                    await deps.db_client.delete_project(p_id)
+                    
+                    created_at_val = src_project.get("created_at")
+                    if isinstance(created_at_val, str):
+                        created_at = datetime.fromisoformat(created_at_val.replace("Z", "+00:00"))
+                    else:
+                        created_at = datetime.utcnow()
+
+                    updated_at_val = src_project.get("updated_at")
+                    if isinstance(updated_at_val, str):
+                        updated_at = datetime.fromisoformat(updated_at_val.replace("Z", "+00:00"))
+                    else:
+                        updated_at = datetime.utcnow()
+
+                    new_project = Project(
+                        id=p_id,
+                        name=src_project.get("name", "Imported Project"),
+                        description=src_project.get("description", ""),
+                        color=src_project.get("color", "#f97316"),
+                        emoji=src_project.get("emoji", ""),
+                        labels=json.loads(src_project.get("labels", "[]")) if isinstance(src_project.get("labels"), str) else src_project.get("labels", []),
+                        default_model=src_project.get("default_model"),
+                        is_temp=int(src_project.get("is_temp", 0)),
+                        created_at=created_at,
+                        updated_at=updated_at
+                    )
+                    await deps.db_client.create_project(new_project)
+                
+                # Re-insert proxied requests
+                for req in p_data.get("requests", []):
+                    req = dict(req)
+                    req["project_id"] = p_id
+                    req.setdefault("annotation", None)
+                    req.setdefault("source", "proxy")
+                    req.setdefault("query_params", None)
+                    req.setdefault("headers", "{}")
+                    req.setdefault("body", None)
+                    req.setdefault("content_type", None)
+                    req.setdefault("content_length", 0)
+                    req.setdefault("status_code", None)
+                    req.setdefault("response_headers", None)
+                    req.setdefault("response_body", None)
+                    req.setdefault("response_time", None)
+                    req.setdefault("response_size", None)
+                    req.setdefault("client_ip", None)
+                    req.setdefault("server_ip", None)
+                    req.setdefault("tls_version", None)
+                    req.setdefault("intercepted", 0)
+                    req.setdefault("modified", 0)
+                    await deps.db_client._db.execute(
+                        """
+                        INSERT OR IGNORE INTO requests (
+                            id, timestamp, method, url, host, path,
+                            query_params, headers, body, content_type, content_length,
+                            status_code, response_headers, response_body,
+                            response_time, response_size,
+                            client_ip, server_ip, tls_version, intercepted, modified,
+                            annotation, source, project_id
+                        ) VALUES (
+                            :id, :timestamp, :method, :url, :host, :path,
+                            :query_params, :headers, :body, :content_type, :content_length,
+                            :status_code, :response_headers, :response_body,
+                            :response_time, :response_size,
+                            :client_ip, :server_ip, :tls_version, :intercepted, :modified,
+                            :annotation, :source, :project_id
+                        )
+                        """,
+                        req
+                    )
+
+                # Re-insert findings
+                for f in p_data.get("findings", []):
+                    f = dict(f)
+                    f["project_id"] = p_id
+                    f.setdefault("severity", "info")
+                    f.setdefault("type", "other")
+                    f.setdefault("host", "")
+                    f.setdefault("request_id", None)
+                    f.setdefault("source", "manual")
+                    f.setdefault("status", "open")
+                    f.setdefault("description", None)
+                    f.setdefault("evidence", None)
+                    f.setdefault("created_at", datetime.utcnow().isoformat())
+                    await deps.db_client._db.execute(
+                        """
+                        INSERT OR IGNORE INTO findings
+                            (id, title, severity, type, host, request_id, source, status,
+                             description, evidence, created_at, project_id)
+                        VALUES
+                            (:id, :title, :severity, :type, :host, :request_id, :source, :status,
+                             :description, :evidence, :created_at, :project_id)
+                        """,
+                        f
+                    )
+
+                # Re-insert chat sessions
+                for cs in p_data.get("chat_sessions", []):
+                    cs = dict(cs)
+                    cs["project_id"] = p_id
+                    cs.setdefault("scope", "blank")
+                    cs.setdefault("scope_data", None)
+                    cs.setdefault("workspace_dir", None)
+                    cs.setdefault("target_url", "")
+                    cs.setdefault("plan_id", "")
+                    cs.setdefault("hunt_status", "idle")
+                    cs.setdefault("enabled_tools", None)
+                    cs.setdefault("created_at", datetime.utcnow().isoformat())
+                    await deps.db_client._db.execute(
+                        """
+                        INSERT OR IGNORE INTO chat_sessions
+                            (id, name, scope, scope_data, created_at, project_id)
+                        VALUES
+                            (:id, :name, :scope, :scope_data, :created_at, :project_id)
+                        """,
+                        cs
+                    )
+
+                # Re-insert test runs
+                for tr in p_data.get("test_runs", []):
+                    tr = dict(tr)
+                    tr["project_id"] = p_id
+                    tr.setdefault("test_name", None)
+                    tr.setdefault("host", "")
+                    tr.setdefault("via_proxy", 0)
+                    tr.setdefault("status", "pending")
+                    tr.setdefault("output", None)
+                    tr.setdefault("started_at", None)
+                    tr.setdefault("finished_at", None)
+                    await deps.db_client._db.execute(
+                        """
+                        INSERT OR IGNORE INTO test_runs
+                            (id, file, test_name, host, via_proxy, status, output,
+                             started_at, finished_at, project_id)
+                        VALUES
+                            (:id, :file, :test_name, :host, :via_proxy, :status, :output,
+                             :started_at, :finished_at, :project_id)
+                        """,
+                        tr
+                    )
+
+            await deps.db_client._db.commit()
+        except Exception as db_err:
+            try:
+                await deps.db_client._db.rollback()
+            except Exception:
+                pass
+            raise db_err
+
+        # Update running AI context properties
+        await deps.reload_ai_config()
+        
+        return {"status": "success", "message": "Import completed successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise deps.server_error(e)
 
 
 

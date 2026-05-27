@@ -268,6 +268,7 @@ class ScriptExecutionEngine:
                                             project_id=project_id,
                                             follow_on_plan_ids=entry_follow_on,
                                             seen_workspaces=seen_workspaces,
+                                            den_id=target_den_id,
                                         )
                                     )
 
@@ -290,7 +291,7 @@ class ScriptExecutionEngine:
                                 self._broadcast(run_id, line)
 
             if exit_code == 0:
-                await self._process_manifest(ws_root, workspace_id, project_id, seen_workspaces=seen_workspaces)
+                await self._process_manifest(ws_root, workspace_id, project_id, seen_workspaces=seen_workspaces, den_id=target_den_id)
 
                 # Parse HTTP status code from whatweb_raw.json if it exists and update the workspace
                 whatweb_json = ws_root / "notes" / "whatweb_raw.json"
@@ -352,6 +353,7 @@ class ScriptExecutionEngine:
         project_id: str,
         follow_on_plan_ids: Optional[List[str]] = None,
         seen_workspaces: Optional[dict] = None,
+        den_id: str = "local",
     ) -> None:
         """Create a single child workspace and schedule follow-on runs with database write throttling."""
         async with self._manifest_semaphore:
@@ -361,6 +363,7 @@ class ScriptExecutionEngine:
                 project_id=project_id,
                 follow_on_plan_ids=follow_on_plan_ids,
                 seen_workspaces=seen_workspaces,
+                den_id=den_id,
             )
 
     async def _process_manifest_entry_raw(
@@ -370,6 +373,7 @@ class ScriptExecutionEngine:
         project_id: str,
         follow_on_plan_ids: Optional[List[str]] = None,
         seen_workspaces: Optional[dict] = None,
+        den_id: str = "local",
     ) -> None:
         """Create a single child workspace and schedule follow-on runs."""
         from routers.plans import _find_plan
@@ -423,17 +427,24 @@ class ScriptExecutionEngine:
                         target_url=plan_target,
                         status="pending",
                         created_at=datetime.utcnow(),
+                        den_id=den_id,
                     )
                     await self.db_client.create_run(child_run)
-                    asyncio.create_task(
-                        self.execute_run_in_background(
-                            run_id=child_run_id,
-                            workspace_id=child_ws.id,
-                            project_id=project_id,
-                            plan=child_plan,
-                            target_url=plan_target,
+                    if den_id != "local":
+                        # Fan-out: ensure runner capacity exists on the targeted Den
+                        asyncio.create_task(
+                            deps.fargate_orchestrator.ensure_runner_capacity(den_id, 1)
                         )
-                    )
+                    else:
+                        asyncio.create_task(
+                            self.execute_run_in_background(
+                                run_id=child_run_id,
+                                workspace_id=child_ws.id,
+                                project_id=project_id,
+                                plan=child_plan,
+                                target_url=plan_target,
+                            )
+                        )
             _log.info("manifest_entry: created child workspace %s (%s)", child_ws.id, ws_name)
         except Exception as exc:
             _log.warning("manifest_entry: failed to create workspace %r: %s", ws_name, exc)
@@ -444,6 +455,7 @@ class ScriptExecutionEngine:
         parent_workspace_id: str,
         project_id: str,
         seen_workspaces: Optional[dict] = None,
+        den_id: str = "local",
     ) -> None:
         """Process local ferret_manifest.json on completion."""
         manifest_path = ws_root / "notes" / "ferret_manifest.json"
@@ -467,6 +479,7 @@ class ScriptExecutionEngine:
                 parent_workspace_id=parent_workspace_id,
                 project_id=project_id,
                 seen_workspaces=seen_workspaces,
+                den_id=den_id,
             )
 
     async def start_scheduler(self) -> None:
@@ -493,9 +506,12 @@ class ScriptExecutionEngine:
 
         while True:
             try:
-                # Query all pending runs in creation order (oldest first)
+                # Check and maintain warm Fargate runner pools
+                await self._maintain_warm_pools()
+
+                # Query pending local runs in creation order (oldest first)
                 async with self.db_client._db.execute(
-                    "SELECT id, workspace_id, project_id, plan_id, target_url, follow_on_plan_id, follow_on_path_plan_id FROM runs WHERE status = 'pending' ORDER BY created_at ASC"
+                    "SELECT id, workspace_id, project_id, plan_id, target_url, follow_on_plan_id, follow_on_path_plan_id FROM runs WHERE status = 'pending' AND COALESCE(den_id, 'local') = 'local' ORDER BY created_at ASC"
                 ) as cur:
                     rows = await cur.fetchall()
 
@@ -548,3 +564,46 @@ class ScriptExecutionEngine:
                 _log.error("Scheduler loop error: %s", e, exc_info=True)
 
             await asyncio.sleep(5)
+
+    _last_spawn_times = {}
+
+    async def _maintain_warm_pools(self) -> None:
+        """Query all AWS Dens and replenish warm runner pools if needed."""
+        try:
+            import time
+            dens = await self.db_client.get_dens()
+            active_runners = await self.db_client.get_active_runners(timeout_seconds=30)
+            
+            for den in dens:
+                if den.get("type") != "aws":
+                    continue
+                
+                warm_count = den.get("warm_runners") or 0
+                if warm_count <= 0:
+                    continue
+                
+                den_id = den["id"]
+                
+                # Check spawn cool-down (e.g. wait at least 60 seconds between warm pool spawn attempts)
+                now = time.time()
+                last_spawn = self._last_spawn_times.get(den_id, 0.0)
+                if now - last_spawn < 60.0:
+                    continue
+                
+                # Count current active+provisioning runners for this specific Den
+                # (provisioning = ECS task launched but not yet booted)
+                den_active_count = len([
+                    r for r in active_runners
+                    if r["id"].startswith(f"runner-fargate-{den_id}-")
+                    and r.get("status") in ("active", "provisioning")
+                ])
+                
+                if den_active_count < warm_count:
+                    needed = warm_count - den_active_count
+                    _log.info("[WARM_POOL] Den '%s' has %d active runners, needs %d warm runners. Spawning %d more...", den_id, den_active_count, warm_count, needed)
+                    self._last_spawn_times[den_id] = now
+                    asyncio.create_task(
+                        deps.fargate_orchestrator.spawn_runners_if_needed(den_id, needed, is_warm=True)
+                    )
+        except Exception as err:
+            _log.warning("Error maintaining warm pools: %s", err)

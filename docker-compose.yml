@@ -48,12 +48,13 @@ services:
       # on Docker bind mounts where host inotify events are not propagated into
       # the container (common on Linux with overlayfs).
       WATCHFILES_FORCE_POLLING: "true"
-      FERRET_RUNNER_IMAGE: "b64"
+      FERRET_RUNNER_IMAGE: "ghcr.io/synlace/ferret-lab:latest"
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       # Mount source over the built image so Python changes are picked up
       # without rebuilding. watchfiles (below) auto-restarts uvicorn on change.
       - ./src/apps/api:/app
+      - ./terraform:/app/terraform
     # Use watchfiles to restart uvicorn when source files change.
     # WATCHFILES_FORCE_POLLING=true uses stat() instead of inotify so it works
     # reliably across Docker bind mounts where the host does not propagate inotify
@@ -63,6 +64,8 @@ services:
       - python
       - -m
       - watchfiles
+      - --ignore-paths
+      - /app/terraform
       - "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --ws websockets"
       - /app
     networks:

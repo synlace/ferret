@@ -11,7 +11,7 @@ import json
 import uuid
 import logging
 import aiosqlite
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 from models import Finding, ChatSession, TestRun, Project, ProjectApiKey, Workspace, Run
@@ -302,16 +302,44 @@ class ProjectsMixin:
         )
         await self._db.commit()
 
+    async def register_provisioning_runner(self, runner_id: str) -> None:
+        """Pre-register a runner as 'provisioning' immediately when the ECS task is spawned,
+        before it has booted and sent its first heartbeat. This prevents the spawning storm
+        by letting the active-count ceiling see the runner immediately."""
+        now_str = datetime.utcnow().isoformat()
+        await self._db.execute(
+            """
+            INSERT INTO runners (id, status, last_heartbeat)
+            VALUES (?, 'provisioning', ?)
+            ON CONFLICT(id) DO UPDATE SET
+                status = 'provisioning',
+                last_heartbeat = excluded.last_heartbeat
+            """,
+            (runner_id, now_str),
+        )
+        await self._db.commit()
+
     async def get_active_runners(self, timeout_seconds: int = 30) -> List[Dict[str, Any]]:
-        # Retrieve runners with recent heartbeat
-        import datetime as _dt
-        cutoff = (datetime.utcnow() - _dt.timedelta(seconds=timeout_seconds)).isoformat()
-        async with self._db.execute(
-            "SELECT * FROM runners WHERE last_heartbeat >= ? AND status = 'active'",
-            (cutoff,),
-        ) as cur:
+        """Retrieve all registered runners with dynamically computed status.
+        Provisioning runners are treated as active for up to 5 minutes to cover ECS cold-start time."""
+        now = datetime.utcnow()
+        limit_time = (now - timedelta(seconds=timeout_seconds)).isoformat()
+        provisioning_limit_time = (now - timedelta(minutes=5)).isoformat()
+        async with self._db.execute("SELECT * FROM runners") as cur:
             rows = await cur.fetchall()
-        return [dict(r) for r in rows]
+
+        runners = []
+        for r in rows:
+            rd = dict(r)
+            if rd.get("status") == "provisioning":
+                # Provisioning runners are considered live for up to 5 minutes (ECS boot time)
+                if rd["last_heartbeat"] < provisioning_limit_time:
+                    rd["status"] = "offline"
+            else:
+                if rd["last_heartbeat"] < limit_time:
+                    rd["status"] = "offline"
+            runners.append(rd)
+        return runners
 
     async def update_runner_status(self, runner_id: str, status: str) -> None:
         await self._db.execute(
@@ -466,9 +494,35 @@ class ProjectsMixin:
         await self._db.commit()
         return changed > 0
 
+    async def get_busy_runner_count_for_den(self, den_id: str) -> int:
+        """Count how many runs are currently in 'running' state for the given den.
+        Used to determine whether idle warm runners already exist before spawning new ones."""
+        async with self._db.execute(
+            "SELECT COUNT(*) FROM runs WHERE status = 'running' AND COALESCE(den_id, 'local') = ?",
+            (den_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        return row[0] if row else 0
+
+    async def get_live_runner_count_for_den(self, den_id: str, timeout_seconds: int = 30) -> int:
+        """Count the active or provisioning runners for a specific Den to prevent duplicate spawning."""
+        active_runners = await self.get_active_runners(timeout_seconds=timeout_seconds)
+        return len([
+            r for r in active_runners
+            if r["id"].startswith(f"runner-fargate-{den_id}-")
+            and r.get("status") in ("active", "provisioning")
+        ])
+
     async def lease_pending_run(self, runner_id: str) -> Optional[Dict[str, Any]]:
         """Atomically find the oldest pending run matching the runner's Den ID configuration, assigning it to the runner and setting status to 'running'."""
         _log.debug("[RUNNER_LEASE] [START] Runner ID %s polling for runs", runner_id)
+        if not hasattr(self, "_lease_lock"):
+            self._lease_lock = asyncio.Lock()
+        async with self._lease_lock:
+            return await self._lease_pending_run_locked(runner_id)
+
+    async def _lease_pending_run_locked(self, runner_id: str) -> Optional[Dict[str, Any]]:
+        """Inner lease logic — must only be called while holding self._lease_lock."""
         await self._db.execute("BEGIN IMMEDIATE")
         try:
             # Check if this runner belongs to a specific Den ID. If the runner_id starts with a den-specific prefix or we default to local.
@@ -1145,19 +1199,25 @@ class ProjectsMixin:
         aws_access_key: Optional[str] = "",
         aws_secret_key: Optional[str] = "",
         aws_region: Optional[str] = "eu-west-1",
+        runner_image: Optional[str] = "",
+        warm_runners: int = 0,
+        kill_if_unreachable: int = 1,
     ) -> None:
         now = datetime.utcnow().isoformat()
         await self._db.execute(
             """
-            INSERT INTO dens (id, name, type, max_runners, aws_access_key, aws_secret_key, aws_region, created_at)
-            VALUES (:id, :name, :type, :max_runners, :aws_access_key, :aws_secret_key, :aws_region, :created_at)
+            INSERT INTO dens (id, name, type, max_runners, aws_access_key, aws_secret_key, aws_region, runner_image, warm_runners, kill_if_unreachable, created_at)
+            VALUES (:id, :name, :type, :max_runners, :aws_access_key, :aws_secret_key, :aws_region, :runner_image, :warm_runners, :kill_if_unreachable, :created_at)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 type = excluded.type,
                 max_runners = excluded.max_runners,
                 aws_access_key = excluded.aws_access_key,
                 aws_secret_key = CASE WHEN excluded.aws_secret_key != '' AND excluded.aws_secret_key NOT LIKE '%•••%' THEN excluded.aws_secret_key ELSE dens.aws_secret_key END,
-                aws_region = excluded.aws_region
+                aws_region = excluded.aws_region,
+                runner_image = excluded.runner_image,
+                warm_runners = excluded.warm_runners,
+                kill_if_unreachable = excluded.kill_if_unreachable
             """,
             {
                 "id": den_id,
@@ -1167,6 +1227,9 @@ class ProjectsMixin:
                 "aws_access_key": aws_access_key or "",
                 "aws_secret_key": aws_secret_key or "",
                 "aws_region": aws_region or "eu-west-1",
+                "runner_image": runner_image or "",
+                "warm_runners": warm_runners,
+                "kill_if_unreachable": kill_if_unreachable,
                 "created_at": now,
             },
         )

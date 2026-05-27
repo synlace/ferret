@@ -132,6 +132,81 @@ test component="":
         ;;
     esac
 
+# Manage runner Dens (Local or AWS Fargate environments)
+# Usage:
+#   just den list                    — List all configured Dens
+#   just den info <den-id>           — Show detailed config of a Den
+#   just den delete <den-id>         — Delete a Den configuration
+#   just den create <den-id> <name> <type> <max-runners> [aws-region]  — Create/update a Den
+#   (Add 'json' as a final argument to any command to receive raw JSON output)
+den action="" arg1="" arg2="" arg3="" arg4="" arg5="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    API_URL="http://localhost:8000"
+    JSON_FLAG=""
+    if [[ "{{arg1}}" == "json" || "{{arg2}}" == "json" || "{{arg3}}" == "json" || "{{arg4}}" == "json" || "{{arg5}}" == "json" ]]; then
+      JSON_FLAG="--json"
+    fi
+
+    case "{{action}}" in
+      "" | "help")
+        echo "Usage: just den <action> [arguments]"
+        echo ""
+        echo "Available actions:"
+        echo "  list [json]                                              — List all configured Dens"
+        echo "  info <den-id> [json]                                     — Show detailed config of a Den"
+        echo "  delete <den-id>                                         — Delete a Den configuration"
+        echo "  create <den-id> <name> <local|fargate> <max-runners> [aws-region] [json] — Create or update a Den"
+        echo ""
+        echo "Examples:"
+        echo "  just den list"
+        echo "  just den info local"
+        echo "  just den info local json"
+        echo "  just den create production-fargate \"Prod Fargate\" fargate 15 us-east-1"
+        ;;
+      list)
+        echo "Configured runner Dens:"
+        echo ""
+        curl -s "${API_URL}/api/settings/dens" | python3 src/apps/api/format_den.py --mode list $JSON_FLAG
+        ;;
+      info)
+        den_id="{{arg1}}"
+        if [[ -z "$den_id" ]]; then
+          echo "Error: <den-id> is required for 'info' action"
+          exit 1
+        fi
+        curl -s "${API_URL}/api/settings/dens/${den_id}" | python3 src/apps/api/format_den.py --mode info $JSON_FLAG
+        ;;
+      delete)
+        den_id="{{arg1}}"
+        if [[ -z "$den_id" ]]; then
+          echo "Error: <den-id> is required for 'delete' action"
+          exit 1
+        fi
+        echo "Deleting Den '${den_id}'..."
+        curl -s -X DELETE "${API_URL}/api/settings/dens/${den_id}" | python3 -m json.tool || echo "Failed to delete Den."
+        ;;
+      create)
+        den_id="{{arg1}}"
+        name="{{arg2}}"
+        type="{{arg3}}"
+        max_runners="{{arg4}}"
+        aws_region="{{arg5}}"
+        if [[ -z "$den_id" || -z "$name" || -z "$type" || -z "$max_runners" ]]; then
+          echo "Error: create action requires: <den-id> <name> <local|fargate> <max-runners>"
+          exit 1
+        fi
+        payload="{\"id\":\"${den_id}\",\"name\":\"${name}\",\"type\":\"${type}\",\"max_runners\":${max_runners},\"aws_region\":\"${aws_region}\"}"
+        echo "Creating/Updating Den '${den_id}'..."
+        curl -s -X POST -H "Content-Type: application/json" -d "$payload" "${API_URL}/api/settings/dens" | python3 src/apps/api/format_den.py --mode info $JSON_FLAG
+        ;;
+      *)
+        echo "Unknown den action: {{action}}"
+        echo "Run 'just den' or 'just den help' for usage instructions."
+        exit 1
+        ;;
+    esac
+
 # Delete all projects (DANGER: wipes all project data)
 delete-all-projects:
     @echo "Deleting all projects..."
@@ -169,6 +244,12 @@ reset:
     fi
     echo "Stopping API container..."
     docker compose stop api
+
+    # Stop and remove any active local ferret-runner containers to prevent orphaned spam after reset
+    if command -v docker &>/dev/null; then
+        echo "Stopping and removing any active local ferret-runner containers..."
+        docker ps -aq --filter "name=ferret-runner-" | xargs -r docker rm -f 2>/dev/null || true
+    fi
     if [[ -f "${DATA_DIR}/ferret.db" ]]; then
         BACKUP="${DATA_DIR}/ferret.db.bak.$(date +%Y%m%d_%H%M%S)"
         mv "${DATA_DIR}/ferret.db" "$BACKUP"
@@ -373,119 +454,42 @@ test-docker-proxy:
 destroy-aws region="eu-west-1":
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Running AWS resource teardown for region '{{region}}'..."
-    docker compose exec -T api python3 -c '
-    import boto3, sys, logging, os, asyncio, time
-    from botocore.config import Config
-    
-    logging.basicConfig(level=logging.INFO, format="[CLEANUP] %(asctime)s - %(message)s")
-    _log = logging.getLogger()
+    TERRAFORM_DIR="$(dirname -- "$(realpath -- "{{justfile()}}")")/terraform"
+    if [[ ! -f "${TERRAFORM_DIR}/terraform.tfstate" ]]; then
+        echo "[destroy-aws] No Terraform state found at ${TERRAFORM_DIR}/terraform.tfstate — nothing to destroy."
+        exit 0
+    fi
 
-    async def get_credentials():
-        aws_key = os.environ.get("AWS_ACCESS_KEY_ID")
-        aws_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
-        aws_region = os.environ.get("AWS_DEFAULT_REGION") or "{{region}}"
-        if aws_key and aws_secret:
-            return aws_key, aws_secret, aws_region
-        try:
-            sys.path.append("/app")
-            import deps
-            await deps.db_client.initialize()
-            den = await deps.db_client.get_den("aws")
-            await deps.db_client.close()
-            if den:
-                return den.get("aws_access_key"), den.get("aws_secret_key"), den.get("aws_region") or "{{region}}"
-        except Exception as db_err:
-            _log.warning(f"DB credential load failed: {db_err}")
-        return None, None, "{{region}}"
+    # 1. Stop dynamically spawned (boto3) Fargate tasks before Terraform destroy
+    if command -v aws &>/dev/null; then
+        echo "[destroy-aws] Querying for active boto3-deployed Fargate tasks in cluster 'ferret-runners'..."
+        export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-eu-west-1}"
+        
+        # Get active/pending task ARNs
+        TASK_ARNS=$(aws ecs list-tasks --cluster "ferret-runners" --query "taskArns" --output text 2>/dev/null || true)
+        
+        if [[ -n "$TASK_ARNS" && "$TASK_ARNS" != "None" ]]; then
+            echo "[destroy-aws] Active tasks found. Stopping all Fargate runners..."
+            for task in $TASK_ARNS; do
+                echo "  -> Stopping Fargate task: $task"
+                aws ecs stop-task --cluster "ferret-runners" --task "$task" >/dev/null 2>&1 || true
+            done
+            
+            # 2. Block until tasks are fully stopped to ensure ENIs are detached
+            echo "[destroy-aws] Waiting for AWS Fargate to fully tear down tasks and detach ENIs..."
+            aws ecs wait tasks-stopped --cluster "ferret-runners" --tasks $TASK_ARNS 2>/dev/null || true
+            echo "[destroy-aws] All tasks stopped. ENIs detached."
+        else
+            echo "[destroy-aws] No active Fargate tasks running."
+        fi
+    else
+        echo "[destroy-aws] Warning: AWS CLI not found on host. Dynamic Fargate tasks cannot be auto-killed."
+    fi
 
-    async def run_cleanup():
-        aws_key, aws_secret, aws_region = await get_credentials()
-        if not aws_key or not aws_secret:
-            _log.error("Could not find AWS credentials in environment or database.")
-            sys.exit(1)
-        _log.info(f"Loaded credentials. Initializing AWS clients in region: {aws_region}")
-        config = Config(region_name=aws_region)
-        kwargs = {"aws_access_key_id": aws_key, "aws_secret_access_key": aws_secret, "config": config}
-        ec2 = boto3.client("ec2", **kwargs)
-        ecs = boto3.client("ecs", **kwargs)
-        iam = boto3.client("iam", **kwargs)
-        logs = boto3.client("logs", **kwargs)
-
-        # 1. Terminate EC2 WireGuard Hub
-        try:
-            instances = ec2.describe_instances(Filters=[
-                {"Name": "tag:Name", "Values": ["ferret-wg-hub"]},
-                {"Name": "instance-state-name", "Values": ["pending", "running", "stopping", "stopped"]}
-            ])
-            instance_ids = [inst["InstanceId"] for res in instances.get("Reservations", []) for inst in res.get("Instances", [])]
-            if instance_ids:
-                _log.info(f"Terminating active EC2 Hub instances: {instance_ids}")
-                ec2.terminate_instances(InstanceIds=instance_ids)
-                _log.info("Waiting for termination to complete...")
-                ec2.get_waiter("instance_terminated").wait(InstanceIds=instance_ids)
-        except Exception as e: _log.warning(f"EC2 cleanup: {e}")
-
-        # 2. Stop running Fargate Runner Tasks
-        try:
-            tasks = ecs.list_tasks(cluster="ferret-runners").get("taskArns", [])
-            for arn in tasks:
-                ecs.stop_task(cluster="ferret-runners", task=arn, reason="just destroy-aws")
-        except Exception as e: _log.warning(f"ECS task cleanup: {e}")
-
-        # 3. Clean up ECS Task Definitions & Cluster
-        try:
-            families = ecs.list_task_definition_families().get("families", [])
-            for f in families:
-                if f.startswith("ferret-runner"):
-                    for td_arn in ecs.list_task_definitions(familyPrefix=f).get("taskDefinitionArns", []):
-                        ecs.deregister_task_definition(taskDefinition=td_arn)
-            if any(c.endswith("/ferret-runners") for c in ecs.list_clusters().get("clusterArns", [])):
-                ecs.delete_cluster(cluster="ferret-runners")
-        except Exception as e: _log.warning(f"ECS cluster cleanup: {e}")
-
-        # 4. Delete Security Groups (with retry loop to handle eventual consistency & ENI detachment)
-        for sg_name in ("ferret-ec2-wg-sg", "ferret-runner-outbound-sg"):
-            try:
-                sgs = ec2.describe_security_groups(Filters=[{"Name": "group-name", "Values": [sg_name]}])
-                for sg in sgs.get("SecurityGroups", []):
-                    sg_id = sg["GroupId"]
-                    _log.info(f"Deleting Security Group: {sg_name} ({sg_id})...")
-                    for attempt in range(6):
-                        try:
-                            ec2.delete_security_group(GroupId=sg_id)
-                            _log.info(f"Successfully deleted Security Group: {sg_name}")
-                            break
-                        except Exception as e:
-                            if "DependencyViolation" in str(e) and attempt < 5:
-                                sleep_time = attempt * 3 + 2
-                                _log.info(f"Security Group {sg_name} has dependent objects (detaching ENIs). Retrying in {sleep_time}s...")
-                                time.sleep(sleep_time)
-                            else:
-                                raise e
-            except Exception as e: _log.warning(f"Security Group cleanup ({sg_name}): {e}")
-
-        # 5. Delete IAM Role & Policies
-        try:
-            for p in ("arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy", "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"):
-                try: iam.detach_role_policy(RoleName="ferretExecutionRole", PolicyArn=p)
-                except Exception: pass
-            iam.delete_role(RoleName="ferretExecutionRole")
-            _log.info("Deleted IAM role ferretExecutionRole")
-        except Exception as e: _log.warning(f"IAM cleanup: {e}")
-
-        # 6. Clean up CloudWatch Log Group
-        try:
-            logs.delete_log_group(logGroupName="/ecs/ferret-polling-mesh")
-            _log.info("Deleted CloudWatch log group")
-        except Exception as e:
-            if "AccessDenied" in str(e):
-                _log.info("Bypassed CloudWatch log group deletion (insufficient IAM permissions for logs:DeleteLogGroup).")
-            else:
-                _log.warning(f"Log Group cleanup: {e}")
-
-        _log.info("AWS teardown complete.")
-
-    asyncio.run(run_cleanup())
-    '
+    # 3. Proceed to destroy Terraform infrastructure (which will now succeed instantly)
+    echo "[destroy-aws] Destroying Terraform-managed AWS infrastructure in ${TERRAFORM_DIR}..."
+    cd "${TERRAFORM_DIR}"
+    terraform init -reconfigure
+    terraform destroy -auto-approve
+    echo "[destroy-aws] AWS teardown complete."
 

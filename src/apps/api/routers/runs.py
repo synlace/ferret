@@ -121,10 +121,11 @@ async def create_run(body: RunCreate, request: Request, project_id: str = "temp"
             )
         )
 
-        # Spawns Fargate task runners over ECS in the background if the targeted Den is an AWS Den
-        asyncio.create_task(
-            deps.fargate_orchestrator.spawn_runners_if_needed(run.den_id, body.runner_count or 1)
-        )
+        # Ensure sufficient runner capacity exists on the targeted Den
+        if run.den_id and run.den_id != "local":
+            asyncio.create_task(
+                deps.fargate_orchestrator.ensure_runner_capacity(run.den_id, body.runner_count or 1)
+            )
 
         return run.model_dump()
     except HTTPException:

@@ -15,6 +15,7 @@ Strategy
 """
 
 import sys
+import asyncio
 import aiosqlite
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -85,6 +86,7 @@ async def _make_mem_db() -> SQLiteClient:
     db.db_path = Path(":memory:")
     db._db = await aiosqlite.connect(":memory:")
     db._db.row_factory = aiosqlite.Row
+    db._lease_lock = asyncio.Lock()
     await db._db.execute("PRAGMA journal_mode=WAL")
     await db._db.execute("PRAGMA foreign_keys=ON")
     await db._create_schema()

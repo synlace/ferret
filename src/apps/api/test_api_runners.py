@@ -40,10 +40,13 @@ async def test_runners_offline_timeout(client, mem_db):
     )
     await mem_db._db.commit()
 
-    # List active runners — should be empty due to timeout
+    # List active runners — should show the runner as offline due to timeout
     resp = await client.get("/api/runners")
     assert resp.status_code == 200
-    assert resp.json() == []
+    runners = resp.json()
+    assert len(runners) == 1
+    assert runners[0]["id"] == "ferret-lab-temp"
+    assert runners[0]["status"] == "offline"
 
 @pytest.mark.asyncio
 async def test_runner_keys_crud_and_auth(client, mem_db):
@@ -148,3 +151,91 @@ async def test_runner_pull_polling_execution_flow(client, mem_db, tmp_path):
     run_db = await mem_db.get_run("run-1")
     assert run_db["status"] == "done"
     assert run_db["exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_den_runner_image_and_fanout_propagation(client, mem_db):
+    # 1. Create a Den with custom runner_image
+    resp = await client.put(
+        "/api/settings/dens/aws-den-test",
+        json={
+            "id": "aws-den-test",
+            "name": "AWS Custom Test Den",
+            "den_type": "aws",
+            "den_max_runners": 5,
+            "den_aws_access_key": "AKIA...",
+            "den_aws_secret_key": "WJ...",
+            "den_aws_region": "eu-west-1",
+            "den_runner_image": "1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:custom"
+        }
+    )
+    assert resp.status_code == 200
+
+    # Retrieve Den configuration and verify den_runner_image matches
+    resp = await client.get("/api/settings/dens/aws-den-test")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["den_runner_image"] == "1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:custom"
+
+    # Verify database record has runner_image
+    den_db = await mem_db.get_den("aws-den-test")
+    assert den_db is not None
+    assert den_db["runner_image"] == "1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:custom"
+
+
+@pytest.mark.asyncio
+async def test_runner_workspace_archive_upload(client, mem_db, tmp_path):
+    import io
+    import zipfile
+    import deps
+
+    # Patch WORKSPACES_DIR to use our temp path so we don't write to real data/
+    deps.WORKSPACES_DIR = tmp_path
+
+    # Pre-seed a project and workspace
+    now = datetime.now(timezone.utc)
+    await mem_db._db.execute(
+        "INSERT INTO projects (id, name, created_at, updated_at) VALUES ('temp', 'temp', ?, ?)",
+        (now.isoformat(), now.isoformat())
+    )
+    await mem_db._db.execute(
+        "INSERT INTO workspaces (id, project_id, name, created_at) VALUES ('ws-archive-test', 'temp', 'ws-archive-test', ?)",
+        (now.isoformat(),)
+    )
+    await mem_db._db.commit()
+
+    # Create a running run
+    run = Run(
+        id="run-archive-test",
+        workspace_id="ws-archive-test",
+        project_id="temp",
+        plan_id="builtin:whatweb",
+        target_url="http://example.com",
+        status="running",
+        created_at=datetime.utcnow()
+    )
+    await mem_db.create_run(run)
+
+    # Prepare an in-memory ZIP file with a directory and a file
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        zip_file.writestr("notes/whatweb_raw.json", '{"http_status": 200}')
+        zip_file.writestr("notes/whatweb.md", "# WhatWeb Scan Report")
+
+    zip_buffer.seek(0)
+
+    # Post the ZIP to the server archive upload endpoint
+    resp = await client.post(
+        "/api/runners/runs/run-archive-test/workspace-archive",
+        files={"file": ("workspace.zip", zip_buffer, "application/zip")},
+        headers={"X-Runner-Key": "fr_local_dev_key_default_33794b"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+    # Verify that the files were extracted to the correct workspace dir
+    ws_real_root = deps.WORKSPACES_DIR / "temp" / "ws-archive-test"
+    assert (ws_real_root / "notes" / "whatweb_raw.json").exists()
+    assert (ws_real_root / "notes" / "whatweb.md").exists()
+    assert (ws_real_root / "notes" / "whatweb_raw.json").read_text() == '{"http_status": 200}'
+
