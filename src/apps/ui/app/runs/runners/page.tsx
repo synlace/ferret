@@ -649,11 +649,13 @@ export default function RunnersPage() {
       const isExpanded = searchQuery ? true : (expandedDens[den.id] ?? true)
       
       const onlineRunners = denRunners.filter(r => {
+        if (r.status === "provisioning") return true
         const lastHb = parseUtcDate(r.last_heartbeat).getTime()
         return Date.now() - lastHb < 30000
       })
 
       const offlineRunners = denRunners.filter(r => {
+        if (r.status === "provisioning") return false
         const lastHb = parseUtcDate(r.last_heartbeat).getTime()
         return Date.now() - lastHb >= 30000
       })
@@ -720,7 +722,11 @@ export default function RunnersPage() {
                               >
                                 <Cpu className="w-3 h-3 shrink-0 text-neutral-500" />
                                 <span className="truncate flex-1 font-mono text-[10px]">{r.id}</span>
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500 animate-pulse" />
+                                {r.status === "provisioning" ? (
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-yellow-500 animate-pulse" />
+                                ) : (
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500 animate-pulse" />
+                                )}
                               </button>
                             )
                           })
@@ -942,16 +948,22 @@ export default function RunnersPage() {
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <Cpu className="w-3.5 h-3.5 text-brand-400 flex-shrink-0" />
                 <span className="text-xs font-semibold text-white truncate font-mono">{selectedRunner.id}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 ${
-                  Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000
-                    ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                    : "bg-neutral-800 text-neutral-400 border border-neutral-700/60"
-                }`}>
-                  <span className={`w-1 h-1 rounded-full ${
-                    Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? "bg-green-500 animate-pulse" : "bg-neutral-600"
-                  }`} />
-                  {Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? "Online" : "Offline"}
-                </span>
+                {selectedRunner.status === "provisioning" ? (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                    <span className="w-1 h-1 rounded-full bg-yellow-500 animate-pulse" />
+                    Pending
+                  </span>
+                ) : Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-green-500/10 text-green-400 border border-green-500/20">
+                    <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+                    Online
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-neutral-800 text-neutral-400 border border-neutral-700/60">
+                    <span className="w-1 h-1 rounded-full bg-neutral-600" />
+                    Offline
+                  </span>
+                )}
                 <span className="text-[10px] text-neutral-500 truncate hidden sm:inline">
                   Last HB: {parseUtcDate(selectedRunner.last_heartbeat).toLocaleTimeString()}
                 </span>

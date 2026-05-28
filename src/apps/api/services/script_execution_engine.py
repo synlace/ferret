@@ -4,6 +4,7 @@ import json
 import re
 import os
 import uuid
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -53,6 +54,7 @@ class ScriptExecutionEngine:
         # run_id -> asyncio.Event
         self._cancel_events: Dict[str, asyncio.Event] = {}
         self._scheduled_run_ids = set()
+        self._startup_time = time.time()
 
     @property
     def db_client(self):
@@ -570,7 +572,12 @@ class ScriptExecutionEngine:
     async def _maintain_warm_pools(self) -> None:
         """Query all AWS Dens and replenish warm runner pools if needed."""
         try:
-            import time
+            # Prevent duplicate spawning storm on startup/rebuild: Allow 60 seconds grace period
+            # for existing living warm runners to send their heartbeats and register.
+            if time.time() - self._startup_time < 60.0:
+                _log.debug("Skipping warm pool maintenance during startup grace period.")
+                return
+
             dens = await self.db_client.get_dens()
             active_runners = await self.db_client.get_active_runners(timeout_seconds=30)
             
