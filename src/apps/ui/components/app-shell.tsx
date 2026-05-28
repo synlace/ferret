@@ -58,6 +58,23 @@ const navItems = [
 
 const STORAGE_KEY = "ferret:sidebarWidth"
 
+function FadeWrapper({ children }: { children: React.ReactNode }) {
+  const [opacity, setOpacity] = useState("opacity-0")
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setOpacity("opacity-100")
+    }, 16) // wait exactly one animation frame so opacity-0 is rendered first
+    return () => clearTimeout(timer)
+  }, [])
+
+  return (
+    <div className={`flex-1 flex flex-col overflow-hidden min-w-0 transition-opacity duration-150 ${opacity}`}>
+      {children}
+    </div>
+  )
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
@@ -75,6 +92,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { items: sigintItems, readIds, unreadCount, markAllRead, markRead, refresh: refreshSigint, refreshing: sigintRefreshing } = useSigint()
   const dragging = useRef(false)
   const asideRef = useRef<HTMLElement>(null)
+
+  const [isNavigating, setIsNavigating] = useState(false)
+
+  // Reset navigation state when route finishes loading
+  useEffect(() => {
+    setIsNavigating(false)
+  }, [pathname])
+
+  // Intercept all local navigation clicks to instantly clear the screen to black
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const anchor = target.closest("a")
+      if (anchor && anchor.href && !anchor.target && !e.metaKey && !e.ctrlKey) {
+        const url = new URL(anchor.href, window.location.href)
+        if (url.origin === window.location.origin && url.pathname !== pathname) {
+          setIsNavigating(true)
+        }
+      }
+    }
+    document.addEventListener("click", handleGlobalClick, { capture: true })
+    return () => document.removeEventListener("click", handleGlobalClick, { capture: true })
+  }, [pathname])
 
   // On mount, sync React state from the CSS var (already set by the blocking script).
   useEffect(() => {
@@ -391,8 +431,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* Main content */}
-      <main className="flex-1 overflow-hidden min-w-0">
-        {children}
+      <main className={`flex-1 overflow-hidden min-w-0 flex flex-col ${isNavigating ? "opacity-0" : ""}`}>
+        <FadeWrapper key={pathname}>
+          {children}
+        </FadeWrapper>
       </main>
 
       {/* Project slide-over sheet */}

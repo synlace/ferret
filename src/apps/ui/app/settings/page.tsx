@@ -1,8 +1,7 @@
 "use client"
 
 import { apiFetch } from "@/lib/api-fetch"
-
-import { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,14 +13,19 @@ import {
   Loader2,
   Cpu,
   Activity,
-  ChevronDown,
   KeyRound,
   ShieldAlert,
   X,
   Upload,
+  ChevronRight,
 } from "lucide-react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+
+const LIST_WIDTH_KEY = "ferret_settings_list_width"
+const DEFAULT_LIST_WIDTH = 240
+const MIN_LIST_WIDTH = 160
+const MAX_LIST_WIDTH = 400
 
 interface ProxyStatus {
   running: boolean
@@ -30,51 +34,7 @@ interface ProxyStatus {
   intercepted: number
 }
 
-function SectionHeader({
-  icon,
-  label,
-  open,
-  onToggle,
-  badge,
-}: {
-  icon: React.ReactNode
-  label: string
-  open: boolean
-  onToggle: () => void
-  badge?: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      className="w-full h-full flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900 hover:bg-neutral-800/60 transition-colors text-left"
-    >
-      {icon}
-      <span className="text-xs font-semibold text-white uppercase tracking-wider">{label}</span>
-      {badge && <span className="ml-2">{badge}</span>}
-      <ChevronDown
-        className={`w-3.5 h-3.5 text-neutral-500 ml-auto transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-      />
-    </button>
-  )
-}
-
-function StaticSectionHeader({
-  icon,
-  label,
-  badge,
-}: {
-  icon: React.ReactNode
-  label: string
-  badge?: React.ReactNode
-}) {
-  return (
-    <div className="w-full h-full flex items-center gap-2 px-3 py-2 bg-neutral-900">
-      {icon}
-      <span className="text-xs font-semibold text-white uppercase tracking-wider">{label}</span>
-      {badge && <span className="ml-2">{badge}</span>}
-    </div>
-  )
-}
+type SettingsSection = "ca-cert" | "security" | "ai-proxy" | "den" | "backup"
 
 // ---------------------------------------------------------------------------
 // MFA Setup Modal
@@ -94,7 +54,6 @@ function MfaSetupModal({
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
-  // Fetch the QR code on mount.
   useEffect(() => {
     const setup = async () => {
       try {
@@ -141,7 +100,6 @@ function MfaSetupModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl w-full max-w-sm">
-        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-brand-400" />
@@ -278,12 +236,69 @@ function MfaSetupModal({
 // Main settings page
 // ---------------------------------------------------------------------------
 export default function SettingsPage() {
+  const [activeSection, setActiveSection] = useState<SettingsSection>("ca-cert")
+  const [isMounted, setIsMounted] = useState(false)
+  const [panelOpacity, setPanelOpacity] = useState("opacity-100")
+  const [transitionClass, setTransitionClass] = useState("transition-opacity duration-150")
+
+  const handleSectionChange = async (section: SettingsSection) => {
+    if (section === activeSection) return
+
+    setTransitionClass("")
+    setPanelOpacity("opacity-0")
+    await new Promise(resolve => setTimeout(resolve, 16))
+
+    setActiveSection(section)
+
+    try {
+      if (section === "security") {
+        setMfaLoading(true)
+        apiFetch(`${API_BASE}/api/auth/mfa/status`)
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data) setMfaEnabled(data.mfa_enabled)
+            setMfaLoading(false)
+          })
+          .catch(() => setMfaLoading(false))
+      } else if (section === "ai-proxy") {
+        apiFetch(`${API_BASE}/api/setup`)
+          .then(res => res.ok ? res.json() : null)
+          .then(d => { if (d) setAiConfig({ provider: d.provider, model: d.model }) })
+          .catch(() => {})
+
+        apiFetch(`${API_BASE}/api/proxy/status`)
+          .then(res => res.ok ? res.json() : null)
+          .then(d => { if (d) setProxyStatus(d) })
+          .catch(() => {})
+      } else if (section === "den") {
+        apiFetch(`${API_BASE}/api/settings/den`)
+          .then(res => res.ok ? res.json() : null)
+          .then(d => {
+            if (d) {
+              setDenType(d.den_type)
+              setDenMaxRunners(d.den_max_runners)
+              setDenAwsKey(d.den_aws_access_key ?? "")
+              setDenAwsSecret(d.den_aws_secret_key ?? "")
+              setDenAwsRegion(d.den_aws_region ?? "eu-west-1")
+              setDenRunnerImage(d.den_runner_image ?? "")
+              setDenWarmRunners(d.den_warm_runners ?? 0)
+              setDenKillIfUnreachable(d.den_kill_if_unreachable !== false)
+            }
+          })
+          .catch(() => {})
+      }
+    } catch {
+      // ignore
+    }
+
+    setTransitionClass("transition-opacity duration-150")
+    setPanelOpacity("opacity-100")
+  }
+
   const [certStatus, setCertStatus] = useState<"idle" | "downloading" | "ok" | "error">("idle")
   const [certError, setCertError] = useState<string | null>(null)
   const [aiConfig, setAiConfig] = useState<{ provider?: string; model?: string } | null>(null)
   const [proxyStatus, setProxyStatus] = useState<ProxyStatus | null>(null)
-
-  const [certOpen, setCertOpen] = useState(true)
 
   // Change password state
   const [currentPw, setCurrentPw] = useState("")
@@ -325,6 +340,43 @@ export default function SettingsPage() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [backupStatus, setBackupStatus] = useState<"idle" | "loading" | "ok" | "error">("idle")
   const [backupError, setBackupError] = useState<string | null>(null)
+
+  // ── Resizable list panel ──────────────────────────────────────────────────
+  const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
+  const [isDragging, setIsDragging] = useState(false)
+  const listWidthRef = useRef(DEFAULT_LIST_WIDTH)
+  const dragging = useRef(false)
+  const dragStartX = useRef(0)
+  const dragStartWidth = useRef(DEFAULT_LIST_WIDTH)
+
+  useEffect(() => {
+    const saved = parseInt(localStorage.getItem(LIST_WIDTH_KEY) ?? "", 10)
+    if (!isNaN(saved) && saved >= MIN_LIST_WIDTH && saved <= MAX_LIST_WIDTH) {
+      listWidthRef.current = saved; setListWidth(saved)
+    }
+    setIsMounted(true)
+  }, [])
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    dragging.current = true; dragStartX.current = e.clientX
+    dragStartWidth.current = listWidthRef.current; setIsDragging(true); e.preventDefault()
+  }
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return
+      const next = Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, dragStartWidth.current + (e.clientX - dragStartX.current)))
+      listWidthRef.current = next; setListWidth(next)
+    }
+    const onUp = () => {
+      if (!dragging.current) return
+      dragging.current = false; setIsDragging(false)
+      localStorage.setItem(LIST_WIDTH_KEY, String(listWidthRef.current))
+    }
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+    return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp) }
+  }, [])
 
   const handleExport = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -621,26 +673,116 @@ export default function SettingsPage() {
   )
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-neutral-950 text-white">
+    <div className={`flex h-full bg-neutral-950 text-white overflow-hidden transition-opacity duration-150 ${isDragging ? "select-none" : ""} ${isMounted ? "opacity-100" : "opacity-0"}`}>
+      {/* Left: settings navigation list */}
+      <div
+        className="flex-shrink-0 border-r border-neutral-800 flex flex-col overflow-hidden"
+        style={{ width: `${listWidth}px` }}
+      >
+        {/* Left Nav Header */}
+        <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
+          <span className="text-xs font-semibold text-white">Settings</span>
+        </div>
 
-      {/* Page header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <h1 className="text-sm font-bold text-white">Settings</h1>
+        {/* Sidebar Nav Buttons */}
+        <div className="flex-1 overflow-y-auto">
+          <button
+            onClick={() => handleSectionChange("ca-cert")}
+            className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/60 transition-colors ${
+              activeSection === "ca-cert" ? "bg-neutral-800 text-white" : "hover:bg-neutral-900/80 text-neutral-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+              <span className="text-xs font-medium truncate flex-1">CA Certificate</span>
+              <ChevronRight className={`w-3 h-3 flex-shrink-0 ${activeSection === "ca-cert" ? "text-brand-400" : "text-neutral-700"}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleSectionChange("security")}
+            className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/60 transition-colors ${
+              activeSection === "security" ? "bg-neutral-800 text-white" : "hover:bg-neutral-900/80 text-neutral-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+              <span className="text-xs font-medium truncate flex-1">Security & Auth</span>
+              <ChevronRight className={`w-3 h-3 flex-shrink-0 ${activeSection === "security" ? "text-brand-400" : "text-neutral-700"}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleSectionChange("ai-proxy")}
+            className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/60 transition-colors ${
+              activeSection === "ai-proxy" ? "bg-neutral-800 text-white" : "hover:bg-neutral-900/80 text-neutral-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+              <span className="text-xs font-medium truncate flex-1">AI & Proxy</span>
+              <ChevronRight className={`w-3 h-3 flex-shrink-0 ${activeSection === "ai-proxy" ? "text-brand-400" : "text-neutral-700"}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleSectionChange("den")}
+            className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/60 transition-colors ${
+              activeSection === "den" ? "bg-neutral-800 text-white" : "hover:bg-neutral-900/80 text-neutral-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+              <span className="text-xs font-medium truncate flex-1">Runner Provider</span>
+              <ChevronRight className={`w-3 h-3 flex-shrink-0 ${activeSection === "den" ? "text-brand-400" : "text-neutral-700"}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleSectionChange("backup")}
+            className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/60 last:border-b-0 transition-colors ${
+              activeSection === "backup" ? "bg-neutral-800 text-white" : "hover:bg-neutral-900/80 text-neutral-300"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Download className="w-3.5 h-3.5 text-brand-400 shrink-0" />
+              <span className="text-xs font-medium truncate flex-1">Backup & Restore</span>
+              <ChevronRight className={`w-3 h-3 flex-shrink-0 ${activeSection === "backup" ? "text-brand-400" : "text-neutral-700"}`} />
+            </div>
+          </button>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        className="w-1 flex-shrink-0 bg-neutral-800 hover:bg-brand-500 transition-colors cursor-col-resize z-10"
+      />
 
-        {/* CA Certificate section */}
-        <div className="border-b border-neutral-800">
-          <SectionHeader
-            icon={<ShieldCheck className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="CA Certificate"
-            open={certOpen}
-            onToggle={() => setCertOpen(o => !o)}
-          />
-          {certOpen && (
-            <div className="px-4 py-3 space-y-3">
+      {/* Right Content Area */}
+      <div className="flex-1 bg-neutral-950 flex flex-col h-full overflow-hidden">
+        {/* Static Header */}
+        <div className="h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            {activeSection === "ca-cert" && <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />}
+            {activeSection === "security" && <ShieldAlert className="w-3.5 h-3.5 text-brand-400" />}
+            {activeSection === "ai-proxy" && <Activity className="w-3.5 h-3.5 text-brand-400" />}
+            {activeSection === "den" && <Cpu className="w-3.5 h-3.5 text-brand-400" />}
+            {activeSection === "backup" && <Download className="w-3.5 h-3.5 text-brand-400" />}
+            <span className="text-xs font-semibold text-white uppercase tracking-wider">
+              {activeSection === "ca-cert" && "CA Certificate"}
+              {activeSection === "security" && "Security & Authentication"}
+              {activeSection === "ai-proxy" && "AI Provider & Proxy"}
+              {activeSection === "den" && "Den (Runner Providers) Configuration"}
+              {activeSection === "backup" && "Backup & Restore Settings"}
+            </span>
+          </div>
+        </div>
+
+        {/* Fading Content Panel */}
+        <div className={`flex-1 overflow-y-auto ${transitionClass} ${panelOpacity}`}>
+          {activeSection === "ca-cert" && (
+            <div className="p-6 space-y-4 max-w-4xl">
               <p className="text-xs text-neutral-400">
                 Import this certificate into your browser or OS trust store to intercept HTTPS traffic without security warnings.
               </p>
@@ -673,7 +815,7 @@ export default function SettingsPage() {
               )}
 
               {/* Installation instructions */}
-              <div className="space-y-2 pt-1">
+              <div className="space-y-2 pt-2">
                 <p className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">Installation instructions</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 border border-neutral-800 divide-y md:divide-y-0 md:divide-x divide-neutral-800">
@@ -712,568 +854,539 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-neutral-600">
+                <p className="text-xs text-neutral-600 pt-2">
                   The certificate is generated by mitmproxy on first proxy start and is unique to this installation.
                   Stored at <code className="text-neutral-500">~/.mitmproxy/mitmproxy-ca-cert.pem</code> inside the container.
                 </p>
               </div>
             </div>
           )}
-        </div>
 
-        {/* Change Password + MFA — headers row */}
-        <div className="grid grid-cols-2 items-stretch border-b border-neutral-800">
-          {/* Change Password header */}
-          <div className="border-r border-neutral-800 flex">
-            <StaticSectionHeader
-              icon={<KeyRound className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-              label="Change Password"
-            />
-          </div>
-          {/* MFA header */}
-          <div className="flex">
-            <StaticSectionHeader
-              icon={<ShieldAlert className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-              label="Two-Factor Authentication"
-              badge={mfaBadge}
-            />
-          </div>
-        </div>
-
-        {/* Change Password + MFA — content row */}
-        <div className="grid grid-cols-2 border-b border-neutral-800">
-          {/* Change Password content */}
-          <div className="border-r border-neutral-800 px-4 py-3">
-            {pwStatus === "ok" ? (
-              <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs mb-3">
-                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>Password updated. You have been logged out of all sessions — please log in again.</span>
-              </div>
-            ) : null}
-
-            <form onSubmit={changePassword} className="space-y-3 max-w-sm">
-              <div className="space-y-1">
-                <label className="block text-xs text-neutral-400">Current password</label>
-                <Input
-                  type="password"
-                  value={currentPw}
-                  onChange={e => setCurrentPw(e.target.value)}
-                  placeholder="Current password"
-                  required
-                  className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs text-neutral-400">New password <span className="text-neutral-600">(min 8 chars)</span></label>
-                <Input
-                  type="password"
-                  value={newPw}
-                  onChange={e => setNewPw(e.target.value)}
-                  placeholder="New password"
-                  required
-                  minLength={8}
-                  className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs text-neutral-400">Confirm new password</label>
-                <Input
-                  type="password"
-                  value={confirmPw}
-                  onChange={e => setConfirmPw(e.target.value)}
-                  placeholder="Confirm new password"
-                  required
-                  className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                />
-              </div>
-
-              {pwError && (
-                <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{pwError}</span>
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                disabled={pwStatus === "saving"}
-                size="sm"
-                className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
-              >
-                {pwStatus === "saving" ? (
-                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
-                ) : (
-                  "Update password"
-                )}
-              </Button>
-            </form>
-          </div>
-
-          {/* MFA content */}
-          <div className="px-4 py-3 space-y-3">
-            {mfaLoading ? (
-              <div className="flex items-center gap-2 text-neutral-500 text-xs">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Loading…</span>
-              </div>
-            ) : mfaEnabled ? (
-              <>
-                <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
-                  <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Two-factor authentication is enabled. A TOTP code is required at every login.</span>
+          {activeSection === "security" && (
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl">
+              {/* Left Column: Change Password */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                  <KeyRound className="w-4 h-4 text-brand-400" />
+                  <h3 className="text-xs font-semibold text-white uppercase tracking-wider">Change Password</h3>
                 </div>
 
-                {disableStatus === "ok" ? (
-                  <div className="flex items-center gap-2 bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-2 text-xs">
+                {pwStatus === "ok" ? (
+                  <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs mb-3">
                     <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>MFA disabled successfully.</span>
+                    <span>Password updated. You have been logged out of all sessions — please log in again.</span>
+                  </div>
+                ) : null}
+
+                <form onSubmit={changePassword} className="space-y-3 max-w-sm">
+                  <div className="space-y-1">
+                    <label className="block text-xs text-neutral-400">Current password</label>
+                    <Input
+                      type="password"
+                      value={currentPw}
+                      onChange={e => setCurrentPw(e.target.value)}
+                      placeholder="Current password"
+                      required
+                      className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs text-neutral-400">New password <span className="text-neutral-600">(min 8 chars)</span></label>
+                    <Input
+                      type="password"
+                      value={newPw}
+                      onChange={e => setNewPw(e.target.value)}
+                      placeholder="New password"
+                      required
+                      minLength={8}
+                      className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs text-neutral-400">Confirm new password</label>
+                    <Input
+                      type="password"
+                      value={confirmPw}
+                      onChange={e => setConfirmPw(e.target.value)}
+                      placeholder="Confirm new password"
+                      required
+                      className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  {pwError && (
+                    <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>{pwError}</span>
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    disabled={pwStatus === "saving"}
+                    size="sm"
+                    className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
+                  >
+                    {pwStatus === "saving" ? (
+                      <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
+                    ) : (
+                      "Update password"
+                    )}
+                  </Button>
+                </form>
+              </div>
+
+              {/* Right Column: MFA */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                  <ShieldAlert className="w-4 h-4 text-brand-400" />
+                  <h3 className="text-xs font-semibold text-white uppercase tracking-wider">Two-Factor Authentication</h3>
+                  <div className="ml-auto">{mfaBadge}</div>
+                </div>
+
+                {mfaLoading ? (
+                  <div className="flex items-center gap-2 text-neutral-500 text-xs">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Loading…</span>
+                  </div>
+                ) : mfaEnabled ? (
+                  <>
+                    <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
+                      <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Two-factor authentication is enabled. A TOTP code is required at every login.</span>
+                    </div>
+
+                    {disableStatus === "ok" ? (
+                      <div className="flex items-center gap-2 bg-neutral-800 border border-neutral-700 text-neutral-300 px-3 py-2 text-xs">
+                        <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>MFA disabled successfully.</span>
+                      </div>
+                    ) : (
+                      <form onSubmit={disableMfa} className="space-y-3 max-w-sm">
+                        <p className="text-xs text-neutral-500">To disable MFA, enter your current password and a valid TOTP code.</p>
+                        <div className="space-y-1">
+                          <label className="block text-xs text-neutral-400">Current password</label>
+                          <Input
+                            type="password"
+                            value={disablePw}
+                            onChange={e => setDisablePw(e.target.value)}
+                            placeholder="Current password"
+                            required
+                            className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs text-neutral-400">Authentication code</label>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={disableCode}
+                            onChange={e => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            placeholder="000000"
+                            required
+                            className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 tracking-widest text-center"
+                          />
+                        </div>
+
+                        {disableError && (
+                          <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{disableError}</span>
+                          </div>
+                        )}
+
+                        <Button
+                          type="submit"
+                          disabled={disableStatus === "saving"}
+                          size="sm"
+                          className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white rounded-none"
+                        >
+                          {disableStatus === "saving" ? (
+                            <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Disabling...</>
+                          ) : (
+                            "Disable MFA"
+                          )}
+                        </Button>
+                      </form>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-neutral-400 leading-relaxed">
+                      Two-factor authentication adds an extra layer of security. After enabling, you will need a TOTP code from your authenticator app at every login.
+                    </p>
+                    <Button
+                      onClick={() => setShowMfaSetup(true)}
+                      size="sm"
+                      className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none animate-pulse"
+                    >
+                      Enable two-factor authentication
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeSection === "ai-proxy" && (
+            <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl">
+              {/* Left column: AI Provider config */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                  <Cpu className="w-4 h-4 text-brand-400" />
+                  <h3 className="text-xs font-semibold text-white uppercase tracking-wider">AI Configuration</h3>
+                </div>
+
+                {aiConfig?.provider ? (
+                  <div className="rounded border border-neutral-800 bg-neutral-900/30 divide-y divide-neutral-800 text-xs max-w-md">
+                    <div className="flex justify-between px-3 py-2.5">
+                      <span className="text-neutral-400">Provider</span>
+                      <span className="text-white font-medium capitalize">{aiConfig.provider}</span>
+                    </div>
+                    <div className="flex justify-between px-3 py-2.5">
+                      <span className="text-neutral-400">Default model</span>
+                      <span className="text-white font-medium">{aiConfig.model ?? "—"}</span>
+                    </div>
                   </div>
                 ) : (
-                  <form onSubmit={disableMfa} className="space-y-3 max-w-sm">
-                    <p className="text-xs text-neutral-500">To disable MFA, enter your current password and a valid TOTP code.</p>
+                  <p className="text-xs text-neutral-500">No AI provider configured.</p>
+                )}
+
+                <p className="text-xs text-neutral-400 leading-relaxed max-w-md">
+                  Re-run the setup wizard to change your AI provider, api base url, or API credentials.
+                </p>
+
+                <Link href="/setup">
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
+                  >
+                    Re-run setup wizard
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Right column: mitmproxy status */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                  <Activity className="w-4 h-4 text-brand-400" />
+                  <h3 className="text-xs font-semibold text-white uppercase tracking-wider">Mitmproxy Daemon Status</h3>
+                  <div className="ml-auto">{proxyBadge}</div>
+                </div>
+
+                <div className="divide-y divide-neutral-800 border border-neutral-800 bg-neutral-900/10 max-w-md rounded">
+                  <div className="px-3 py-2.5 flex items-center justify-between text-xs">
+                    <span className="text-neutral-500">Listen Address</span>
+                    <span className="text-white font-mono">{proxyStatus?.listen_address ?? "—"}</span>
+                  </div>
+                  <div className="px-3 py-2.5 flex items-center justify-between text-xs">
+                    <span className="text-neutral-500">Service Status</span>
+                    <span className={`font-mono font-medium ${proxyStatus?.running ? "text-green-400 animate-pulse" : "text-red-400"}`}>
+                      {proxyStatus == null ? "—" : proxyStatus.running ? "Running" : "Stopped"}
+                    </span>
+                  </div>
+                  {proxyStatus?.running && (
+                    <div className="px-3 py-2.5 flex items-center justify-between text-xs">
+                      <span className="text-neutral-500">Intercepted</span>
+                      <span className="text-white font-mono font-semibold">{proxyStatus.intercepted.toLocaleString()} requests</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === "den" && (
+            <div className="p-6 space-y-4 max-w-2xl">
+              <p className="text-xs text-neutral-400">
+                Configure how Ferret scales and manages scanning environments. Fallback to Local Den if AWS Fargate is not configured or disabled.
+              </p>
+
+              <form onSubmit={saveDenSettings} className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDenType("local")}
+                    className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
+                      ${denType === "local"
+                        ? "border-brand-500 bg-brand-500/10 text-white"
+                        : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
+                      }`}
+                  >
+                    <span className="text-sm font-semibold text-white leading-tight">🖥️ Local Den</span>
+                    <span className="text-[10px] text-neutral-500 mt-0.5">Run scanning tasks inside the local sandbox container</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDenType("aws")}
+                    className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
+                      ${denType === "aws"
+                        ? "border-brand-500 bg-brand-500/10 text-white"
+                        : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
+                      }`}
+                  >
+                    <span className="text-sm font-semibold text-white leading-tight">☁️ AWS Fargate Den</span>
+                    <span className="text-[10px] text-neutral-500 mt-0.5">Deploy ephemeral dynamic unprivileged cloud runner tasks</span>
+                  </button>
+                </div>
+
+                {denType === "aws" && (
+                  <div className="space-y-3 bg-neutral-900/40 p-3 border border-neutral-800">
                     <div className="space-y-1">
-                      <label className="block text-xs text-neutral-400">Current password</label>
+                      <label className="block text-[11px] text-neutral-400">AWS Access Key ID</label>
                       <Input
-                        type="password"
-                        value={disablePw}
-                        onChange={e => setDisablePw(e.target.value)}
-                        placeholder="Current password"
-                        required
+                        type="text"
+                        value={denAwsKey}
+                        onChange={e => setDenAwsKey(e.target.value)}
+                        placeholder="AKIA..."
                         className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="block text-xs text-neutral-400">Authentication code</label>
+                      <label className="block text-[11px] text-neutral-400">AWS Secret Access Key</label>
                       <Input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={disableCode}
-                        onChange={e => setDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        placeholder="000000"
-                        required
-                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 tracking-widest text-center"
+                        type="password"
+                        value={denAwsSecret}
+                        onChange={e => setDenAwsSecret(e.target.value)}
+                        placeholder={denAwsSecret ? "••••••••••••••••" : "Enter AWS Secret Key"}
+                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
                       />
                     </div>
-
-                    {disableError && (
-                      <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span>{disableError}</span>
-                      </div>
-                    )}
-
-                    <Button
-                      type="submit"
-                      disabled={disableStatus === "saving"}
-                      size="sm"
-                      className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white rounded-none"
-                    >
-                      {disableStatus === "saving" ? (
-                        <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Disabling...</>
-                      ) : (
-                        "Disable MFA"
-                      )}
-                    </Button>
-                  </form>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-neutral-400">
-                  Two-factor authentication adds an extra layer of security. After enabling, you will need a TOTP code from your authenticator app at every login.
-                </p>
-                <Button
-                  onClick={() => setShowMfaSetup(true)}
-                  size="sm"
-                  className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
-                >
-                  Enable two-factor authentication
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* AI Provider + Proxy — headers row */}
-        <div className="grid grid-cols-2 items-stretch border-b border-neutral-800">
-          {/* AI Provider header */}
-          <div className="border-r border-neutral-800 flex">
-            <StaticSectionHeader
-              icon={<Cpu className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-              label="AI Provider"
-            />
-          </div>
-          {/* Proxy header */}
-          <div className="flex">
-            <StaticSectionHeader
-              icon={<Activity className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-              label="Proxy"
-              badge={proxyBadge}
-            />
-          </div>
-        </div>
-
-        {/* AI Provider + Proxy — content row */}
-        <div className="grid grid-cols-2 border-b border-neutral-800">
-          {/* AI Provider content */}
-          <div className="border-r border-neutral-800 px-4 py-3 space-y-3">
-            {aiConfig?.provider ? (
-              <div className="rounded border border-neutral-800 bg-neutral-900 divide-y divide-neutral-800 text-xs">
-                <div className="flex justify-between px-3 py-2">
-                  <span className="text-neutral-400">Provider</span>
-                  <span className="text-white font-medium capitalize">{aiConfig.provider}</span>
-                </div>
-                <div className="flex justify-between px-3 py-2">
-                  <span className="text-neutral-400">Default model</span>
-                  <span className="text-white font-medium">{aiConfig.model ?? "—"}</span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-neutral-500">No AI provider configured.</p>
-            )}
-
-            <p className="text-xs text-neutral-400">
-              Re-run the setup wizard to change your AI provider or API key.
-            </p>
-
-            <Link href="/setup">
-              <Button
-                size="sm"
-                className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
-              >
-                Re-run setup wizard
-              </Button>
-            </Link>
-          </div>
-
-          {/* Proxy content */}
-          <div className="divide-y divide-neutral-800">
-            <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
-              <span className="text-neutral-500 w-36 shrink-0">Listen Address</span>
-              <span className="text-white font-mono">
-                {proxyStatus?.listen_address ?? "—"}
-              </span>
-            </div>
-            <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
-              <span className="text-neutral-500 w-36 shrink-0">Status</span>
-              <span className={`font-mono ${proxyStatus?.running ? "text-green-400" : "text-red-400"}`}>
-                {proxyStatus == null ? "—" : proxyStatus.running ? "Running" : "Stopped"}
-              </span>
-            </div>
-            {proxyStatus?.running && (
-              <div className="px-4 py-2.5 flex items-center gap-4 text-xs">
-                <span className="text-neutral-500 w-36 shrink-0">Intercepted</span>
-                <span className="text-white font-mono">{proxyStatus.intercepted.toLocaleString()} requests</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Den (Runner Providers) Section Header */}
-        <div className="grid grid-cols-1 items-stretch border-b border-neutral-800">
-          <StaticSectionHeader
-            icon={<Cpu className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="Den (Runner Providers) Configuration"
-          />
-        </div>
-
-        {/* Den Configuration Content */}
-        <div className="px-4 py-4 space-y-4 border-b border-neutral-800 max-w-xl">
-          <p className="text-xs text-neutral-400">
-            Configure how Ferret scales and manages scanning environments. Fallback to Local Den if AWS Fargate is not configured or disabled.
-          </p>
-
-          <form onSubmit={saveDenSettings} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setDenType("local")}
-                className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
-                  ${denType === "local"
-                    ? "border-brand-500 bg-brand-500/10 text-white"
-                    : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
-                  }`}
-              >
-                <span className="text-sm font-semibold text-white leading-tight">🖥️ Local Den</span>
-                <span className="text-[10px] text-neutral-500 mt-0.5">Run scanning tasks inside the local sandbox container</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDenType("aws")}
-                className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
-                  ${denType === "aws"
-                    ? "border-brand-500 bg-brand-500/10 text-white"
-                    : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
-                  }`}
-              >
-                <span className="text-sm font-semibold text-white leading-tight">☁️ AWS Fargate Den</span>
-                <span className="text-[10px] text-neutral-500 mt-0.5">Deploy ephemeral dynamic unprivileged cloud runner tasks</span>
-              </button>
-            </div>
-
-            {denType === "aws" && (
-              <div className="space-y-3 bg-neutral-900/40 p-3 border border-neutral-800">
-                <div className="space-y-1">
-                  <label className="block text-[11px] text-neutral-400">AWS Access Key ID</label>
-                  <Input
-                    type="text"
-                    value={denAwsKey}
-                    onChange={e => setDenAwsKey(e.target.value)}
-                    placeholder="AKIA..."
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[11px] text-neutral-400">AWS Secret Access Key</label>
-                  <Input
-                    type="password"
-                    value={denAwsSecret}
-                    onChange={e => setDenAwsSecret(e.target.value)}
-                    placeholder={denAwsSecret ? "••••••••••••••••" : "Enter AWS Secret Key"}
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[11px] text-neutral-400">AWS Region</label>
-                  <Input
-                    type="text"
-                    value={denAwsRegion}
-                    onChange={e => setDenAwsRegion(e.target.value)}
-                    placeholder="eu-west-1"
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[11px] text-neutral-400">Custom ECR/Docker Runner Image (Optional)</label>
-                  <Input
-                    type="text"
-                    value={denRunnerImage}
-                    onChange={e => setDenRunnerImage(e.target.value)}
-                    placeholder="e.g. 1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:latest"
-                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                  />
-                  <p className="text-[9px] text-neutral-500">
-                    Use a pre-cached ECR image inside your AWS account to eliminate internet pull latency.
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] text-neutral-400">Warm Idle Runners Count</label>
-                    <Input
-                      type="number"
-                      value={denWarmRunners}
-                      onChange={e => setDenWarmRunners(Math.max(0, parseInt(e.target.value) || 0))}
-                      className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                    />
-                    <p className="text-[9px] text-neutral-500">
-                      Keep these running/connected to eliminate scan start delays.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 pt-5">
-                    <input
-                      type="checkbox"
-                      id="kill_if_unreachable"
-                      checked={denKillIfUnreachable}
-                      onChange={e => setDenKillIfUnreachable(e.target.checked)}
-                      className="rounded-none border-neutral-700 bg-neutral-900 text-brand-500 focus:ring-brand-500"
-                    />
-                    <div className="space-y-0.5">
-                      <label htmlFor="kill_if_unreachable" className="block text-[11px] text-neutral-400 cursor-pointer">
-                        Kill on API loss
-                      </label>
+                    <div className="space-y-1">
+                      <label className="block text-[11px] text-neutral-400">AWS Region</label>
+                      <Input
+                        type="text"
+                        value={denAwsRegion}
+                        onChange={e => setDenAwsRegion(e.target.value)}
+                        placeholder="eu-west-1"
+                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[11px] text-neutral-400">Custom ECR/Docker Runner Image (Optional)</label>
+                      <Input
+                        type="text"
+                        value={denRunnerImage}
+                        onChange={e => setDenRunnerImage(e.target.value)}
+                        placeholder="e.g. 1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:latest"
+                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                      />
                       <p className="text-[9px] text-neutral-500">
-                        Auto-terminate runners if offline for over 3m (highly recommended).
+                        Use a pre-cached ECR image inside your AWS account to eliminate internet pull latency.
                       </p>
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] text-neutral-400">Warm Idle Runners Count</label>
+                        <Input
+                          type="number"
+                          value={denWarmRunners}
+                          onChange={e => setDenWarmRunners(Math.max(0, parseInt(e.target.value) || 0))}
+                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
+                        />
+                        <p className="text-[9px] text-neutral-500">
+                          Keep these running/connected to eliminate scan start delays.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 pt-5">
+                        <input
+                          type="checkbox"
+                          id="kill_if_unreachable"
+                          checked={denKillIfUnreachable}
+                          onChange={e => setDenKillIfUnreachable(e.target.checked)}
+                          className="rounded-none border-neutral-700 bg-neutral-900 text-brand-500 focus:ring-brand-500"
+                        />
+                        <div className="space-y-0.5">
+                          <label htmlFor="kill_if_unreachable" className="block text-[11px] text-neutral-400 cursor-pointer">
+                            Kill on API loss
+                          </label>
+                          <p className="text-[9px] text-neutral-500">
+                            Auto-terminate runners if offline for over 3m (highly recommended).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            <div className="space-y-1">
-              <label className="block text-[11px] text-neutral-400">Global Max Concurrent Runners</label>
-              <Input
-                type="number"
-                value={denMaxRunners}
-                onChange={e => setDenMaxRunners(Math.max(1, parseInt(e.target.value) || 1))}
-                className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 max-w-xs"
-              />
-              <p className="text-[10px] text-neutral-500">
-                Enforces a strict upper ceiling on concurrently active scanning tasks.
+                <div className="space-y-1">
+                  <label className="block text-[11px] text-neutral-400">Global Max Concurrent Runners</label>
+                  <Input
+                    type="number"
+                    value={denMaxRunners}
+                    onChange={e => setDenMaxRunners(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500 max-w-xs"
+                  />
+                  <p className="text-[10px] text-neutral-500">
+                    Enforces a strict upper ceiling on concurrently active scanning tasks.
+                  </p>
+                </div>
+
+                {denStatus === "ok" && (
+                  <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Den configuration updated successfully.</span>
+                  </div>
+                )}
+
+                {denError && (
+                  <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>{denError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="submit"
+                    disabled={denStatus === "saving"}
+                    size="sm"
+                    className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
+                  >
+                    {denStatus === "saving" ? (
+                      <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
+                    ) : (
+                      "Save Den Settings"
+                    )}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={testDenSettings}
+                    disabled={testingDen}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white rounded-none"
+                  >
+                    {testingDen ? (
+                      <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Testing...</>
+                    ) : (
+                      "Test Connection"
+                    )}
+                  </Button>
+                </div>
+
+                {testDenResult && (
+                  <div className={`text-xs p-2.5 border ${
+                    testDenResult.ok
+                      ? "bg-green-900/20 border-green-800 text-green-300"
+                      : "bg-red-900/20 border-red-800 text-red-300"
+                  }`}>
+                    {testDenResult.ok ? "✓ " : "✗ "}
+                    {testDenResult.detail}
+                  </div>
+                )}
+              </form>
+            </div>
+          )}
+
+          {activeSection === "backup" && (
+            <div className="p-6 space-y-6 max-w-xl">
+              <p className="text-xs text-neutral-400">
+                Export or import your configurations, custom runner environments, and project workspaces.
               </p>
-            </div>
 
-            {denStatus === "ok" && (
-              <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 text-green-300 px-3 py-2 text-xs">
-                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>Den configuration updated successfully.</span>
-              </div>
-            )}
+              <form onSubmit={handleExport} className="space-y-4">
+                <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Export Settings</h4>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  Select the components you want to back up, and specify an optional passphrase to secure your credentials:
+                </p>
 
-            {denError && (
-              <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{denError}</span>
-              </div>
-            )}
+                <div className="space-y-2 bg-neutral-900/50 p-3 border border-neutral-800">
+                  <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeSettings}
+                      onChange={e => setIncludeSettings(e.target.checked)}
+                      className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                    />
+                    <div>
+                      <span className="font-medium text-neutral-200">Global Configuration & Keys</span>
+                      <p className="text-[10px] text-neutral-500">AI model parameters, API keys, and endpoint variables.</p>
+                    </div>
+                  </label>
 
-            <div className="flex items-center gap-3">
-              <Button
-                type="submit"
-                disabled={denStatus === "saving"}
-                size="sm"
-                className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none"
-              >
-                {denStatus === "saving" ? (
-                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Saving...</>
-                ) : (
-                  "Save Den Settings"
-                )}
-              </Button>
+                  <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeDens}
+                      onChange={e => setIncludeDens(e.target.checked)}
+                      className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                    />
+                    <div>
+                      <span className="font-medium text-neutral-200">Runner Environments</span>
+                      <p className="text-[10px] text-neutral-500">Local and AWS Fargate runner specifications and credentials.</p>
+                    </div>
+                  </label>
 
-              <Button
-                type="button"
-                onClick={testDenSettings}
-                disabled={testingDen}
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white rounded-none"
-              >
-                {testingDen ? (
-                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Testing...</>
-                ) : (
-                  "Test Connection"
-                )}
-              </Button>
-            </div>
-
-            {testDenResult && (
-              <div className={`text-xs p-2 border ${
-                testDenResult.ok
-                  ? "bg-green-900/20 border-green-800 text-green-300"
-                  : "bg-red-900/20 border-red-800 text-red-300"
-              }`}>
-                {testDenResult.ok ? "✓ " : "✗ "}
-                {testDenResult.detail}
-              </div>
-            )}
-          </form>
-        </div>
-
-        {/* Backup & Restore Settings Section Header */}
-        <div className="grid grid-cols-1 items-stretch border-b border-neutral-800">
-          <StaticSectionHeader
-            icon={<Download className="w-4 h-4 text-brand-400 flex-shrink-0" />}
-            label="Backup & Restore Settings"
-          />
-        </div>
-
-        {/* Backup & Restore Settings Content */}
-        <div className="px-4 py-4 space-y-6 border-b border-neutral-800 max-w-xl">
-          <p className="text-xs text-neutral-400">
-            Export or import your configurations, custom runner environments, and project workspaces.
-          </p>
-
-          <form onSubmit={handleExport} className="space-y-4">
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Export Settings</h4>
-            <p className="text-xs text-neutral-500">
-              Select the components you want to back up, and specify an optional passphrase to secure your credentials:
-            </p>
-
-            <div className="space-y-2 bg-neutral-900/50 p-3 border border-neutral-800">
-              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeSettings}
-                  onChange={e => setIncludeSettings(e.target.checked)}
-                  className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
-                />
-                <div>
-                  <span className="font-medium text-neutral-200">Global Configuration & Keys</span>
-                  <p className="text-[10px] text-neutral-500">AI model parameters, API keys, and endpoint variables.</p>
+                  <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeProjects}
+                      onChange={e => setIncludeProjects(e.target.checked)}
+                      className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                    />
+                    <div>
+                      <span className="font-medium text-neutral-200">Projects & Workspace Data</span>
+                      <p className="text-[10px] text-neutral-500">Findings, captured HTTP proxy logs, workspace chats, and test runs.</p>
+                    </div>
+                  </label>
                 </div>
-              </label>
 
-              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={includeDens}
-                  onChange={e => setIncludeDens(e.target.checked)}
-                  className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
-                />
-                <div>
-                  <span className="font-medium text-neutral-200">Runner Environments</span>
-                  <p className="text-[10px] text-neutral-500">Local and AWS Fargate runner specifications and credentials.</p>
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Passphrase (optional encryption)"
+                    value={backupPassphrase}
+                    onChange={e => setBackupPassphrase(e.target.value)}
+                    className="h-7 text-xs bg-neutral-950 border-neutral-800 rounded-none w-full"
+                  />
+                  <Button type="submit" disabled={backupStatus === "loading"} size="sm" className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none shrink-0">
+                    {backupStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Download className="w-3 h-3 mr-1" />}
+                    Export Backup
+                  </Button>
                 </div>
-              </label>
+              </form>
 
-              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer select-none">
+              <div className="border-t border-neutral-800/60 my-4" />
+
+              <form onSubmit={handleImport} className="space-y-4">
+                <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Import Settings</h4>
+                <p className="text-xs text-neutral-500 leading-relaxed">Restore settings and project data from a previously saved backup file.</p>
+
                 <input
-                  type="checkbox"
-                  checked={includeProjects}
-                  onChange={e => setIncludeProjects(e.target.checked)}
-                  className="rounded-none border-neutral-800 bg-neutral-950 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5"
+                  type="file"
+                  accept=".json"
+                  onChange={e => setImportFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-xs text-neutral-400 file:mr-4 file:py-1 file:px-2 file:border file:border-neutral-800 file:text-xs file:font-semibold file:bg-neutral-900 file:text-neutral-200 hover:file:bg-neutral-800 cursor-pointer"
                 />
-                <div>
-                  <span className="font-medium text-neutral-200">Projects & Workspace Data</span>
-                  <p className="text-[10px] text-neutral-500">Findings, captured HTTP proxy logs, workspace chats, and test runs.</p>
+
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Decryption passphrase (if encrypted)"
+                    value={importPassphrase}
+                    onChange={e => setImportPassphrase(e.target.value)}
+                    className="h-7 text-xs bg-neutral-950 border-neutral-800 rounded-none w-full"
+                  />
+                  <Button type="submit" disabled={!importFile || backupStatus === "loading"} size="sm" className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none shrink-0">
+                    {backupStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Upload className="w-3 h-3 mr-1" />}
+                    Import Backup
+                  </Button>
                 </div>
-              </label>
-            </div>
+              </form>
 
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="Passphrase (optional encryption)"
-                value={backupPassphrase}
-                onChange={e => setBackupPassphrase(e.target.value)}
-                className="h-7 text-xs bg-neutral-950 border-neutral-800 rounded-none w-full"
-              />
-              <Button type="submit" disabled={backupStatus === "loading"} size="sm" className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none shrink-0">
-                {backupStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Download className="w-3 h-3 mr-1" />}
-                Export Backup
-              </Button>
-            </div>
-          </form>
-
-          <div className="border-t border-neutral-800/60 my-4" />
-
-          <form onSubmit={handleImport} className="space-y-4">
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Import Settings</h4>
-            <p className="text-xs text-neutral-500">Restore settings and project data from a previously saved backup file.</p>
-            
-            <input
-              type="file"
-              accept=".json"
-              onChange={e => setImportFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-xs text-neutral-400 file:mr-4 file:py-1 file:px-2 file:border file:border-neutral-800 file:text-xs file:font-semibold file:bg-neutral-900 file:text-neutral-200 hover:file:bg-neutral-800 cursor-pointer"
-            />
-
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="Decryption passphrase (if encrypted)"
-                value={importPassphrase}
-                onChange={e => setImportPassphrase(e.target.value)}
-                className="h-7 text-xs bg-neutral-950 border-neutral-800 rounded-none w-full"
-              />
-              <Button type="submit" disabled={!importFile || backupStatus === "loading"} size="sm" className="h-7 text-xs bg-brand-500 hover:bg-brand-600 text-neutral-900 rounded-none shrink-0">
-                {backupStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Upload className="w-3 h-3 mr-1" />}
-                Import Backup
-              </Button>
-            </div>
-          </form>
-
-          {backupStatus === "error" && backupError && (
-            <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{backupError}</span>
+              {backupStatus === "error" && backupError && (
+                <div className="flex items-start gap-2 bg-red-900/20 border border-red-800 text-red-300 px-3 py-2 text-xs">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{backupError}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
-
       </div>
 
       {/* MFA Setup Modal */}
