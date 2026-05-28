@@ -153,6 +153,7 @@ RUN setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
 
 COPY runner.py /runner.py
 COPY entrypoint.sh /entrypoint.sh
+COPY justfile /justfile
 RUN chmod +x /entrypoint.sh /runner.py
 
 CMD ["/entrypoint.sh"]

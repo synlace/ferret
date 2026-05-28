@@ -173,6 +173,7 @@ RUN setcap -r /usr/bin/nmap 2>/dev/null || true
 RUN setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
 
 COPY entrypoint.sh /entrypoint.sh
+COPY justfile /justfile
 RUN chmod +x /entrypoint.sh
 
 CMD ["/entrypoint.sh"]

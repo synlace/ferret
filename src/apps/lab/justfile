@@ -1,0 +1,97 @@
+# FERRET Lab Runner — Interactive Debugging & Diagnostics helper
+# Run inside an active ECS Exec shell or local runner shell
+
+# Show available diagnostic recipes (default)
+default:
+    @just --list
+
+# ── 1. ENVIRONMENT & DIAGNOSTICS ──────────────────────────────────────────────
+
+# Print current environment variables, runner registration info, and active processes
+status:
+    #!/usr/bin/env bash
+    echo "========================================="
+    echo "   FERRET RUNNER DIAGNOSTIC STATUS       "
+    echo "========================================="
+    echo "Runner ID  : ${FERRET_RUNNER_ID:-(Not Set)}"
+    echo "API URL    : ${FERRET_API_URL:-http://api:8000}"
+    echo "Key Prefix : ${FERRET_RUNNER_KEY:0:10}..."
+    echo "Hostname   : $(hostname)"
+    echo "IP Address : $(hostname -I | awk '{print $1}')"
+    echo "Disk Usage :"
+    df -h /data 2>/dev/null || df -h /
+    echo "-----------------------------------------"
+    echo "Active Processes:"
+    ps aux | grep -E "python3|runner|entrypoint" | grep -v grep
+
+# Verify liveness, reachability, and authentication to the FERRET API
+check-api:
+    #!/usr/bin/env bash
+    API="${FERRET_API_URL:-http://api:8000}"
+    echo "Testing connection to API at: ${API}"
+    
+    # 1. TCP Link Check
+    if ! curl -s -o /dev/null --connect-timeout 5 "${API}"; then
+        echo "❌ ERROR: Cannot reach API server. Check your VPC security groups and route tables."
+        exit 1
+    fi
+    echo "✅ TCP connection to API is active."
+
+    # 2. Authentication and Heartbeat Verification
+    echo "Testing runner authentication token..."
+    RESP=$(curl -s -w "\n%{http_code}" \
+        -H "X-Runner-Key: ${FERRET_RUNNER_KEY:-fr_local_dev_key_default_33794b}" \
+        -H "Content-Type: application/json" \
+        -d "{\"runner_id\": \"${FERRET_RUNNER_ID:-test-diagnostic}\", \"logs\": \"diagnostic test\"}" \
+        "${API}/api/runners/heartbeat")
+    
+    STATUS_CODE=$(echo "$RESP" | tail -n1)
+    BODY=$(echo "$RESP" | sed '$d')
+    
+    if [ "$STATUS_CODE" -eq 200 ]; then
+        echo "✅ Authenticated successfully! Heartbeat registration accepted by API."
+    else
+        echo "❌ ERROR: API rejected heartbeat with status $STATUS_CODE."
+        echo "Response body: $BODY"
+        exit 1
+    fi
+
+# View recent runner logs directly from the active daemon's rolling log buffer
+logs:
+    #!/usr/bin/env bash
+    API="${FERRET_API_URL:-http://api:8000}"
+    echo "Fetching active runner rolling logs..."
+    curl -s -H "X-Runner-Key: ${FERRET_RUNNER_KEY:-fr_local_dev_key_default_33794b}" \
+        "${API}/api/settings/dens" | jq -r --arg rid "${FERRET_RUNNER_ID}" '.[] | select(.id == $rid) | .logs' 2>/dev/null || tail -n 50 /var/log/syslog 2>/dev/null || echo "No direct log streaming endpoint found. Use 'ps aux' to inspect runner process."
+
+# ── 2. TOOL VERIFICATION ──────────────────────────────────────────────────────
+
+# Run a quick, unprivileged nmap port scan to ensure capability stripping is working
+test-nmap target="scanme.nmap.org":
+    @echo "Testing nmap execution (stripped capabilities)..."
+    nmap -sT -F {{target}}
+
+# Test whatweb fingerprinting capabilities on a target web server
+test-whatweb target="http://example.com":
+    @echo "Testing whatweb fingerprinting..."
+    whatweb {{target}}
+
+# Test directories and workspace paths on the runner
+list-workspaces:
+    @echo "Active target workspaces in /data:"
+    @ls -lah /data/ 2>/dev/null || echo "No workspace directory found at /data"
+
+# Verify that the FERRET proxy CA trust store is correctly configured
+check-ca:
+    #!/usr/bin/env bash
+    CERT_DST="/usr/local/share/ca-certificates/ferret-proxy-ca.crt"
+    if [ -f "$CERT_DST" ]; then
+        echo "✅ FERRET proxy CA certificate is installed."
+        openssl x509 -in "$CERT_DST" -noout -text | grep -E "Issuer:|Subject:"
+    else
+        echo "⚠️  FERRET proxy CA certificate NOT found in system store. Use 'just trust-ca' to import."
+    fi
+
+# Re-run trust-ca installation script
+trust-ca:
+    /entrypoint.sh
