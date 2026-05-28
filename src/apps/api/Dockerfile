@@ -30,10 +30,15 @@ RUN apt-get update && apt-get install -y \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
     && apt-get update \
     && apt-get install -y "docker-ce-cli=5:28.5.2-1~debian.12~bookworm" \
-    && apt-get install -y unzip \
+    && apt-get install -y unzip jq awscli \
     && curl -fsSL https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_$(dpkg --print-architecture).zip -o terraform.zip \
     && unzip terraform.zip -d /usr/local/bin/ \
     && rm terraform.zip \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then DIR="ubuntu_64bit"; else DIR="ubuntu_arm64"; fi \
+    && curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/$DIR/session-manager-plugin.deb" -o session-manager-plugin.deb \
+    && dpkg -i session-manager-plugin.deb \
+    && rm session-manager-plugin.deb \
     && apt-get purge -y --auto-remove unzip \
     && rm -rf /var/lib/apt/lists/*
 

@@ -159,13 +159,19 @@ den action="" arg1="" arg2="" arg3="" arg4="" arg5="":
         echo "  delete <den-id>                                         — Delete a Den configuration"
         echo "  create <den-id> <name> <local|fargate> <max-runners> [aws-region] [json] — Create or update a Den"
         echo "  destroy-runners [den-id]                                 — Stop/remove all active runners for a Den (or all if omitted)"
+        echo "  shell <runner-id> [command] [--verbose|-v]               — Drop into an interactive shell or run a command inside a Fargate runner"
+        echo "  runners                                                 — List all active registered runners"
         echo ""
         echo "Examples:"
         echo "  just den list"
         echo "  just den info local"
+        echo "  just den runners"
         echo "  just den destroy-runners"
         echo "  just den destroy-runners production-fargate"
         echo "  just den create production-fargate \"Prod Fargate\" fargate 15 us-east-1"
+        echo "  just den shell runner-fargate-aws-ed80f3"
+        echo "  just den shell runner-fargate-aws-ed80f3 \"pwd\""
+        echo "  just den shell runner-fargate-aws-ed80f3 \"pwd\" --verbose"
         ;;
       list)
         echo "Configured runner Dens:"
@@ -253,6 +259,53 @@ den action="" arg1="" arg2="" arg3="" arg4="" arg5="":
           fi
         fi
         echo "Runner cleanup complete."
+        ;;
+      shell)
+        runner_id="{{arg1}}"
+        cmd_arg="{{arg2}}"
+        if [[ -z "$runner_id" ]]; then
+          echo "Error: <runner-id> is required for 'shell' action"
+          echo "Usage: just den shell <runner-id> [command]"
+          exit 1
+        fi
+
+        # Determine how to execute commands inside the API container
+        EXEC_CMD=""
+        if docker compose -f docker-compose.prod.yml ps -q api &>/dev/null; then
+          EXEC_CMD="docker compose -f docker-compose.prod.yml exec -it api"
+        elif docker compose ps -q api &>/dev/null; then
+          EXEC_CMD="docker compose exec -it api"
+        else
+          CONTAINER_ID=$(docker ps -q --filter "name=ferret-api" | head -n 1)
+          if [[ -n "$CONTAINER_ID" ]]; then
+            EXEC_CMD="docker exec -it $CONTAINER_ID"
+          else
+            echo "Error: ferret-api container is not running."
+            exit 1
+          fi
+        fi
+
+        # Pass variables and command to execute within the API container
+        PY_ARGS=("$runner_id")
+        if [[ -n "$cmd_arg" ]]; then
+          PY_ARGS+=("$cmd_arg")
+        fi
+        if [[ -n "{{arg3}}" ]]; then
+          PY_ARGS+=("{{arg3}}")
+        fi
+        if [[ -n "{{arg4}}" ]]; then
+          PY_ARGS+=("{{arg4}}")
+        fi
+        if [[ -n "{{arg5}}" ]]; then
+          PY_ARGS+=("{{arg5}}")
+        fi
+
+        $EXEC_CMD python3 ecs_exec_jump.py "${PY_ARGS[@]}"
+        ;;
+      runners)
+        echo "Active registered runners:"
+        echo ""
+        curl -s "${API_URL}/api/runners" | python3 src/apps/api/format_runners.py
         ;;
       *)
         echo "Unknown den action: {{action}}"

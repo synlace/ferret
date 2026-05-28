@@ -278,6 +278,7 @@ export default function RunnersPage() {
   const [copiedKey, setCopiedKey] = useState(false)
   const [copiedLogs, setCopiedLogs] = useState(false)
   const [copiedAwsCmd, setCopiedAwsCmd] = useState(false)
+  const [copiedJustCmd, setCopiedJustCmd] = useState(false)
 
   // ── Resizable list panel ──────────────────────────────────────────────────
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
@@ -701,38 +702,74 @@ export default function RunnersPage() {
 
               {/* AWS Fargate CLI Exec Command Box */}
               {selectedRunner.id.startsWith("runner-fargate-") && (
-                <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-900/10">
+                <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-900/10 gap-px">
                   <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between">
                     <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Terminal className="w-3.5 h-3.5" />
-                      AWS ECS EXEC COMMAND (INTERACTIVE TTY)
+                      AWS ECS EXEC / INTERACTIVE SHELL CONNECT
                     </span>
-                    <button
-                      onClick={() => {
-                        const cmd = `TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == \$rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`;
-                        navigator.clipboard.writeText(cmd);
-                        setCopiedAwsCmd(true);
-                        setTimeout(() => setCopiedAwsCmd(false), 2000);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                      title="Copy full interactive CLI command to clipboard"
-                    >
-                      {copiedAwsCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                      {copiedAwsCmd ? "Copied!" : "Copy Command"}
-                    </button>
                   </div>
-                  <div className="p-4 space-y-3">
-                    <p className="text-[11px] text-neutral-400 leading-relaxed">
-                      This runner is deployed as an AWS Fargate task on the <code className="text-brand-400 font-mono">ferret-runners</code> cluster in <code className="text-brand-400 font-mono">eu-west-1</code>. 
-                      Since execution command capabilities are enabled, you can drop into an interactive shell session using the AWS CLI:
-                    </p>
-                    <div className="bg-neutral-950 p-3 rounded border border-neutral-800 relative">
-                      <code className="text-[10px] text-emerald-400 font-mono block whitespace-pre-wrap leading-relaxed select-all">
-                        {`TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == $rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \n\${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`}
-                      </code>
+                  <div className="p-4 space-y-4">
+                    {/* Option 1: Justfile Shell (Recommended) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-brand-400 uppercase tracking-wide">
+                          OPTION A: JUSTFILE (NESTED VIA API CONTAINER - RECOMMENDED)
+                        </span>
+                        <button
+                          onClick={() => {
+                            const cmd = `just den shell ${selectedRunner.id}`;
+                            navigator.clipboard.writeText(cmd);
+                            setCopiedJustCmd(true);
+                            setTimeout(() => setCopiedJustCmd(false), 2000);
+                          }}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                          title="Copy Justfile CLI command to clipboard"
+                        >
+                          {copiedJustCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedJustCmd ? "Copied!" : "Copy Command"}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-relaxed">
+                        Tunnels securely via your local Docker API container. <strong>Does not require local AWS CLI, credentials, or Session Manager plugins installed on your host.</strong>
+                      </p>
+                      <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
+                        <code className="text-[10px] text-emerald-400 font-mono block whitespace-pre-wrap leading-relaxed select-all">
+                          {`just den shell ${selectedRunner.id}`}
+                        </code>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-neutral-500 italic leading-relaxed">
-                      Requires the AWS CLI, session-manager-plugin, and authorized IAM credentials on your host machine.
+
+                    <div className="border-t border-neutral-800/60 my-2"></div>
+
+                    {/* Option 2: Native AWS CLI */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">
+                          OPTION B: NATIVE AWS CLI (DIRECT LOCAL HOST CONNECTION)
+                        </span>
+                        <button
+                          onClick={() => {
+                            const cmd = `TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == \$rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`;
+                            navigator.clipboard.writeText(cmd);
+                            setCopiedAwsCmd(true);
+                            setTimeout(() => setCopiedAwsCmd(false), 2000);
+                          }}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                          title="Copy AWS CLI query to clipboard"
+                        >
+                          {copiedAwsCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedAwsCmd ? "Copied!" : "Copy Command"}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-relaxed">
+                        Requires AWS CLI, <code>session-manager-plugin</code>, and authorized local AWS credentials configured on your host machine.
+                      </p>
+                      <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
+                        <code className="text-[10px] text-neutral-500 font-mono block whitespace-pre-wrap leading-relaxed select-all">
+                          {`TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == $rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \n\${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`}
+                        </code>
+                      </div>
                     </div>
                   </div>
                 </div>
