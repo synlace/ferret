@@ -153,6 +153,33 @@ resource "aws_iam_role_policy_attachment" "cw_logs" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
 }
 
+# ECS Exec Systems Manager Policy (enables secure, interactive shell sessions on task containers)
+resource "aws_iam_policy" "ecs_exec" {
+  name        = "ferretECSExecPolicy"
+  description = "Allows ECS Tasks to communicate with AWS Systems Manager for ECS Exec"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_exec_attachment" {
+  role       = aws_iam_role.ferret_execution_role.name
+  policy_arn = aws_iam_policy.ecs_exec.arn
+}
+
 # EC2 Instance Discovery Policy (allows the ferret-api container to discover EC2 private IP)
 resource "aws_iam_policy" "ec2_discovery" {
   name        = "ferretEC2InstanceDiscovery"

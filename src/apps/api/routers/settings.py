@@ -90,7 +90,10 @@ async def list_dens(request: Request):
                 "den_max_runners": den["max_runners"],
                 "den_aws_access_key": den.get("aws_access_key") or "",
                 "den_aws_secret_key": aws_secret_masked,
-                "den_aws_region": den.get("aws_region") or "eu-west-1"
+                "den_aws_region": den.get("aws_region") or "eu-west-1",
+                "den_runner_image": den.get("runner_image") or "",
+                "den_warm_runners": den.get("warm_runners") or 0,
+                "den_kill_if_unreachable": bool(den.get("kill_if_unreachable", 1))
             })
         return results
     except HTTPException:
@@ -604,9 +607,8 @@ async def export_settings(body: ExportRequest, request: Request):
 
         # Option: Global Settings
         if body.export_settings:
-            async with deps.db_client._db.execute("SELECT key, value FROM settings") as cur:
-                rows = await cur.fetchall()
-            raw_payload["settings"] = {r["key"]: r["value"] for r in rows if r["key"] != "gnaw_current_request"}
+            settings_dict = await deps.db_client.get_all_settings()
+            raw_payload["settings"] = {k: v for k, v in settings_dict.items() if k != "gnaw_current_request"}
 
         # Option: Runner Environments
         if body.export_dens:
@@ -713,15 +715,7 @@ async def import_settings(body: ImportRequest, request: Request):
                 # Prevent duplicate constraints - drop or update existing matches
                 if p_id == "temp":
                     # Clear child data for temp manually
-                    async with deps.db_client._db.execute(
-                        "SELECT rowid FROM requests WHERE project_id = 'temp'"
-                    ) as cur:
-                        rowids = [row[0] for row in await cur.fetchall()]
-                    for rowid in rowids:
-                        await deps.db_client._db.execute("DELETE FROM requests WHERE rowid = ?", (rowid,))
-                    await deps.db_client._db.execute("DELETE FROM findings WHERE project_id = 'temp'")
-                    await deps.db_client._db.execute("DELETE FROM chat_sessions WHERE project_id = 'temp'")
-                    await deps.db_client._db.execute("DELETE FROM test_runs WHERE project_id = 'temp'")
+                    await deps.db_client.reset_temp_project()
                     
                     # Update 'temp' project properties instead of creating a new one
                     await deps.db_client._db.execute(

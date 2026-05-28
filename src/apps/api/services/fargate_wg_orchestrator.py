@@ -256,6 +256,7 @@ class FargateWGOrchestrator:
                             cluster="ferret-runners",
                             taskDefinition=task_def_arn,
                             launchType="FARGATE",
+                            enableExecuteCommand=True,
                             overrides=per_task_overrides,
                             networkConfiguration={
                                 "awsvpcConfiguration": {

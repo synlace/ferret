@@ -731,6 +731,16 @@ class ProjectsMixin:
             remaining = (await cur.fetchone())[0]
         return remaining == 0
 
+    async def reset_temp_project(self) -> None:
+        """Clear all child data associated with the 'temp' project, leaving only the project row itself."""
+        await self.clear_all_requests(project_id="temp")
+        await self._db.execute("DELETE FROM findings WHERE project_id = 'temp'")
+        await self._db.execute("DELETE FROM chat_sessions WHERE project_id = 'temp'")
+        await self._db.execute("DELETE FROM test_runs WHERE project_id = 'temp'")
+        await self._db.execute("DELETE FROM project_api_keys WHERE project_id = 'temp'")
+        await self._db.execute("DELETE FROM spend_snapshots WHERE project_id = 'temp'")
+        await self._db.commit()
+
     async def promote_temp_project(self, new_name: str, new_id: str) -> "Project":
         """
         Copy the 'temp' project's data into a new permanent project.
@@ -1168,6 +1178,12 @@ class ProjectsMixin:
         ) as cur:
             row = await cur.fetchone()
         return row["value"] if row else None
+
+    async def get_all_settings(self) -> Dict[str, str]:
+        """Retrieve all global settings as a dictionary."""
+        async with self._db.execute("SELECT key, value FROM settings") as cur:
+            rows = await cur.fetchall()
+        return {row["key"]: row["value"] for row in rows}
 
     async def set_setting(self, key: str, value: str) -> None:
         await self._db.execute(

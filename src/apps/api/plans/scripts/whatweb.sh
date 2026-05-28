@@ -72,13 +72,15 @@ echo "[ferret] Step 3: Writing report..."
 
 REPORT="$WORKSPACE/notes/whatweb.md"
 
-python3 - <<PYEOF
+export TARGET DOMAIN WHATWEB_JSON REPORT
+
+python3 - <<'PYEOF'
 import json, sys, os
 
-target = "$TARGET"
-domain = "$DOMAIN"
-json_path = "$WHATWEB_JSON"
-report_path = "$REPORT"
+target = os.environ.get("TARGET", "")
+domain = os.environ.get("DOMAIN", "")
+json_path = os.environ.get("WHATWEB_JSON", "")
+report_path = os.environ.get("REPORT", "")
 
 plugins = {}
 status_code = None

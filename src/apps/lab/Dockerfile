@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y \
 #          openvpn, wireguard-tools (none relevant to HTTP/web testing)
 RUN apt-get update && apt-get install -y \
     nmap \
+    libcap2-bin \
     netcat-traditional \
     dnsenum \
     iproute2 \
@@ -145,6 +146,10 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 
 # ── Layer 11: Data directory & entrypoint ────────────────────────────────────
 RUN mkdir -p /data/tests
+
+# Remove file capabilities from nmap binary so it can run unprivileged under Docker/Fargate
+RUN setcap -r /usr/bin/nmap 2>/dev/null || true
+RUN setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
 
 COPY runner.py /runner.py
 COPY entrypoint.sh /entrypoint.sh

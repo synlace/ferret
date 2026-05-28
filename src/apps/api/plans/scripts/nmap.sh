@@ -66,7 +66,9 @@ echo "[ferret] Step 2: Writing report..."
 
 REPORT="$WORKSPACE/notes/nmap.md"
 
-python3 - <<PYEOF
+export TARGET DOMAIN NMAP_XML NMAP_TXT REPORT
+
+python3 - <<'PYEOF'
 import sys, os
 
 try:
@@ -75,11 +77,11 @@ except ImportError:
     print("[ferret] ERROR: xml.etree.ElementTree not available")
     sys.exit(1)
 
-target = "$TARGET"
-domain = "$DOMAIN"
-xml_path = "$NMAP_XML"
-txt_path = "$NMAP_TXT"
-report_path = "$REPORT"
+target = os.environ.get("TARGET", "")
+domain = os.environ.get("DOMAIN", "")
+xml_path = os.environ.get("NMAP_XML", "")
+txt_path = os.environ.get("NMAP_TXT", "")
+report_path = os.environ.get("REPORT", "")
 
 hosts = []
 

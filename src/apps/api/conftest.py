@@ -84,9 +84,10 @@ async def _make_mem_db() -> SQLiteClient:
     """Create and initialise an in-memory SQLiteClient."""
     db = SQLiteClient.__new__(SQLiteClient)
     db.db_path = Path(":memory:")
-    db._db = await aiosqlite.connect(":memory:")
+    db._db = await aiosqlite.connect(":memory:", isolation_level=None)
     db._db.row_factory = aiosqlite.Row
     db._lease_lock = asyncio.Lock()
+    db._write_lock = asyncio.Lock()
     await db._db.execute("PRAGMA journal_mode=WAL")
     await db._db.execute("PRAGMA foreign_keys=ON")
     await db._create_schema()

@@ -81,15 +81,17 @@ echo "[ferret] Step 3: Writing report..."
 
 REPORT="$WORKSPACE/notes/katana.md"
 
-python3 - <<PYEOF
+export TARGET DOMAIN KATANA_OUT KATANA_FIELDS REPORT
+
+python3 - <<'PYEOF'
 import sys, os, re
 from urllib.parse import urlparse
 
-target = "$TARGET"
-domain = "$DOMAIN"
-urls_path = "$KATANA_OUT"
-fields_path = "$KATANA_FIELDS"
-report_path = "$REPORT"
+target = os.environ.get("TARGET", "")
+domain = os.environ.get("DOMAIN", "")
+urls_path = os.environ.get("KATANA_OUT", "")
+fields_path = os.environ.get("KATANA_FIELDS", "")
+report_path = os.environ.get("REPORT", "")
 
 urls = []
 try:

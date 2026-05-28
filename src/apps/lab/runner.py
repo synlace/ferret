@@ -12,6 +12,7 @@ import tempfile
 import subprocess
 import requests
 import shutil
+import threading
 
 # Configure Logging
 from collections import deque
@@ -262,19 +263,24 @@ def poll_for_jobs():
     return False, False
 
 def main():
-    last_heartbeat = 0.0
+    # Start the non-blocking background heartbeat daemon thread
+    def heartbeat_loop():
+        while True:
+            try:
+                send_heartbeat()
+            except Exception as e:
+                logger.error(f"Error in background heartbeat thread: {e}")
+            time.sleep(HEARTBEAT_INTERVAL)
+
+    hb_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    hb_thread.start()
+    logger.info("Non-blocking background heartbeat thread started.")
+
     last_active_time = time.time()
     last_successful_contact = time.time()
     while True:
         now = time.time()
         contact_succeeded = False
-
-        # Heartbeat keeping registration active
-        if now - last_heartbeat >= HEARTBEAT_INTERVAL:
-            hb_ok = send_heartbeat()
-            if hb_ok:
-                contact_succeeded = True
-            last_heartbeat = now
 
         poll_ok, job_executed = poll_for_jobs()
         if poll_ok:

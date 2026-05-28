@@ -13,6 +13,7 @@ import asyncio
 import json
 import uuid
 import aiosqlite
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -33,6 +34,19 @@ class SQLiteClient(ProjectsMixin):
         # Serialises concurrent lease_pending_run calls — only one BEGIN IMMEDIATE
         # can be in flight at a time on a single aiosqlite connection.
         self._lease_lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Transaction context manager ensuring mutual exclusion for explicit SQLite transactions."""
+        async with self._write_lock:
+            await self._db.execute("BEGIN IMMEDIATE")
+            try:
+                yield
+                await self._db.commit()
+            except Exception:
+                await self._db.rollback()
+                raise
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -43,7 +57,7 @@ class SQLiteClient(ProjectsMixin):
         # Ensure the directory exists (sync is fine here — runs once at startup)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # Pass str — some sqlite3 builds don't accept pathlib.Path directly
-        self._db = await aiosqlite.connect(str(self.db_path))
+        self._db = await aiosqlite.connect(str(self.db_path), isolation_level=None)
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA busy_timeout=5000")

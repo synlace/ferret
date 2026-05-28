@@ -138,6 +138,7 @@ test component="":
 #   just den info <den-id>           — Show detailed config of a Den
 #   just den delete <den-id>         — Delete a Den configuration
 #   just den create <den-id> <name> <type> <max-runners> [aws-region]  — Create/update a Den
+#   just den destroy-runners [den-id] — Stop/remove all active runners for a Den (or all Dens if omitted)
 #   (Add 'json' as a final argument to any command to receive raw JSON output)
 den action="" arg1="" arg2="" arg3="" arg4="" arg5="":
     #!/usr/bin/env bash
@@ -157,11 +158,13 @@ den action="" arg1="" arg2="" arg3="" arg4="" arg5="":
         echo "  info <den-id> [json]                                     — Show detailed config of a Den"
         echo "  delete <den-id>                                         — Delete a Den configuration"
         echo "  create <den-id> <name> <local|fargate> <max-runners> [aws-region] [json] — Create or update a Den"
+        echo "  destroy-runners [den-id]                                 — Stop/remove all active runners for a Den (or all if omitted)"
         echo ""
         echo "Examples:"
         echo "  just den list"
         echo "  just den info local"
-        echo "  just den info local json"
+        echo "  just den destroy-runners"
+        echo "  just den destroy-runners production-fargate"
         echo "  just den create production-fargate \"Prod Fargate\" fargate 15 us-east-1"
         ;;
       list)
@@ -200,12 +203,67 @@ den action="" arg1="" arg2="" arg3="" arg4="" arg5="":
         echo "Creating/Updating Den '${den_id}'..."
         curl -s -X POST -H "Content-Type: application/json" -d "$payload" "${API_URL}/api/settings/dens" | python3 src/apps/api/format_den.py --mode info $JSON_FLAG
         ;;
+      destroy-runners | clean)
+        den_id="{{arg1}}"
+        if [[ -z "$den_id" || "$den_id" == "all" ]]; then
+          echo "Destroying all runners across all Dens..."
+          # Clean Fargate tasks
+          if command -v aws &>/dev/null; then
+            echo "Stopping active AWS Fargate tasks in cluster 'ferret-runners'..."
+            TASK_ARNS=$(aws ecs list-tasks --cluster "ferret-runners" --query "taskArns" --output text 2>/dev/null || true)
+            if [[ -n "$TASK_ARNS" && "$TASK_ARNS" != "None" ]]; then
+              for task in $TASK_ARNS; do
+                echo "  -> Stopping Fargate task: $task"
+                aws ecs stop-task --cluster "ferret-runners" --task "$task" >/dev/null 2>&1 || true
+              done
+              echo "Waiting for Fargate tasks to fully stop..."
+              aws ecs wait tasks-stopped --cluster "ferret-runners" --tasks $TASK_ARNS 2>/dev/null || true
+            else
+              echo "No active Fargate tasks found."
+            fi
+          fi
+          # Clean Local docker
+          if command -v docker &>/dev/null; then
+            echo "Stopping and removing local Docker runner containers..."
+            docker ps -aq --filter "name=ferret-runner-" | xargs -r docker rm -f 2>/dev/null || true
+          fi
+        elif [[ "$den_id" == "local" ]]; then
+          echo "Destroying local Docker runners..."
+          if command -v docker &>/dev/null; then
+            docker ps -aq --filter "name=ferret-runner-" | xargs -r docker rm -f 2>/dev/null || true
+          fi
+        else
+          # Assume specific Fargate or custom Den
+          echo "Destroying runners on Fargate Den: ${den_id}..."
+          if command -v aws &>/dev/null; then
+            # We can filter Fargate tasks by checking FERRET_RUNNER_ID prefixed with runner-fargate-<den_id>
+            echo "Querying tasks in cluster 'ferret-runners' to find runners for Den: ${den_id}..."
+            TASK_ARNS=$(aws ecs list-tasks --cluster "ferret-runners" --query "taskArns" --output text 2>/dev/null || true)
+            if [[ -n "$TASK_ARNS" && "$TASK_ARNS" != "None" ]]; then
+              for task in $TASK_ARNS; do
+                RUNNER_ID=$(aws ecs describe-tasks --cluster "ferret-runners" --tasks "$task" --query "tasks[0].overrides.containerOverrides[0].environment[?name=='FERRET_RUNNER_ID'].value" --output text 2>/dev/null || true)
+                if [[ "$RUNNER_ID" == *"runner-fargate-${den_id}-"* ]]; then
+                  echo "  -> Stopping Fargate task: $task ($RUNNER_ID)"
+                  aws ecs stop-task --cluster "ferret-runners" --task "$task" >/dev/null 2>&1 || true
+                fi
+              done
+            else
+              echo "No active Fargate tasks found."
+            fi
+          fi
+        fi
+        echo "Runner cleanup complete."
+        ;;
       *)
         echo "Unknown den action: {{action}}"
         echo "Run 'just den' or 'just den help' for usage instructions."
         exit 1
         ;;
     esac
+
+# Stop and remove all active local and AWS Fargate runner instances
+destroy-runners:
+    just den destroy-runners all
 
 # Delete all projects (DANGER: wipes all project data)
 delete-all-projects:
@@ -237,6 +295,18 @@ reset:
     read -r -p "⚠️  This will wipe ALL Ferret data. Type 'yes' to confirm: " confirm
     [[ "$confirm" == "yes" ]] || { echo "Aborted."; exit 1; }
     echo ""
+
+    # Stop any active AWS Fargate task runners to prevent orphaned containers/duplicate spawning
+    if command -v aws &>/dev/null; then
+        echo "Stopping active AWS Fargate task runners to prevent duplicate spawning..."
+        TASK_ARNS=$(aws ecs list-tasks --cluster "ferret-runners" --query "taskArns" --output text 2>/dev/null || true)
+        if [[ -n "$TASK_ARNS" && "$TASK_ARNS" != "None" ]]; then
+            for task in $TASK_ARNS; do
+                aws ecs stop-task --cluster "ferret-runners" --task "$task" >/dev/null 2>&1 || true
+            done
+        fi
+    fi
+
     read -r -p "Do you also want to destroy all AWS resources first? (y/N): " destroy_aws
     if [[ "$destroy_aws" =~ ^[Yy](es)?$ ]]; then
         echo "Wiping AWS resources before deleting the database..."

@@ -206,23 +206,7 @@ async def reset_database(confirm: str = ""):
             pid = p["id"]
             if pid == "temp":
                 # Clear temp data but keep the project row
-                await deps.db_client.clear_all_requests(project_id="temp")
-                await deps.db_client._db.execute(
-                    "DELETE FROM findings WHERE project_id = 'temp'"
-                )
-                await deps.db_client._db.execute(
-                    "DELETE FROM chat_sessions WHERE project_id = 'temp'"
-                )
-                await deps.db_client._db.execute(
-                    "DELETE FROM test_runs WHERE project_id = 'temp'"
-                )
-                await deps.db_client._db.execute(
-                    "DELETE FROM project_api_keys WHERE project_id = 'temp'"
-                )
-                await deps.db_client._db.execute(
-                    "DELETE FROM spend_snapshots WHERE project_id = 'temp'"
-                )
-                await deps.db_client._db.commit()
+                await deps.db_client.reset_temp_project()
             else:
                 await deps.db_client.delete_project(pid)
         # Reset active project setting to temp

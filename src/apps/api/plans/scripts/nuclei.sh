@@ -69,13 +69,15 @@ echo "[ferret] Step 2: Writing report..."
 
 REPORT="$WORKSPACE/notes/nuclei.md"
 
-python3 - <<PYEOF
+export TARGET DOMAIN NUCLEI_JSON REPORT
+
+python3 - <<'PYEOF'
 import json, sys, os
 
-target = "$TARGET"
-domain = "$DOMAIN"
-jsonl_path = "$NUCLEI_JSON"
-report_path = "$REPORT"
+target = os.environ.get("TARGET", "")
+domain = os.environ.get("DOMAIN", "")
+jsonl_path = os.environ.get("NUCLEI_JSON", "")
+report_path = os.environ.get("REPORT", "")
 
 findings = []
 severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}

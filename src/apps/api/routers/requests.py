@@ -110,12 +110,7 @@ async def annotate_request(request_id: str):
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # Resolve project for this request
-    async with deps.db_client._db.execute(
-        "SELECT project_id FROM requests WHERE id = ?", (request_id,)
-    ) as _cur:
-        _row = await _cur.fetchone()
-    _req_project_id = (_row["project_id"] if _row and _row["project_id"] else "temp")
+    _req_project_id = req.project_id if req.project_id else "temp"
 
     _api_key = await deps.get_key_for_project(_req_project_id)
     if not _api_key:
