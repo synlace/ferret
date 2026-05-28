@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { JetBrains_Mono as JetBrainsMono, Geist_Mono as GeistMono } from "next/font/google"
+import "@xterm/xterm/css/xterm.css"
 import "./globals.css"
 import { ProjectProvider } from "./context/project-context"
 import { AuthProvider } from "./context/auth-context"

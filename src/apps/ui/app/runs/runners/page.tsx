@@ -3,7 +3,7 @@
 import { apiFetch } from "@/lib/api-fetch"
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import {
-  Key, Plus, Trash2, Cpu, Check, Copy, RefreshCw, Loader2, X, AlertCircle, History, Download, Search, Terminal, ChevronDown, ChevronRight, Folder
+  Key, Plus, Trash2, Cpu, Check, Copy, RefreshCw, Loader2, X, AlertCircle, History, Download, Search, Terminal, ChevronDown, ChevronRight, Folder, Maximize2, Minimize2, HelpCircle
 } from "lucide-react"
 import { useProject } from "../../context/project-context"
 
@@ -74,6 +74,170 @@ function parseUtcDate(ts: string): Date {
     return new Date(ts + "Z")
   }
   return new Date(ts)
+}
+
+interface LiveShellTerminalProps {
+  runnerId: string
+  visible: boolean
+  isMaximized?: boolean
+  onRestart?: () => void
+}
+
+function LiveShellTerminal({ runnerId, visible, isMaximized = false, onRestart }: LiveShellTerminalProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const terminalRef = useRef<any>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const fitAddonRef = useRef<any>(null)
+
+  const connect = useCallback(() => {
+    // Close any existing connection
+    if (wsRef.current) {
+      wsRef.current.onclose = null
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
+    const terminal = terminalRef.current
+    if (!terminal) return
+
+    terminal.write("\r\n\x1b[33m=== Connecting... ===\x1b[0m\r\n")
+
+    const isHttps = API_BASE.startsWith("https://")
+    const proto = isHttps ? "wss:" : "ws:"
+    const apiHost = API_BASE.replace(/^https?:\/\//, "")
+    const wsUrl = `${proto}//${apiHost}/api/runners/${runnerId}/shell`
+
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      terminal.write("\r\n\x1b[32m=== Connected to Fargate Live Shell ===\x1b[0m\r\n")
+      if (terminal.cols > 0 && terminal.rows > 0) {
+        const dims = { type: "resize", cols: terminal.cols, rows: terminal.rows }
+        ws.send(JSON.stringify(dims))
+      }
+    }
+
+    ws.onmessage = (event) => {
+      if (event.data instanceof Blob) {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (reader.result) terminal.write(new Uint8Array(reader.result as ArrayBuffer))
+        }
+        reader.readAsArrayBuffer(event.data)
+      } else if (typeof event.data === "string") {
+        terminal.write(event.data)
+      }
+    }
+
+    ws.onerror = () => {
+      terminal.write("\r\n\x1b[31m=== Connection Error ===\x1b[0m\r\n")
+    }
+
+    ws.onclose = () => {
+      terminal.write("\r\n\x1b[31m=== Connection Closed ===\x1b[0m\r\n")
+    }
+
+    terminal.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(data)
+    })
+  }, [runnerId])
+
+  // Init terminal once on mount
+  useEffect(() => {
+    let active = true
+    let cleanupResize: (() => void) | undefined
+
+    async function initTerminal() {
+      if (!containerRef.current) return
+
+      const { Terminal } = await import("@xterm/xterm")
+      const { FitAddon } = await import("@xterm/addon-fit")
+
+      if (!active) return
+
+      // Clear the container to avoid duplicate terminal mounts
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ""
+      }
+
+      const terminal = new Terminal({
+        cursorBlink: true,
+        fontSize: 11,
+        fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+        theme: { background: "#0a0a0a", foreground: "#e5e5e5", cursor: "#10b981" },
+        scrollbarDisabled: true,
+      })
+
+      const fitAddon = new FitAddon()
+      terminal.loadAddon(fitAddon)
+      terminal.open(containerRef.current)
+      
+      try {
+        fitAddon.fit()
+      } catch (e) {}
+
+      terminalRef.current = terminal
+      fitAddonRef.current = fitAddon
+
+      connect()
+
+      terminal.focus()
+
+      const handleResize = () => {
+        try {
+          fitAddon.fit()
+          if (terminal.cols > 0 && terminal.rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
+          }
+        } catch (e) {}
+      }
+
+      window.addEventListener("resize", handleResize)
+      cleanupResize = () => window.removeEventListener("resize", handleResize)
+    }
+
+    initTerminal()
+
+    return () => {
+      active = false
+      cleanupResize?.()
+      if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close() }
+      terminalRef.current?.dispose()
+    }
+  }, [runnerId]) // only remount if runner changes
+
+  // Refit when visibility is restored or maximized state changes
+  useEffect(() => {
+    if (visible && fitAddonRef.current && terminalRef.current) {
+      const timer = setTimeout(() => {
+        try {
+          fitAddonRef.current.fit()
+          if (terminalRef.current.cols > 0 && terminalRef.current.rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "resize", cols: terminalRef.current.cols, rows: terminalRef.current.rows }))
+          }
+          terminalRef.current.focus()
+        } catch (e) {}
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [visible, isMaximized])
+
+  return (
+    <div className={`w-full h-full bg-neutral-950 overflow-hidden flex flex-col${visible ? "" : " hidden"}`}>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .xterm-viewport::-webkit-scrollbar {
+          display: none !important;
+        }
+        .xterm-viewport {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+          overflow-y: hidden !important;
+        }
+      `}} />
+      <div ref={containerRef} className="flex-1 w-full h-full" />
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +420,7 @@ export default function RunnersPage() {
 
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedDens, setExpandedDens] = useState<Record<string, boolean>>({})
+  const [expandedSubdirs, setExpandedSubdirs] = useState<Record<string, boolean>>({})
 
   const toggleDen = (denId: string) => {
     setExpandedDens(prev => {
@@ -263,6 +428,16 @@ export default function RunnersPage() {
       return {
         ...prev,
         [denId]: !current
+      }
+    })
+  }
+
+  const toggleSubdir = (key: string, defaultVal: boolean) => {
+    setExpandedSubdirs(prev => {
+      const current = prev[key] ?? defaultVal
+      return {
+        ...prev,
+        [key]: !current
       }
     })
   }
@@ -279,7 +454,35 @@ export default function RunnersPage() {
   const [copiedLogs, setCopiedLogs] = useState(false)
   const [copiedAwsCmd, setCopiedAwsCmd] = useState(false)
   const [copiedJustCmd, setCopiedJustCmd] = useState(false)
-  const [activeExecTab, setActiveExecTab] = useState<'A' | 'B'>('A')
+  const [activeExecTab, setActiveExecTab] = useState<'A' | 'B' | 'C'>('C')
+  const [isShellMaximized, setIsShellMaximized] = useState(false)
+  const [showTmuxHelp, setShowTmuxHelp] = useState(false)
+  // Incrementing this key forces LiveShellTerminal to remount (explicit restart)
+  const [shellRestartKey, setShellRestartKey] = useState(0)
+  const [isRestarting, setIsRestarting] = useState(false)
+
+  useEffect(() => {
+    if (!showTmuxHelp) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowTmuxHelp(false)
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [showTmuxHelp])
+
+  const handleRestartShell = useCallback(async () => {
+    if (!selectedItem || selectedItem === "keys") return
+    setIsRestarting(true)
+    try {
+      await apiFetch(`/api/runners/${selectedItem}/shell`, { method: "DELETE" })
+    } catch (e) {
+      // Best-effort — even if DELETE fails (e.g. session already gone), still reconnect
+    }
+    setShellRestartKey(k => k + 1)
+    setIsRestarting(false)
+  }, [selectedItem])
 
   // ── Resizable list panel ──────────────────────────────────────────────────
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
@@ -444,10 +647,19 @@ export default function RunnersPage() {
       }
 
       const isExpanded = searchQuery ? true : (expandedDens[den.id] ?? true)
-      const onlineCount = denRunners.filter(r => {
+      
+      const onlineRunners = denRunners.filter(r => {
         const lastHb = parseUtcDate(r.last_heartbeat).getTime()
         return Date.now() - lastHb < 30000
-      }).length
+      })
+
+      const offlineRunners = denRunners.filter(r => {
+        const lastHb = parseUtcDate(r.last_heartbeat).getTime()
+        return Date.now() - lastHb >= 30000
+      })
+
+      const isOnlineExpanded = searchQuery ? true : (expandedSubdirs[`${den.id}-online`] ?? true)
+      const isOfflineExpanded = searchQuery ? true : (expandedSubdirs[`${den.id}-offline`] ?? false)
 
       return (
         <div key={den.id} className="space-y-1 select-none">
@@ -462,37 +674,105 @@ export default function RunnersPage() {
             <Folder className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
             <span className="truncate flex-1 uppercase tracking-wider text-[10px]">{den.name}</span>
             <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
-              {onlineCount}/{denRunners.length}
+              {onlineRunners.length}/{denRunners.length}
             </span>
           </div>
 
           {/* Folder Children List */}
           {isExpanded && (
-            <div className="pl-3 border-l border-neutral-800/60 ml-3.5 space-y-1">
+            <div className="pl-3 space-y-1.5">
               {denRunners.length === 0 ? (
                 <div className="text-[10px] text-neutral-600 italic px-2 py-1">No agents.</div>
               ) : (
-                denRunners.map(r => {
-                  const lastHb = parseUtcDate(r.last_heartbeat).getTime()
-                  const isOnline = Date.now() - lastHb < 30000
-                  const active = selectedItem === r.id
-
-                  return (
-                    <button
-                      key={r.id}
-                      onClick={() => setSelectedItem(r.id)}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors text-[11px] ${
-                        active
-                          ? "bg-neutral-800 text-white font-medium"
-                          : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
-                      }`}
+                <>
+                  {/* Online Subdirectory */}
+                  <div className="space-y-1">
+                    <div 
+                      onClick={() => toggleSubdir(`${den.id}-online`, true)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-white hover:bg-neutral-800/20 transition-colors text-[10px] font-semibold cursor-pointer"
                     >
-                      <Cpu className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate flex-1 font-mono">{r.id}</span>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOnline ? "bg-green-500 animate-pulse" : "bg-neutral-600"}`} />
-                    </button>
-                  )
-                })
+                      <span className="text-neutral-500 hover:text-white shrink-0">
+                        {isOnlineExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+                      </span>
+                      <Folder className="w-3 h-3 text-green-500/80 shrink-0" />
+                      <span className="truncate flex-1 uppercase tracking-wider">Online</span>
+                      <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
+                        {onlineRunners.length}
+                      </span>
+                    </div>
+
+                    {isOnlineExpanded && (
+                      <div className="pl-2.5 space-y-1">
+                        {onlineRunners.length === 0 ? (
+                          <div className="text-[9px] text-neutral-600 italic px-2 py-0.5">No online agents.</div>
+                        ) : (
+                          onlineRunners.map(r => {
+                            const active = selectedItem === r.id
+                            return (
+                              <button
+                                key={r.id}
+                                onClick={() => setSelectedItem(r.id)}
+                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left transition-colors text-[11px] ${
+                                  active
+                                    ? "bg-neutral-800 text-white font-medium"
+                                    : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
+                                }`}
+                              >
+                                <Cpu className="w-3 h-3 shrink-0 text-neutral-500" />
+                                <span className="truncate flex-1 font-mono text-[10px]">{r.id}</span>
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500 animate-pulse" />
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Offline Subdirectory */}
+                  <div className="space-y-1">
+                    <div 
+                      onClick={() => toggleSubdir(`${den.id}-offline`, false)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-white hover:bg-neutral-800/20 transition-colors text-[10px] font-semibold cursor-pointer"
+                    >
+                      <span className="text-neutral-500 hover:text-white shrink-0">
+                        {isOfflineExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+                      </span>
+                      <Folder className="w-3 h-3 text-neutral-600 shrink-0" />
+                      <span className="truncate flex-1 uppercase tracking-wider">Offline</span>
+                      <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
+                        {offlineRunners.length}
+                      </span>
+                    </div>
+
+                    {isOfflineExpanded && (
+                      <div className="pl-2.5 space-y-1">
+                        {offlineRunners.length === 0 ? (
+                          <div className="text-[9px] text-neutral-600 italic px-2 py-0.5">No offline agents.</div>
+                        ) : (
+                          offlineRunners.map(r => {
+                            const active = selectedItem === r.id
+                            return (
+                              <button
+                                key={r.id}
+                                onClick={() => setSelectedItem(r.id)}
+                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left transition-colors text-[11px] ${
+                                  active
+                                    ? "bg-neutral-800 text-white font-medium"
+                                    : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
+                                }`}
+                              >
+                                <Cpu className="w-3 h-3 shrink-0 text-neutral-500" />
+                                <span className="truncate flex-1 font-mono text-[10px]">{r.id}</span>
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-neutral-600" />
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -709,8 +989,37 @@ export default function RunnersPage() {
                     <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between flex-shrink-0">
                       <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
                         <Terminal className="w-3.5 h-3.5" />
-                        AWS ECS EXEC / INTERACTIVE SHELL CONNECT
+                        CONTAINER TERMINAL
                       </span>
+                      {activeExecTab === "C" && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setShowTmuxHelp(true)}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors"
+                            title="Show tmux shortcuts help"
+                          >
+                            <HelpCircle className="w-3 h-3" />
+                            Help
+                          </button>
+                          <button
+                            onClick={handleRestartShell}
+                            disabled={isRestarting}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors disabled:opacity-50"
+                            title="Kill tmux session and reconnect"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isRestarting ? "animate-spin" : ""}`} />
+                            Restart
+                          </button>
+                          <button
+                            onClick={() => setIsShellMaximized(true)}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors"
+                            title="Maximize terminal"
+                          >
+                            <Maximize2 className="w-3 h-3" />
+                            Maximize
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="flex border-b border-neutral-800 bg-neutral-900/20 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">
                       <button
@@ -721,7 +1030,17 @@ export default function RunnersPage() {
                             : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
                         }`}
                       >
-                        Justfile (Recommended)
+                        Justfile CLI
+                      </button>
+                      <button
+                        onClick={() => setActiveExecTab("C")}
+                        className={`flex-1 py-2 text-center transition-colors border-r border-neutral-800 ${
+                          activeExecTab === "C"
+                            ? "bg-neutral-950 text-brand-400 border-b-2 border-brand-500"
+                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
+                        }`}
+                      >
+                        Live Shell
                       </button>
                       <button
                         onClick={() => setActiveExecTab("B")}
@@ -734,10 +1053,59 @@ export default function RunnersPage() {
                         Native AWS CLI
                       </button>
                     </div>
-                    <div className="p-4 flex-1 overflow-y-auto">
-                      {activeExecTab === "A" ? (
-                        /* Option A: Justfile Shell (Recommended) */
-                        <div className="space-y-2">
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                      {/* LiveShellTerminal stays mounted regardless of tab — only CSS-hidden when not active */}
+                      <div className={`flex-1 flex flex-col overflow-hidden min-h-0${activeExecTab === "C" ? "" : " hidden"}`}>
+                        <div className={isShellMaximized ? "fixed inset-0 z-50 p-6 bg-neutral-950 flex flex-col" : "flex-1 flex flex-col min-h-0 relative overflow-hidden"}>
+                           {isShellMaximized && (
+                            <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between flex-shrink-0 mb-4 rounded-lg">
+                              <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Terminal className="w-3.5 h-3.5" />
+                                CONTAINER TERMINAL (MAXIMIZED)
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => setShowTmuxHelp(true)}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                                  title="Show tmux shortcuts help"
+                                >
+                                  <HelpCircle className="w-3.5 h-3.5" />
+                                  Help
+                                </button>
+                                <button
+                                  onClick={handleRestartShell}
+                                  disabled={isRestarting}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors disabled:opacity-50"
+                                >
+                                  <RefreshCw className={`w-3 h-3 ${isRestarting ? "animate-spin" : ""}`} />
+                                  Restart
+                                </button>
+                                <button
+                                  onClick={() => setIsShellMaximized(false)}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                                >
+                                  <Minimize2 className="w-3.5 h-3.5" />
+                                  Restore
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                           <LiveShellTerminal
+                            key={shellRestartKey}
+                            runnerId={selectedRunner.id}
+                            visible={activeExecTab === "C"}
+                            isMaximized={isShellMaximized}
+                          />
+                        </div>
+                        {!isShellMaximized && (
+                          <p className="text-[10px] text-neutral-500 px-1 pt-1 flex-shrink-0 leading-relaxed">
+                            Live WebSocket shell via tmux. Persists across page reloads. Use Restart to reset.
+                          </p>
+                        )}
+                      </div>
+                      {activeExecTab === "A" && (
+                        /* Option A: Justfile Shell */
+                        <div className="space-y-2 p-4">
                           <div className="flex justify-end">
                             <button
                               onClick={() => {
@@ -762,9 +1130,10 @@ export default function RunnersPage() {
                             Tunnels securely via your local Docker API container. <strong>Does not require local AWS CLI, credentials, or Session Manager plugins installed on your host.</strong>
                           </p>
                         </div>
-                      ) : (
+                      )}
+                      {activeExecTab === "B" && (
                         /* Option B: Native AWS CLI */
-                        <div className="space-y-2">
+                        <div className="space-y-2 p-4">
                           <div className="flex justify-end">
                             <button
                               onClick={() => {
@@ -1017,6 +1386,68 @@ export default function RunnersPage() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── tmux Shortcuts Help Modal ── */}
+      {showTmuxHelp && (
+        <div 
+          onClick={() => setShowTmuxHelp(false)}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-neutral-900 border border-neutral-800 rounded-lg max-w-md w-full p-5 shadow-xl relative text-left"
+          >
+            <button 
+              onClick={() => setShowTmuxHelp(false)}
+              className="absolute top-3 right-3 text-neutral-400 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-sm font-bold text-brand-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <HelpCircle className="w-4 h-4 text-brand-400" />
+              tmux Terminal Shortcuts
+            </h3>
+            <p className="text-[11px] text-neutral-400 mb-4 leading-relaxed">
+              The live shell runs inside <code className="text-white">tmux</code>. Press the prefix key <kbd className="bg-neutral-800 text-white px-1 py-0.5 rounded font-mono text-[10px]">Ctrl + B</kbd>, release it, then press any of these shortcuts:
+            </p>
+            <div className="space-y-2 font-mono text-[11px]">
+              <div className="flex justify-between border-b border-neutral-800 pb-1.5">
+                <span className="text-neutral-500">Scroll/Copy Mode</span>
+                <span className="text-white font-semibold">Ctrl + B, [</span>
+              </div>
+              <div className="flex justify-between border-b border-neutral-800 pb-1.5">
+                <span className="text-neutral-500">Exit Scroll Mode</span>
+                <span className="text-white font-semibold">q</span>
+              </div>
+              <div className="flex justify-between border-b border-neutral-800 pb-1.5">
+                <span className="text-neutral-500">Split Vertically</span>
+                <span className="text-white font-semibold">Ctrl + B, %</span>
+              </div>
+              <div className="flex justify-between border-b border-neutral-800 pb-1.5">
+                <span className="text-neutral-500">Split Horizontally</span>
+                <span className="text-white font-semibold">Ctrl + B, "</span>
+              </div>
+              <div className="flex justify-between border-b border-neutral-800 pb-1.5">
+                <span className="text-neutral-500">Switch Panes</span>
+                <span className="text-white font-semibold">Ctrl + B, Arrow Keys</span>
+              </div>
+              <div className="flex justify-between border-b border-neutral-800 pb-1.5">
+                <span className="text-neutral-500">New Window</span>
+                <span className="text-white font-semibold">Ctrl + B, c</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Detach Session</span>
+                <span className="text-white font-semibold">Ctrl + B, d</span>
+              </div>
+            </div>
+            <div className="mt-5 pt-3 border-t border-neutral-800">
+              <p className="text-[10px] text-neutral-500 leading-relaxed">
+                💡 <strong>Tip:</strong> Run <code className="text-brand-400 bg-neutral-950 px-1 py-0.5 rounded text-[9px] select-all">tmux set -g mouse on</code> in the shell to enable mouse/trackpad scrolling and pane clicking!
+              </p>
+            </div>
           </div>
         </div>
       )}

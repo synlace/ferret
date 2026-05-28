@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, WebSocket
 from pydantic import BaseModel, Field
 
 import deps
@@ -18,6 +18,8 @@ from routers.plans import _find_plan
 from services.script_execution_engine import _extract_domain, _container_workspace_path
 from services.identity_registry import IdentityRegistry
 from services.session_tunnel import SessionTunnel
+from services.remote_shell import create_shell_session, kill_shell_session
+from services.terminal_frame_broker import TerminalFrameBroker
 
 _log = logging.getLogger(__name__)
 
@@ -227,3 +229,31 @@ async def complete_run(
     """Allow active runners to submit final script exit status code and complete the run."""
     await session_tunnel.complete_session_run(run_id, body.exit_code, body.status)
     return {"status": "ok"}
+
+
+@router.websocket("/{runner_id}/shell")
+async def runner_live_shell(websocket: WebSocket, runner_id: str):
+    """Establish an interactive, bi-directional in-browser shell session with the specified runner."""
+    await websocket.accept()
+    try:
+        session = create_shell_session(runner_id)
+        await session.start()
+        broker = TerminalFrameBroker(websocket, session)
+        await broker.run()
+    except Exception as e:
+        _log.error(f"Failed to establish live shell for runner {runner_id}: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@router.delete("/{runner_id}/shell")
+async def delete_runner_shell(runner_id: str):
+    """Kills the underlying tmux session inside the specified runner to allow starting a fresh shell."""
+    try:
+        await kill_shell_session(runner_id)
+        return {"status": "ok"}
+    except Exception as e:
+        _log.error(f"Failed to kill shell session for runner {runner_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
