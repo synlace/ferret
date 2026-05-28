@@ -279,6 +279,7 @@ export default function RunnersPage() {
   const [copiedLogs, setCopiedLogs] = useState(false)
   const [copiedAwsCmd, setCopiedAwsCmd] = useState(false)
   const [copiedJustCmd, setCopiedJustCmd] = useState(false)
+  const [activeExecTab, setActiveExecTab] = useState<'A' | 'B'>('A')
 
   // ── Resizable list panel ──────────────────────────────────────────────────
   const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH)
@@ -700,112 +701,172 @@ export default function RunnersPage() {
                 </div>
               </div>
 
-              {/* AWS Fargate CLI Exec Command Box */}
-              {selectedRunner.id.startsWith("runner-fargate-") && (
-                <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-900/10 gap-px">
-                  <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Terminal className="w-3.5 h-3.5" />
-                      AWS ECS EXEC / INTERACTIVE SHELL CONNECT
-                    </span>
-                  </div>
-                  <div className="p-4 space-y-4">
-                    {/* Option 1: Justfile Shell (Recommended) */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-brand-400 uppercase tracking-wide">
-                          OPTION A: JUSTFILE (NESTED VIA API CONTAINER - RECOMMENDED)
-                        </span>
-                        <button
-                          onClick={() => {
-                            const cmd = `just den shell ${selectedRunner.id}`;
-                            navigator.clipboard.writeText(cmd);
-                            setCopiedJustCmd(true);
-                            setTimeout(() => setCopiedJustCmd(false), 2000);
-                          }}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                          title="Copy Justfile CLI command to clipboard"
-                        >
-                          {copiedJustCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                          {copiedJustCmd ? "Copied!" : "Copy Command"}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 leading-relaxed">
-                        Tunnels securely via your local Docker API container. <strong>Does not require local AWS CLI, credentials, or Session Manager plugins installed on your host.</strong>
-                      </p>
-                      <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
-                        <code className="text-[10px] text-emerald-400 font-mono block whitespace-pre-wrap leading-relaxed select-all">
-                          {`just den shell ${selectedRunner.id}`}
-                        </code>
-                      </div>
+              {/* AWS Fargate CLI Exec & Logs Side by Side (or full width if not Fargate) */}
+              {selectedRunner.id.startsWith("runner-fargate-") ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left: AWS Fargate CLI Exec Command Box */}
+                  <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-900/10 gap-px h-[354px]">
+                    <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between flex-shrink-0">
+                      <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Terminal className="w-3.5 h-3.5" />
+                        AWS ECS EXEC / INTERACTIVE SHELL CONNECT
+                      </span>
                     </div>
-
-                    <div className="border-t border-neutral-800/60 my-2"></div>
-
-                    {/* Option 2: Native AWS CLI */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">
-                          OPTION B: NATIVE AWS CLI (DIRECT LOCAL HOST CONNECTION)
-                        </span>
-                        <button
-                          onClick={() => {
-                            const cmd = `TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == \$rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`;
-                            navigator.clipboard.writeText(cmd);
-                            setCopiedAwsCmd(true);
-                            setTimeout(() => setCopiedAwsCmd(false), 2000);
-                          }}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                          title="Copy AWS CLI query to clipboard"
-                        >
-                          {copiedAwsCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                          {copiedAwsCmd ? "Copied!" : "Copy Command"}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 leading-relaxed">
-                        Requires AWS CLI, <code>session-manager-plugin</code>, and authorized local AWS credentials configured on your host machine.
-                      </p>
-                      <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
-                        <code className="text-[10px] text-neutral-500 font-mono block whitespace-pre-wrap leading-relaxed select-all">
-                          {`TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == $rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \n\${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`}
-                        </code>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Terminal Logs Block */}
-              {selectedRunner.logs && (
-                <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-950">
-                  <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <Terminal className="w-3.5 h-3.5 text-brand-400" />
-                      Rolling Process Logs
-                    </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex border-b border-neutral-800 bg-neutral-900/20 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">
                       <button
-                        onClick={() => handleCopyLogs(selectedRunner.logs ?? "")}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                        title="Copy logs to clipboard"
+                        onClick={() => setActiveExecTab("A")}
+                        className={`flex-1 py-2 text-center transition-colors border-r border-neutral-800 ${
+                          activeExecTab === "A"
+                            ? "bg-neutral-950 text-brand-400 border-b-2 border-brand-500"
+                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
+                        }`}
                       >
-                        {copiedLogs ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                        Copy
+                        Justfile (Recommended)
                       </button>
                       <button
-                        onClick={() => handleDownloadLogs(selectedRunner.id, selectedRunner.logs ?? "")}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                        title="Download log file"
+                        onClick={() => setActiveExecTab("B")}
+                        className={`flex-1 py-2 text-center transition-colors ${
+                          activeExecTab === "B"
+                            ? "bg-neutral-950 text-brand-400 border-b-2 border-brand-500"
+                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
+                        }`}
                       >
-                        <Download className="w-3 h-3" />
-                        Download
+                        Native AWS CLI
                       </button>
                     </div>
+                    <div className="p-4 flex-1 overflow-y-auto">
+                      {activeExecTab === "A" ? (
+                        /* Option A: Justfile Shell (Recommended) */
+                        <div className="space-y-2">
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => {
+                                const cmd = `just den shell ${selectedRunner.id}`;
+                                navigator.clipboard.writeText(cmd);
+                                setCopiedJustCmd(true);
+                                setTimeout(() => setCopiedJustCmd(false), 2000);
+                              }}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                              title="Copy Justfile CLI command to clipboard"
+                            >
+                              {copiedJustCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                              {copiedJustCmd ? "Copied!" : "Copy Command"}
+                            </button>
+                          </div>
+                          <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
+                            <code className="text-[10px] text-emerald-400 font-mono block whitespace-pre-wrap leading-relaxed select-all">
+                              {`just den shell ${selectedRunner.id}`}
+                            </code>
+                          </div>
+                          <p className="text-[11px] text-neutral-400 leading-relaxed">
+                            Tunnels securely via your local Docker API container. <strong>Does not require local AWS CLI, credentials, or Session Manager plugins installed on your host.</strong>
+                          </p>
+                        </div>
+                      ) : (
+                        /* Option B: Native AWS CLI */
+                        <div className="space-y-2">
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => {
+                                const cmd = `TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == \$rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`;
+                                navigator.clipboard.writeText(cmd);
+                                setCopiedAwsCmd(true);
+                                setTimeout(() => setCopiedAwsCmd(false), 2000);
+                              }}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                              title="Copy AWS CLI query to clipboard"
+                            >
+                              {copiedAwsCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                              {copiedAwsCmd ? "Copied!" : "Copy Command"}
+                            </button>
+                          </div>
+                          <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
+                            <code className="text-[10px] text-neutral-500 font-mono block whitespace-pre-wrap leading-relaxed select-all">
+                              {`TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == $rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \n\${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`}
+                            </code>
+                          </div>
+                          <p className="text-[11px] text-neutral-400 leading-relaxed">
+                            Requires AWS CLI, <code>session-manager-plugin</code>, and authorized local AWS credentials configured on your host machine.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <pre className="p-4 text-[11px] font-mono text-neutral-400 bg-neutral-950 h-64 overflow-y-auto leading-relaxed border-0 focus:outline-none whitespace-pre-wrap">
-                    {selectedRunner.logs}
-                  </pre>
+
+                  {/* Right: Terminal Logs Block */}
+                  {selectedRunner.logs ? (
+                    <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-950 h-[354px]">
+                      <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between flex-shrink-0">
+                        <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Terminal className="w-3.5 h-3.5 text-brand-400" />
+                          Rolling Process Logs
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => handleCopyLogs(selectedRunner.logs ?? "")}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                            title="Copy logs to clipboard"
+                          >
+                            {copiedLogs ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                            Copy
+                          </button>
+                          <button
+                            onClick={() => handleDownloadLogs(selectedRunner.id, selectedRunner.logs ?? "")}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                            title="Download log file"
+                          >
+                            <Download className="w-3 h-3" />
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                      <pre className="p-4 text-[11px] font-mono text-neutral-400 bg-neutral-950 flex-1 overflow-y-auto leading-relaxed border-0 focus:outline-none whitespace-pre-wrap">
+                        {selectedRunner.logs}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-900/10 justify-center items-center h-[354px] p-6 text-center">
+                      <Terminal className="w-8 h-8 text-neutral-600 mb-2 animate-pulse" />
+                      <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">No Rolling Logs Available</p>
+                      <p className="text-[11px] text-neutral-500 mt-1 max-w-xs leading-relaxed">
+                        This Fargate runner hasn't produced any log output yet.
+                      </p>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                /* Non-Fargate: Terminal Logs Block full-width */
+                selectedRunner.logs && (
+                  <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-950">
+                    <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Terminal className="w-3.5 h-3.5 text-brand-400" />
+                        Rolling Process Logs
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleCopyLogs(selectedRunner.logs ?? "")}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                          title="Copy logs to clipboard"
+                        >
+                          {copiedLogs ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                          Copy
+                        </button>
+                        <button
+                          onClick={() => handleDownloadLogs(selectedRunner.id, selectedRunner.logs ?? "")}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
+                          title="Download log file"
+                        >
+                          <Download className="w-3 h-3" />
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                    <pre className="p-4 text-[11px] font-mono text-neutral-400 bg-neutral-950 h-64 overflow-y-auto leading-relaxed border-0 focus:outline-none whitespace-pre-wrap">
+                      {selectedRunner.logs}
+                    </pre>
+                  </div>
+                )
               )}
 
               {/* Runner Runs history table */}
