@@ -420,7 +420,7 @@ export default function RunnersPage() {
 
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedDens, setExpandedDens] = useState<Record<string, boolean>>({})
-  const [expandedSubdirs, setExpandedSubdirs] = useState<Record<string, boolean>>({})
+  const [hideOffline, setHideOffline] = useState(false)
 
   const toggleDen = (denId: string) => {
     setExpandedDens(prev => {
@@ -428,16 +428,6 @@ export default function RunnersPage() {
       return {
         ...prev,
         [denId]: !current
-      }
-    })
-  }
-
-  const toggleSubdir = (key: string, defaultVal: boolean) => {
-    setExpandedSubdirs(prev => {
-      const current = prev[key] ?? defaultVal
-      return {
-        ...prev,
-        [key]: !current
       }
     })
   }
@@ -638,30 +628,35 @@ export default function RunnersPage() {
     }
 
     return allDens.map(den => {
-      const denRunners = runners
+      let denRunners = runners
         .filter(r => getRunnerDenId(r.id) === den.id)
         .filter(r => r.id.toLowerCase().includes(searchQuery.toLowerCase()))
+
+      const isRunnerOnline = (r: ActiveRunner) => {
+        if (r.status === "provisioning") return true
+        const lastHb = parseUtcDate(r.last_heartbeat).getTime()
+        return Date.now() - lastHb < 30000
+      }
+
+      if (hideOffline) {
+        denRunners = denRunners.filter(isRunnerOnline)
+      }
 
       if (searchQuery && denRunners.length === 0) {
         return null
       }
 
       const isExpanded = searchQuery ? true : (expandedDens[den.id] ?? true)
-      
-      const onlineRunners = denRunners.filter(r => {
-        if (r.status === "provisioning") return true
-        const lastHb = parseUtcDate(r.last_heartbeat).getTime()
-        return Date.now() - lastHb < 30000
-      })
+      const onlineCount = denRunners.filter(isRunnerOnline).length
 
-      const offlineRunners = denRunners.filter(r => {
-        if (r.status === "provisioning") return false
-        const lastHb = parseUtcDate(r.last_heartbeat).getTime()
-        return Date.now() - lastHb >= 30000
+      // Sort runners: online/provisioning first, offline last
+      const sortedRunners = [...denRunners].sort((a, b) => {
+        const aOnline = isRunnerOnline(a)
+        const bOnline = isRunnerOnline(b)
+        if (aOnline && !bOnline) return -1
+        if (!aOnline && bOnline) return 1
+        return 0
       })
-
-      const isOnlineExpanded = searchQuery ? true : (expandedSubdirs[`${den.id}-online`] ?? true)
-      const isOfflineExpanded = searchQuery ? true : (expandedSubdirs[`${den.id}-offline`] ?? false)
 
       return (
         <div key={den.id} className="space-y-1 select-none">
@@ -676,109 +671,41 @@ export default function RunnersPage() {
             <Folder className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
             <span className="truncate flex-1 uppercase tracking-wider text-[10px]">{den.name}</span>
             <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
-              {onlineRunners.length}/{denRunners.length}
+              {onlineCount}/{denRunners.length}
             </span>
           </div>
 
           {/* Folder Children List */}
           {isExpanded && (
-            <div className="pl-3 space-y-1.5">
-              {denRunners.length === 0 ? (
+            <div className="pl-3 space-y-1">
+              {sortedRunners.length === 0 ? (
                 <div className="text-[10px] text-neutral-600 italic px-2 py-1">No agents.</div>
               ) : (
-                <>
-                  {/* Online Subdirectory */}
-                  <div className="space-y-1">
-                    <div 
-                      onClick={() => toggleSubdir(`${den.id}-online`, true)}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-white hover:bg-neutral-800/20 transition-colors text-[10px] font-semibold cursor-pointer"
+                sortedRunners.map(r => {
+                  const active = selectedItem === r.id
+                  const online = isRunnerOnline(r)
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => setSelectedItem(r.id)}
+                      className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left transition-colors text-[11px] ${
+                        active
+                          ? "bg-neutral-800 text-white font-medium"
+                          : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
+                      }`}
                     >
-                      <span className="text-neutral-500 hover:text-white shrink-0">
-                        {isOnlineExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
-                      </span>
-                      <Folder className="w-3 h-3 text-green-500/80 shrink-0" />
-                      <span className="truncate flex-1 uppercase tracking-wider">Online</span>
-                      <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
-                        {onlineRunners.length}
-                      </span>
-                    </div>
-
-                    {isOnlineExpanded && (
-                      <div className="pl-2.5 space-y-1">
-                        {onlineRunners.length === 0 ? (
-                          <div className="text-[9px] text-neutral-600 italic px-2 py-0.5">No online agents.</div>
-                        ) : (
-                          onlineRunners.map(r => {
-                            const active = selectedItem === r.id
-                            return (
-                              <button
-                                key={r.id}
-                                onClick={() => setSelectedItem(r.id)}
-                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left transition-colors text-[11px] ${
-                                  active
-                                    ? "bg-neutral-800 text-white font-medium"
-                                    : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
-                                }`}
-                              >
-                                <Cpu className="w-3 h-3 shrink-0 text-neutral-500" />
-                                <span className="truncate flex-1 font-mono text-[10px]">{r.id}</span>
-                                {r.status === "provisioning" ? (
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-yellow-500 animate-pulse" />
-                                ) : (
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500 animate-pulse" />
-                                )}
-                              </button>
-                            )
-                          })
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Offline Subdirectory */}
-                  <div className="space-y-1">
-                    <div 
-                      onClick={() => toggleSubdir(`${den.id}-offline`, false)}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-neutral-500 hover:text-white hover:bg-neutral-800/20 transition-colors text-[10px] font-semibold cursor-pointer"
-                    >
-                      <span className="text-neutral-500 hover:text-white shrink-0">
-                        {isOfflineExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
-                      </span>
-                      <Folder className="w-3 h-3 text-neutral-600 shrink-0" />
-                      <span className="truncate flex-1 uppercase tracking-wider">Offline</span>
-                      <span className="text-[9px] bg-neutral-900 border border-neutral-800/60 px-1 py-0.5 rounded text-neutral-500 font-mono">
-                        {offlineRunners.length}
-                      </span>
-                    </div>
-
-                    {isOfflineExpanded && (
-                      <div className="pl-2.5 space-y-1">
-                        {offlineRunners.length === 0 ? (
-                          <div className="text-[9px] text-neutral-600 italic px-2 py-0.5">No offline agents.</div>
-                        ) : (
-                          offlineRunners.map(r => {
-                            const active = selectedItem === r.id
-                            return (
-                              <button
-                                key={r.id}
-                                onClick={() => setSelectedItem(r.id)}
-                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left transition-colors text-[11px] ${
-                                  active
-                                    ? "bg-neutral-800 text-white font-medium"
-                                    : "text-neutral-400 hover:text-white hover:bg-neutral-800/20"
-                                }`}
-                              >
-                                <Cpu className="w-3 h-3 shrink-0 text-neutral-500" />
-                                <span className="truncate flex-1 font-mono text-[10px]">{r.id}</span>
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-neutral-600" />
-                              </button>
-                            )
-                          })
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </>
+                      <Cpu className="w-3 h-3 shrink-0 text-neutral-500" />
+                      <span className="truncate flex-1 font-mono text-[10px]">{r.id}</span>
+                      {r.status === "provisioning" ? (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-yellow-500 animate-pulse" />
+                      ) : online ? (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500 animate-pulse" />
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-neutral-600" />
+                      )}
+                    </button>
+                  )
+                })
               )}
             </div>
           )}
@@ -811,7 +738,7 @@ export default function RunnersPage() {
         </div>
 
         {/* Filter input */}
-        <div className="p-2 border-b border-neutral-800/60 flex-shrink-0">
+        <div className="p-2 border-b border-neutral-800/60 flex-shrink-0 space-y-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-2 w-3 h-3 text-neutral-500" />
             <input
@@ -822,6 +749,15 @@ export default function RunnersPage() {
               className="w-full bg-neutral-950 border border-neutral-800 rounded px-2 py-1 pl-7 text-[11px] text-white placeholder-neutral-500 focus:outline-none focus:border-brand-500"
             />
           </div>
+          <label className="flex items-center gap-1.5 px-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={hideOffline}
+              onChange={(e) => setHideOffline(e.target.checked)}
+              className="rounded bg-neutral-950 border-neutral-800 text-brand-500 focus:ring-0 focus:ring-offset-0 w-3 h-3 cursor-pointer"
+            />
+            <span className="text-[10px] text-neutral-400 hover:text-white transition-colors">Hide offline agents</span>
+          </label>
         </div>
 
         {/* List scrollable */}
