@@ -366,7 +366,29 @@ async def execute_tool_call(
         # Delegate to the streaming generator; collect all output for non-streaming callers
         chunks: List[str] = []
         final: str = ""
-        async for _chunk, _is_final, _result in stream_run_ffuf(fn_args):
+        async for _chunk, _is_final, _result in stream_run_ffuf(fn_args, project_id=project_id, session_id=session_id):
+            if _is_final:
+                final = _result or ""
+            else:
+                chunks.append(_chunk)
+        return final if final else "".join(chunks)
+
+    elif fn_name == "run_katana":
+        # Delegate to the streaming generator; collect all output for non-streaming callers
+        chunks: List[str] = []
+        final: str = ""
+        async for _chunk, _is_final, _result in stream_run_katana(fn_args, project_id=project_id, session_id=session_id):
+            if _is_final:
+                final = _result or ""
+            else:
+                chunks.append(_chunk)
+        return final if final else "".join(chunks)
+
+    elif fn_name == "run_nuclei":
+        # Delegate to the streaming generator; collect all output for non-streaming callers
+        chunks: List[str] = []
+        final: str = ""
+        async for _chunk, _is_final, _result in stream_run_nuclei(fn_args, project_id=project_id, session_id=session_id):
             if _is_final:
                 final = _result or ""
             else:

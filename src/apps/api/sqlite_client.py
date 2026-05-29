@@ -295,7 +295,10 @@ class SQLiteClient(ProjectsMixin):
                 started_at    TEXT,
                 finished_at   TEXT,
                 created_at    TEXT NOT NULL,
-                runner_id     TEXT
+                runner_id     TEXT,
+                script        TEXT DEFAULT NULL,
+                interpreter   TEXT DEFAULT NULL,
+                timeout       INTEGER DEFAULT 600
             );
             CREATE INDEX IF NOT EXISTS idx_runs_workspace ON runs(workspace_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_runs_project   ON runs(project_id, created_at DESC);
@@ -543,6 +546,29 @@ class SQLiteClient(ProjectsMixin):
             await self._db.commit()
         except Exception:
             pass  # column already exists
+
+        # Migration: add script, interpreter, timeout to runs
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN script TEXT DEFAULT NULL"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN interpreter TEXT DEFAULT NULL"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
+        try:
+            await self._db.execute(
+                "ALTER TABLE runs ADD COLUMN timeout INTEGER DEFAULT 600"
+            )
+            await self._db.commit()
+        except Exception:
+            pass
 
         # Seed default Local Den if not exists
         try:

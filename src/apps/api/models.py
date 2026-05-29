@@ -267,6 +267,9 @@ class Run(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     runner_id: Optional[str] = Field(None, description="Runner identifier that consumed/leased this run")
     den_id: str = Field("local", description="ID of the Den hosting the runner cluster targeted by this run")
+    script: Optional[str] = Field(None, description="Dynamic custom script payload to execute instead of a static plan")
+    interpreter: Optional[str] = Field(None, description="Dynamic interpreter to run the script, e.g., 'bash' or 'python3'")
+    timeout: Optional[int] = Field(None, description="Dynamic timeout override for the custom script execution")
     # Plans to run automatically against each workspace discovered via
     # [FERRET:MANIFEST] streaming lines emitted during this run.
     follow_on_plan_ids: List[str] = Field(default_factory=list, description="Plan IDs to run against each discovered host workspace")
@@ -288,6 +291,9 @@ class RunCreate(BaseModel):
     follow_on_path_plan_ids: List[str] = Field(default_factory=list)
     runner_count: Optional[int] = 1
     den_id: Optional[str] = "local"
+    script: Optional[str] = None
+    interpreter: Optional[str] = None
+    timeout: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

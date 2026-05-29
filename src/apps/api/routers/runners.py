@@ -28,6 +28,84 @@ router = APIRouter(prefix="/api/runners", tags=["runners"])
 identity_registry = IdentityRegistry()
 session_tunnel = SessionTunnel()
 
+_active_runners_ws = {}
+_active_runs_futures = {}
+
+async def prepare_execution_payload(run: dict) -> dict:
+    """Prepare command execution payload for both WebSocket push and HTTP polling."""
+    if run.get("script"):
+        return {
+            "run_id": run["id"],
+            "workspace_id": run["workspace_id"],
+            "project_id": run["project_id"],
+            "target_url": run["target_url"],
+            "script": run["script"],
+            "interpreter": run.get("interpreter", "bash"),
+            "timeout": int(run.get("timeout", 600)),
+            "follow_on_plan_ids": [],
+            "follow_on_path_plan_ids": [],
+        }
+
+    plan = _find_plan(run["plan_id"])
+    if not plan:
+        _log.warning("prepare_execution_payload: plan %s not found for run %s", run["plan_id"], run["id"])
+        raise ValueError(f"Plan '{run['plan_id']}' not found")
+
+    domain = _extract_domain(run["target_url"])
+    container_ws = _container_workspace_path(run["project_id"], run["workspace_id"])
+
+    script = plan.get("prompt", "")
+    script = script.replace("{{target}}", run["target_url"])
+    script = script.replace("{{domain}}", domain)
+    script = script.replace("{{workspace}}", container_ws)
+    script = script.replace("{{workspace_id}}", run["workspace_id"])
+    script = script.replace("{{session_id}}", run["id"])
+    script = script.replace("{{project_id}}", run["project_id"])
+
+    follow_on_plan_ids = run.get("follow_on_plan_ids") or []
+    _first_follow_on = (follow_on_plan_ids or [""])[0]
+    script = script.replace("{{follow_on_plan}}", _first_follow_on)
+
+    interpreter = plan.get("interpreter", "bash")
+    timeout_sec = int(plan.get("max_runtime_seconds", 600))
+
+    return {
+        "run_id": run["id"],
+        "workspace_id": run["workspace_id"],
+        "project_id": run["project_id"],
+        "target_url": run["target_url"],
+        "script": script,
+        "interpreter": interpreter,
+        "timeout": timeout_sec,
+        "follow_on_plan_ids": follow_on_plan_ids,
+        "follow_on_path_plan_ids": run.get("follow_on_path_plan_ids") or [],
+    }
+
+def notify_new_run(den_id: str):
+    """Notify any active WebSocket-connected runner in the target Den of a new pending run."""
+    for runner_id, ws in list(_active_runners_ws.items()):
+        target_den = "local"
+        if "runner-fargate-" in runner_id:
+            parts = runner_id.split("-")
+            if len(parts) >= 4:
+                target_den = parts[2]
+        
+        if target_den == den_id:
+            async def trigger():
+                try:
+                    run = await deps.db_client.lease_pending_run(runner_id)
+                    if run:
+                        _log.info(f"Trigger lease Run {run['id']} on WebSocket connection for runner {runner_id}")
+                        payload = await prepare_execution_payload(run)
+                        await ws.send_json({
+                            "type": "execute_command",
+                            "payload": payload
+                        })
+                except Exception as e:
+                    _log.error(f"Error in trigger WebSocket dispatch: {e}")
+            asyncio.create_task(trigger())
+            break
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -121,49 +199,20 @@ async def poll_for_run(body: RunnerPollRequest, x_runner_key: str = Depends(veri
     if not run:
         return {"status": "idle"}
 
-    # Retrieve associated plan details to prepare script execution payload
-    plan = _find_plan(run["plan_id"])
-    if not plan:
-        _log.warning("Poll: plan %s not found for run %s", run["plan_id"], run["id"])
+    try:
+        payload = await prepare_execution_payload(run)
+        return {
+            "status": "run",
+            **payload
+        }
+    except Exception as e:
+        _log.warning("Poll: failed to prepare payload for run %s: %s", run["id"], e)
         await deps.db_client.update_run_status(
             run["id"],
             status="error",
             finished_at=datetime.utcnow(),
         )
         return {"status": "idle"}
-
-    # Domain extraction and container workspace path resolution
-    domain = _extract_domain(run["target_url"])
-    container_ws = _container_workspace_path(run["project_id"], run["workspace_id"])
-
-    # Template substitutions
-    script = plan.get("prompt", "")
-    script = script.replace("{{target}}", run["target_url"])
-    script = script.replace("{{domain}}", domain)
-    script = script.replace("{{workspace}}", container_ws)
-    script = script.replace("{{workspace_id}}", run["workspace_id"])
-    script = script.replace("{{session_id}}", run["id"])
-    script = script.replace("{{project_id}}", run["project_id"])
-
-    follow_on_plan_ids = run.get("follow_on_plan_ids") or []
-    _first_follow_on = (follow_on_plan_ids or [""])[0]
-    script = script.replace("{{follow_on_plan}}", _first_follow_on)
-
-    interpreter = plan.get("interpreter", "bash")
-    timeout_sec = int(plan.get("max_runtime_seconds", 600))
-
-    return {
-        "status": "run",
-        "run_id": run["id"],
-        "workspace_id": run["workspace_id"],
-        "project_id": run["project_id"],
-        "target_url": run["target_url"],
-        "script": script,
-        "interpreter": interpreter,
-        "timeout": timeout_sec,
-        "follow_on_plan_ids": follow_on_plan_ids,
-        "follow_on_path_plan_ids": run.get("follow_on_path_plan_ids") or [],
-    }
 
 
 @router.post("/runs/{run_id}/log")
@@ -229,6 +278,71 @@ async def complete_run(
     """Allow active runners to submit final script exit status code and complete the run."""
     await session_tunnel.complete_session_run(run_id, body.exit_code, body.status)
     return {"status": "ok"}
+
+
+@router.websocket("/{runner_id}/control")
+async def runner_control_channel(websocket: WebSocket, runner_id: str):
+    """WebSocket control channel for outbound-initiated, real-time runner orchestration."""
+    key = websocket.headers.get("x-runner-key") or websocket.query_params.get("key")
+    if key:
+        try:
+            await identity_registry.authenticate_key(key)
+        except Exception as e:
+            _log.error(f"WebSocket control auth failed for runner {runner_id}: {e}")
+            await websocket.close(code=1008)
+            return
+
+    await websocket.accept()
+    _active_runners_ws[runner_id] = websocket
+    _log.info(f"Runner {runner_id} registered WebSocket control connection.")
+
+    async def dispatch_next():
+        try:
+            target_den = "local"
+            if "runner-fargate-" in runner_id:
+                parts = runner_id.split("-")
+                if len(parts) >= 4:
+                    target_den = parts[2]
+
+            run = await deps.db_client.lease_pending_run(runner_id)
+            if run:
+                _log.info(f"Leased Run {run['id']} on WebSocket connection for runner {runner_id}")
+                payload = await prepare_execution_payload(run)
+                await websocket.send_json({
+                    "type": "execute_command",
+                    "payload": payload
+                })
+        except Exception as e:
+            _log.error(f"Error dispatching pending run over WebSocket: {e}")
+
+    # Immediately check for and dispatch any pending runs
+    asyncio.create_task(dispatch_next())
+
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            mtype = msg.get("type")
+            if mtype == "heartbeat":
+                await identity_registry.register_presence(runner_id, None, None)
+                await websocket.send_json({"type": "heartbeat_ack"})
+            elif mtype == "execution_log":
+                run_id = msg.get("run_id")
+                chunk = msg.get("chunk", "")
+                await session_tunnel.stream_log_chunk(run_id, chunk)
+            elif mtype == "execution_complete":
+                run_id = msg.get("run_id")
+                exit_code = msg.get("exit_code", 0)
+                status = msg.get("status", "done")
+                _log.info(f"Runner {runner_id} completed Run {run_id} via WebSocket with exit_code={exit_code}")
+                await session_tunnel.complete_session_run(run_id, exit_code, status)
+                fut = _active_runs_futures.pop(run_id, None)
+                if fut and not fut.done():
+                    fut.set_result((exit_code, status))
+                asyncio.create_task(dispatch_next())
+    except Exception as e:
+        _log.warning(f"WebSocket control connection lost for runner {runner_id}: {e}")
+    finally:
+        _active_runners_ws.pop(runner_id, None)
 
 
 @router.websocket("/{runner_id}/shell")

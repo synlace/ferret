@@ -386,11 +386,13 @@ class ProjectsMixin:
             INSERT INTO runs
                 (id, workspace_id, project_id, plan_id, target_url, status,
                  exit_code, run_log_path, started_at, finished_at, created_at,
-                 follow_on_plan_id, follow_on_path_plan_id, den_id)
+                 follow_on_plan_id, follow_on_path_plan_id, den_id,
+                 script, interpreter, timeout)
             VALUES
                 (:id, :workspace_id, :project_id, :plan_id, :target_url, :status,
                  :exit_code, :run_log_path, :started_at, :finished_at, :created_at,
-                 :follow_on_plan_id, :follow_on_path_plan_id, :den_id)
+                 :follow_on_plan_id, :follow_on_path_plan_id, :den_id,
+                 :script, :interpreter, :timeout)
             """,
             {
                 "id": run.id,
@@ -408,9 +410,18 @@ class ProjectsMixin:
                 "follow_on_plan_id": _json.dumps(follow_on_plan_ids) if follow_on_plan_ids else None,
                 "follow_on_path_plan_id": _json.dumps(follow_on_path_plan_ids) if follow_on_path_plan_ids else None,
                 "den_id": den_id,
+                "script": getattr(run, "script", None),
+                "interpreter": getattr(run, "interpreter", None),
+                "timeout": getattr(run, "timeout", None),
             },
         )
         await self._db.commit()
+
+        try:
+            from routers.runners import notify_new_run
+            notify_new_run(den_id)
+        except Exception:
+            pass
 
     @staticmethod
     def _deserialise_run(row) -> Dict[str, Any]:

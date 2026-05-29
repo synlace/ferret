@@ -124,6 +124,21 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
         except Exception:
             pass  # non-fatal — execution continues even if persist fails
 
+    from routers.runners import _active_runners_ws
+    if _active_runners_ws:
+        runner_id = list(_active_runners_ws.keys())[0]
+        async for chunk, is_final, final_result in stream_tool_over_websocket(
+            runner_id=runner_id,
+            script=script,
+            interpreter=interpreter,
+            project_id=project_id,
+            session_id=session_id,
+            target_url="",
+            timeout=timeout_sec
+        ):
+            yield (chunk, is_final, final_result)
+        return
+
     try:
         with _tempfile.NamedTemporaryFile(mode="w", suffix=ext, delete=False, encoding="utf-8") as tf:
             tf.write(script)
@@ -205,7 +220,7 @@ async def stream_run_script(fn_args: Dict[str, Any], project_id: str = "temp", s
         yield (msg, True, msg)
 
 
-async def stream_run_ffuf(fn_args: Dict[str, Any]):
+async def stream_run_ffuf(fn_args: Dict[str, Any], project_id: str = "temp", session_id: str = ""):
     """Async generator: stream run_ffuf output line-by-line, then yield final result."""
     import asyncio as _asyncio
     import shlex as _shlex
@@ -242,6 +257,22 @@ async def stream_run_ffuf(fn_args: Dict[str, Any]):
     if extra_args:
         try: cmd += _shlex.split(extra_args)
         except ValueError: pass
+
+    from routers.runners import _active_runners_ws
+    if _active_runners_ws:
+        runner_id = list(_active_runners_ws.keys())[0]
+        shell_cmd = " ".join(_shlex.quote(c) for c in cmd)
+        async for chunk, is_final, final_result in stream_tool_over_websocket(
+            runner_id=runner_id,
+            script=shell_cmd,
+            interpreter="bash",
+            project_id=project_id,
+            session_id=session_id,
+            target_url=url,
+            timeout=timeout_sec
+        ):
+            yield (chunk, is_final, final_result)
+        return
 
     try:
         exec_proc = await deps.sandbox_executor.execute_command(cmd)
@@ -297,7 +328,7 @@ async def stream_run_ffuf(fn_args: Dict[str, Any]):
         yield (msg, True, msg)
 
 
-async def stream_run_katana(fn_args: Dict[str, Any]):
+async def stream_run_katana(fn_args: Dict[str, Any], project_id: str = "temp", session_id: str = ""):
     """Async generator: stream katana web-crawler output line-by-line, then yield final result."""
     import asyncio as _asyncio
     import shlex as _shlex
@@ -337,6 +368,22 @@ async def stream_run_katana(fn_args: Dict[str, Any]):
             cmd += _shlex.split(extra_args)
         except ValueError:
             pass
+
+    from routers.runners import _active_runners_ws
+    if _active_runners_ws:
+        runner_id = list(_active_runners_ws.keys())[0]
+        shell_cmd = " ".join(_shlex.quote(c) for c in cmd)
+        async for chunk, is_final, final_result in stream_tool_over_websocket(
+            runner_id=runner_id,
+            script=shell_cmd,
+            interpreter="bash",
+            project_id=project_id,
+            session_id=session_id,
+            target_url=url,
+            timeout=timeout_sec
+        ):
+            yield (chunk, is_final, final_result)
+        return
 
     try:
         exec_proc = await deps.sandbox_executor.execute_command(cmd)
@@ -388,7 +435,7 @@ async def stream_run_katana(fn_args: Dict[str, Any]):
         yield (msg, True, msg)
 
 
-async def stream_run_nuclei(fn_args: Dict[str, Any]):
+async def stream_run_nuclei(fn_args: Dict[str, Any], project_id: str = "temp", session_id: str = ""):
     """Async generator: stream nuclei vulnerability scanner output line-by-line, then yield final result."""
     import asyncio as _asyncio
     import shlex as _shlex
@@ -429,6 +476,22 @@ async def stream_run_nuclei(fn_args: Dict[str, Any]):
             cmd += _shlex.split(extra_args)
         except ValueError:
             pass
+
+    from routers.runners import _active_runners_ws
+    if _active_runners_ws:
+        runner_id = list(_active_runners_ws.keys())[0]
+        shell_cmd = " ".join(_shlex.quote(c) for c in cmd)
+        async for chunk, is_final, final_result in stream_tool_over_websocket(
+            runner_id=runner_id,
+            script=shell_cmd,
+            interpreter="bash",
+            project_id=project_id,
+            session_id=session_id,
+            target_url=target,
+            timeout=timeout_sec
+        ):
+            yield (chunk, is_final, final_result)
+        return
 
     try:
         exec_proc = await deps.sandbox_executor.execute_command(cmd)
@@ -478,3 +541,87 @@ async def stream_run_nuclei(fn_args: Dict[str, Any]):
     except Exception as exc:
         msg = f"[FERRET] run_nuclei error: {exc}"
         yield (msg, True, msg)
+
+
+async def stream_tool_over_websocket(
+    runner_id: str,
+    script: str,
+    interpreter: str,
+    project_id: str,
+    session_id: str,
+    target_url: str,
+    timeout: int = 600
+):
+    """Creates a dynamic pending Run, dispatches it over WebSocket, and streams output chunks as they arrive."""
+    import uuid
+    import json
+    import asyncio
+    from datetime import datetime, timezone
+    from routers.runners import _active_runners_ws, _active_runs_futures
+    from models import Run
+
+    ws = _active_runners_ws.get(runner_id)
+    if not ws:
+        raise ValueError(f"Runner {runner_id} is not connected via WebSocket")
+
+    run_id = str(uuid.uuid4())
+    target = target_url or "http://local-target"
+
+    new_run = Run(
+        id=run_id,
+        workspace_id=session_id,
+        project_id=project_id,
+        plan_id="",
+        target_url=target,
+        status="pending",
+        exit_code=None,
+        run_log_path=None,
+        started_at=None,
+        finished_at=None,
+        created_at=datetime.utcnow(),
+        runner_id=None,
+        den_id="local" if "runner-fargate" not in runner_id else runner_id.split("-")[2],
+        script=script,
+        interpreter=interpreter,
+        timeout=timeout
+    )
+
+    await deps.db_client.create_run(new_run)
+
+    q = asyncio.Queue()
+    deps.script_execution_engine.register_listener_queue(run_id, q)
+
+    fut = asyncio.Future()
+    _active_runs_futures[run_id] = fut
+
+    try:
+        all_chunks = []
+        _t0 = asyncio.get_event_loop().time()
+        while True:
+            try:
+                line = await asyncio.wait_for(q.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if fut.done():
+                    break
+                continue
+
+            if line is None:
+                break
+
+            all_chunks.append(line)
+            yield (line, False, None)
+
+        exit_code, status = await fut
+        _runtime_ms = round((asyncio.get_event_loop().time() - _t0) * 1000)
+        _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+        full_output = "".join(all_chunks)
+        prefix = f"[exit {exit_code}]\r\n" if exit_code != 0 else ""
+        text = prefix + full_output if full_output.strip() else f"[exit {exit_code}] (no output)"
+
+        final = text + "\n__META__:" + json.dumps({"exit_code": exit_code, "runtime_ms": _runtime_ms, "timestamp": _ts})
+        yield ("", True, final)
+
+    finally:
+        deps.script_execution_engine.unregister_listener_queue(run_id, q)
+        _active_runs_futures.pop(run_id, None)
