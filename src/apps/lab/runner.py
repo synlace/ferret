@@ -15,6 +15,7 @@ import shutil
 import asyncio
 import websockets
 import json
+import inspect
 
 # Configure Logging
 from collections import deque
@@ -227,13 +228,20 @@ async def async_main():
     logger.info(f"Connecting to WebSocket control channel at {ws_uri}...")
     headers = {"X-Runner-Key": RUNNER_KEY}
 
+    # websockets v13/14+ renamed extra_headers to additional_headers
+    sig = inspect.signature(websockets.connect)
+    if "additional_headers" in sig.parameters:
+        connect_kwargs = {"additional_headers": headers}
+    else:
+        connect_kwargs = {"extra_headers": headers}
+
     backoff = 1
     last_active_time = time.time()
     last_successful_contact = time.time()
     
     while True:
         try:
-            async with websockets.connect(ws_uri, extra_headers=headers) as ws:
+            async with websockets.connect(ws_uri, **connect_kwargs) as ws:
                 logger.info("Successfully connected to central API WebSocket control channel.")
                 backoff = 1  # Reset backoff on success
                 last_successful_contact = time.time()

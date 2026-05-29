@@ -33,7 +33,7 @@ services:
       FERRET_WORKSPACES_DIR: /data/workspaces
       FERRET_SANDBOX_CONTAINER: ferret-lab
       DOCKER_HOST: tcp://docker-shim:2375
-      FERRET_RUNNER_IMAGE: "ghcr.io/synlace/ferret-runner:${FERRET_VERSION:-v1.6.3}"
+      FERRET_RUNNER_IMAGE: "ghcr.io/synlace/ferret-lab:${FERRET_VERSION:-v1.6.3}"
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       - ./terraform:/app/terraform
