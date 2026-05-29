@@ -167,13 +167,15 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 bg-neutral-900 flex-shrink-0">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-neutral-400 hover:text-white transition-colors">
-          <ArrowLeft className="w-3.5 h-3.5" /><span className="font-bold text-white">Chat</span>
-        </button>
-        <span className="text-neutral-600">/</span>
-        <span className="text-sm font-bold text-white font-mono">{fileName}</span>
-        <div className="flex-1" />
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-neutral-400 hover:text-white transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" /><span className="font-bold text-white">Chat</span>
+          </button>
+          <span className="text-neutral-600">/</span>
+          <span className="text-sm font-bold text-white font-mono truncate">{fileName}</span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
         <button onClick={() => setWordWrap(w => !w)} title={wordWrap ? "Disable word wrap" : "Enable word wrap"}
           className={`text-xs transition-colors px-2 py-1 border ${wordWrap ? "text-brand-400 border-brand-500/40 hover:border-brand-400" : "text-neutral-500 border-neutral-700 hover:text-neutral-300 hover:border-neutral-600"}`}>
           <WrapText className="w-3.5 h-3.5" />
@@ -198,6 +200,7 @@ export function FileEditor({ sessionId, filePath, onBack, onDeleted }: FileEdito
             {running ? <><Square className="w-3.5 h-3.5 mr-1" />Stop</> : <><Play className="w-3.5 h-3.5 mr-1" />Run</>}
           </Button>
         )}
+        </div>
       </div>
       {stacked ? (
         <div className="flex flex-col flex-1 overflow-hidden">

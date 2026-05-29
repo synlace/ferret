@@ -217,17 +217,20 @@ function RunDetail({ run, onDeleted, onRerun }: { run: Run; onDeleted: () => voi
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header row — h-9 to align with the page-level header */}
-      <div className="flex items-center justify-between h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0 gap-3">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-xs font-semibold text-white truncate">{run.target_url || run.plan_id}</span>
-          <StatusBadge status={currentStatus} />
+      <div className="flex items-center justify-between px-4 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3">
+        <div className="flex flex-col min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold tracking-wider text-white truncate">{run.target_url || run.plan_id}</span>
+            <StatusBadge status={currentStatus} />
+          </div>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none font-mono">ID: {run.id}</span>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {(currentStatus === "done" || currentStatus === "error") && (
             <button
               onClick={handleRerun}
               disabled={rerunning}
-              className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-brand-400 border border-neutral-800 hover:border-brand-500/40 px-2 py-1 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 text-[11px] font-bold bg-brand-400 hover:bg-brand-300 text-neutral-950 px-2.5 py-1 transition-colors rounded-sm disabled:opacity-40"
               title="Re-run with same plan and target"
             >
               {rerunning ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <RotateCcw className="w-2.5 h-2.5" />}
@@ -238,7 +241,7 @@ function RunDetail({ run, onDeleted, onRerun }: { run: Run; onDeleted: () => voi
             <button
               onClick={handleCancel}
               disabled={cancelling}
-              className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 border border-red-900/60 hover:border-red-500/60 px-2 py-1 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 text-[11px] font-bold bg-red-500 hover:bg-red-400 text-neutral-950 px-2.5 py-1 transition-colors disabled:opacity-40"
               title="Stop this run"
             >
               {cancelling ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Square className="w-2.5 h-2.5 fill-current" />}
@@ -248,14 +251,14 @@ function RunDetail({ run, onDeleted, onRerun }: { run: Run; onDeleted: () => voi
           <button
             onClick={handleDelete}
             disabled={deleting || currentStatus === "running"}
-            className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-red-400 border border-neutral-800 hover:border-red-500/40 px-2 py-1 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1.5 text-[11px] font-bold bg-red-500 hover:bg-red-400 text-neutral-950 px-2.5 py-1 transition-colors disabled:opacity-40"
           >
             <Trash2 className="w-2.5 h-2.5" />Delete
           </button>
         </div>
       </div>
       {/* Metadata sub-row */}
-      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-neutral-800/60 text-[10px] text-neutral-500 flex-shrink-0 bg-neutral-900/30 flex-wrap">
+      <div className="flex items-center gap-3 px-4 h-[27px] border-b border-neutral-800/60 text-[10px] text-neutral-500 flex-shrink-0 bg-neutral-900/30 flex-wrap">
         <span>Plan: <span className="text-neutral-400">{run.plan_id}</span></span>
         {run.runner_id && (
           <span>Runner: <span className="text-neutral-400 font-mono">{run.runner_id}</span></span>
@@ -269,7 +272,7 @@ function RunDetail({ run, onDeleted, onRerun }: { run: Run; onDeleted: () => voi
 
       {/* Terminal output */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-neutral-800/60 flex-shrink-0">
+        <div className="flex items-center gap-2 px-4 h-[27px] border-b border-neutral-800/60 flex-shrink-0">
           <Terminal className="w-3 h-3 text-neutral-500" />
           <span className="text-[10px] text-neutral-500 uppercase tracking-wider">Output</span>
           <div className="ml-auto flex items-center gap-1">
@@ -423,12 +426,15 @@ export default function RunsPage() {
     <div className={`flex h-full bg-neutral-950 text-white overflow-hidden${isDragging ? " select-none" : ""}`}>
       {/* Left: run list */}
       <div
-        className="flex-shrink-0 border-r border-neutral-800 flex flex-col overflow-hidden"
+        className="flex-shrink-0 border-r border-neutral-800 bg-[#0a0a0a] flex flex-col overflow-hidden"
         style={{ width: `${listWidth}px` }}
       >
         {/* Left nav header */}
-        <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
-          <span className="text-xs font-semibold text-white">Runs</span>
+        <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold tracking-wider text-white">Runs</span>
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Execution history</span>
+          </div>
           <div className="flex items-center gap-1.5">
             <button
               onClick={fetchRuns}
@@ -439,9 +445,10 @@ export default function RunsPage() {
             </button>
             <button
               onClick={() => setShowNewModal(true)}
-              className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-brand-400 border border-neutral-800 hover:border-brand-500/40 px-2 py-1 transition-colors"
+              className="flex items-center justify-center w-6 h-6 bg-brand-400 hover:bg-brand-300 text-neutral-950 transition-colors rounded-sm"
+              title="New Run"
             >
-              <Plus className="w-3 h-3" />New
+              <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -461,7 +468,7 @@ export default function RunsPage() {
             <button
               key={run.id}
               onClick={() => setSelectedRunId(run.id)}
-              className={`w-full text-left px-3 py-2.5 border-b border-neutral-800/60 last:border-b-0 transition-colors ${
+              className={`w-full text-left px-3 h-[54px] flex flex-col justify-center border-b border-neutral-800/60 last:border-b-0 transition-colors ${
                 selectedRunId === run.id
                   ? "bg-neutral-800 text-white"
                   : "hover:bg-neutral-900/80 text-neutral-300"

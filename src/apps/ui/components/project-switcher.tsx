@@ -28,7 +28,7 @@ export default function ProjectSwitcher({ collapsed, onOpen }: ProjectSwitcherPr
   return (
     <button
       onClick={onOpen}
-      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-neutral-800 transition-colors text-left border-b border-neutral-800 flex-shrink-0 overflow-hidden"
+      className="w-full flex items-center gap-2 px-3 h-[36px] hover:bg-neutral-800 transition-colors text-left border-b border-neutral-800 flex-shrink-0 overflow-hidden"
       title={collapsed ? displayName : undefined}
     >
       <span className="text-base leading-none flex-shrink-0">{displayEmoji}</span>

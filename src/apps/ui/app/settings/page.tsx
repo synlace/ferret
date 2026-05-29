@@ -680,8 +680,11 @@ export default function SettingsPage() {
         style={{ width: `${listWidth}px` }}
       >
         {/* Left Nav Header */}
-        <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
-          <span className="text-xs font-semibold text-white">Settings</span>
+        <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold tracking-wider text-white">Settings</span>
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Global preferences</span>
+          </div>
         </div>
 
         {/* Sidebar Nav Buttons */}
@@ -762,19 +765,28 @@ export default function SettingsPage() {
       {/* Right Content Area */}
       <div className="flex-1 bg-neutral-950 flex flex-col h-full overflow-hidden">
         {/* Static Header */}
-        <div className="h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
-            {activeSection === "ca-cert" && <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />}
-            {activeSection === "security" && <ShieldAlert className="w-3.5 h-3.5 text-brand-400" />}
-            {activeSection === "ai-proxy" && <Activity className="w-3.5 h-3.5 text-brand-400" />}
-            {activeSection === "den" && <Cpu className="w-3.5 h-3.5 text-brand-400" />}
-            {activeSection === "backup" && <Download className="w-3.5 h-3.5 text-brand-400" />}
-            <span className="text-xs font-semibold text-white uppercase tracking-wider">
-              {activeSection === "ca-cert" && "CA Certificate"}
-              {activeSection === "security" && "Security & Authentication"}
-              {activeSection === "ai-proxy" && "AI Provider & Proxy"}
-              {activeSection === "den" && "Den (Runner Providers) Configuration"}
-              {activeSection === "backup" && "Backup & Restore Settings"}
+        <div className="flex items-center justify-between px-4 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3">
+          <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              {activeSection === "ca-cert" && <ShieldCheck className="w-3.5 h-3.5 text-brand-400" />}
+              {activeSection === "security" && <ShieldAlert className="w-3.5 h-3.5 text-brand-400" />}
+              {activeSection === "ai-proxy" && <Activity className="w-3.5 h-3.5 text-brand-400" />}
+              {activeSection === "den" && <Cpu className="w-3.5 h-3.5 text-brand-400" />}
+              {activeSection === "backup" && <Download className="w-3.5 h-3.5 text-brand-400" />}
+              <span className="text-sm font-bold tracking-wider text-white">
+                {activeSection === "ca-cert" && "CA Certificate"}
+                {activeSection === "security" && "Security & Authentication"}
+                {activeSection === "ai-proxy" && "AI Provider & Proxy"}
+                {activeSection === "den" && "Den Runner Provider"}
+                {activeSection === "backup" && "Backup & Restore"}
+              </span>
+            </div>
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none">
+              {activeSection === "ca-cert" && "HTTPS interception credentials"}
+              {activeSection === "security" && "Access control, session keys, and MFA"}
+              {activeSection === "ai-proxy" && "Configure LLM connections, keys, and intercept modes"}
+              {activeSection === "den" && "Configure Local Docker and AWS Fargate runner pools"}
+              {activeSection === "backup" && "Import and export workspace and proxy history databases"}
             </span>
           </div>
         </div>
@@ -866,7 +878,7 @@ export default function SettingsPage() {
             <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl">
               {/* Left Column: Change Password */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                <div className="flex items-center gap-2 h-8 border-b border-neutral-800 pb-2">
                   <KeyRound className="w-4 h-4 text-brand-400" />
                   <h3 className="text-xs font-semibold text-white uppercase tracking-wider">Change Password</h3>
                 </div>
@@ -938,7 +950,7 @@ export default function SettingsPage() {
 
               {/* Right Column: MFA */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                <div className="flex items-center gap-2 h-8 border-b border-neutral-800 pb-2">
                   <ShieldAlert className="w-4 h-4 text-brand-400" />
                   <h3 className="text-xs font-semibold text-white uppercase tracking-wider">Two-Factor Authentication</h3>
                   <div className="ml-auto">{mfaBadge}</div>
@@ -1033,7 +1045,7 @@ export default function SettingsPage() {
             <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl">
               {/* Left column: AI Provider config */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                <div className="flex items-center gap-2 h-8 border-b border-neutral-800 pb-2">
                   <Cpu className="w-4 h-4 text-brand-400" />
                   <h3 className="text-xs font-semibold text-white uppercase tracking-wider">AI Configuration</h3>
                 </div>
@@ -1069,7 +1081,7 @@ export default function SettingsPage() {
 
               {/* Right column: mitmproxy status */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                <div className="flex items-center gap-2 h-8 border-b border-neutral-800 pb-2">
                   <Activity className="w-4 h-4 text-brand-400" />
                   <h3 className="text-xs font-semibold text-white uppercase tracking-wider">Mitmproxy Daemon Status</h3>
                   <div className="ml-auto">{proxyBadge}</div>

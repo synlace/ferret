@@ -134,12 +134,15 @@ export function HuntsList({
   return (
     <div className="flex flex-col h-full" style={{ width: `${leftWidth}px` }}>
       {/* Header */}
-      <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
-        <span className="text-xs font-semibold text-white">Hunts</span>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Hunts</span>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">AI-assisted analysis</span>
+        </div>
         <div className="flex items-center gap-1">
           <button onClick={onNewHunt} title="New hunt"
-            className="text-neutral-500 hover:text-brand-400 transition-colors">
-            <Plus className="w-3 h-3" />
+            className="flex items-center justify-center w-6 h-6 bg-brand-400 hover:bg-brand-300 text-neutral-950 transition-colors rounded-sm">
+            <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

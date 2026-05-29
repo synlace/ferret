@@ -632,13 +632,13 @@ export default function SnarePage() {
       )}
 
       {/* Page header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-bold text-white">Snare</h1>
-          {intercepted.length > 0 && (
-            <span className="px-1.5 py-0.5 bg-brand-900/50 border border-brand-700 text-brand-300 text-[10px] font-mono rounded">
-              {intercepted.length} pending
-            </span>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Snare</span>
+          {intercepted.length > 0 ? (
+            <span className="text-[10px] text-brand-400 mt-0.5 leading-none whitespace-nowrap truncate">{intercepted.length} pending</span>
+          ) : (
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Proxy interceptor</span>
           )}
         </div>
         <div className="flex items-center gap-1">

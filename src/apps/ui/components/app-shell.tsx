@@ -240,7 +240,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         className="flex-shrink-0 bg-neutral-900 border-r border-neutral-800 flex flex-col overflow-hidden transition-[width] duration-200"
       >
         {/* Header — single layout; text fades in after the width transition completes */}
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-neutral-800 flex-shrink-0 overflow-hidden">
+        <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 flex-shrink-0 overflow-hidden">
           <div className="flex items-center gap-2 min-w-0">
             <Image
               src="/ferret.png"

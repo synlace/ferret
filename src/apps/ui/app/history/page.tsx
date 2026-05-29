@@ -620,11 +620,13 @@ export default function HistoryPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold text-white">Proxy History</h1>
-          {activeProject && (
-            <span className="text-xs text-neutral-500">{activeProject.name}</span>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Proxy History</span>
+          {activeProject ? (
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">{activeProject.name}</span>
+          ) : (
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Captured traffic</span>
           )}
         </div>
         <div className="flex items-center gap-1">

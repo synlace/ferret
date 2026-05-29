@@ -141,23 +141,25 @@ function PlanListItem({ plan, selected, onClick, dimmed }: PlanListItemProps) {
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-3 py-2.5 flex items-center gap-2 transition-colors border-b border-neutral-800/60 last:border-b-0 ${
+      className={`w-full text-left px-3 h-[54px] flex-shrink-0 flex flex-col justify-center gap-1 transition-colors border-b border-neutral-800/60 last:border-b-0 ${
         selected ? "bg-neutral-800 text-white" : "hover:bg-neutral-900/80 text-neutral-300"
       } ${dimmed ? "opacity-40 pointer-events-none" : ""}`}
     >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-medium leading-tight truncate">{plan.name}</span>
-          <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border flex-shrink-0 ${badgeClass}`}>{plan.tool}</span>
-          {plan.is_builtin && (
-            <span className="text-[8px] text-neutral-600 border border-neutral-800 px-1 py-0.5 flex-shrink-0">built-in</span>
+      <div className="w-full flex items-center justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-medium leading-tight truncate">{plan.name}</span>
+            <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border flex-shrink-0 ${badgeClass}`}>{plan.tool}</span>
+            {plan.is_builtin && (
+              <span className="text-[8px] text-neutral-600 border border-neutral-800 px-1 py-0.5 flex-shrink-0">built-in</span>
+            )}
+          </div>
+          {plan.description && (
+            <p className="text-[10px] text-neutral-500 mt-0.5 truncate">{plan.description}</p>
           )}
         </div>
-        {plan.description && (
-          <p className="text-[10px] text-neutral-500 mt-0.5 truncate">{plan.description}</p>
-        )}
+        <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-colors ${selected ? "text-brand-400" : "text-neutral-700"}`} />
       </div>
-      <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-colors ${selected ? "text-brand-400" : "text-neutral-700"}`} />
     </button>
   )
 }
@@ -220,7 +222,7 @@ function PlanDetail({ plan, onSaved, onDelete, onClone, actionLoading }: PlanDet
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Detail header */}
-      <div className="flex items-start justify-between px-4 py-3 border-b border-neutral-800 flex-shrink-0 gap-3">
+      <div className="flex items-start justify-between px-4 py-3 border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3">
         <div className="flex-1 min-w-0">
           {editing ? (
             <div className="space-y-2">
@@ -291,7 +293,7 @@ function PlanDetail({ plan, onSaved, onDelete, onClone, actionLoading }: PlanDet
       )}
 
       {/* Meta row */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-neutral-800/60 flex-shrink-0">
+      <div className="flex items-center gap-4 px-4 h-[27px] border-b border-neutral-800/60 flex-shrink-0">
         {editing ? (
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -436,23 +438,27 @@ export default function PlansPage() {
   return (
     <div className={`flex flex-col h-full bg-neutral-950 text-white overflow-hidden${isDragging ? " select-none" : ""}`}>
       {/* Header */}
-      <div className="flex items-center justify-between h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
-        <span className="text-xs font-semibold text-white">Plans</span>
+      <div className="flex items-center justify-between px-4 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Plans</span>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Blueprint templates</span>
+        </div>
         <button
           onClick={() => setShowNewModal(true)}
-          className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-brand-400 border border-neutral-800 hover:border-brand-500/40 px-2 py-1 transition-colors"
+          className="flex items-center justify-center w-6 h-6 bg-brand-400 hover:bg-brand-300 text-neutral-950 transition-colors rounded-sm flex-shrink-0"
+          title="New Plan"
         >
-          <Plus className="w-3 h-3" />New Plan
+          <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {/* Tool filter tabs */}
-      <div className="flex items-center gap-0 border-b border-neutral-800 bg-neutral-900/40 flex-shrink-0 px-4">
+      <div className="flex items-center gap-0 h-[36px] border-b border-neutral-800 bg-neutral-900/40 flex-shrink-0 px-4">
         {TOOL_TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setToolFilter(tab.key)}
-            className={`px-3 py-2 text-[10px] font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-3 h-full text-[10px] font-medium transition-colors border-b-2 -mb-px ${
               toolFilter === tab.key
                 ? "text-brand-400 border-brand-500"
                 : "text-neutral-500 border-transparent hover:text-neutral-300"
@@ -467,7 +473,7 @@ export default function PlansPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left: plan list */}
         <div
-          className="flex-shrink-0 border-r border-neutral-800 flex flex-col overflow-hidden"
+          className="flex-shrink-0 border-r border-neutral-800 bg-[#0a0a0a] flex flex-col overflow-hidden"
           style={{ width: `${listWidth}px` }}
         >
           <div className="flex-1 overflow-y-auto">

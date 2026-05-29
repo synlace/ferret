@@ -744,10 +744,12 @@ function GnawPageInner() {
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Page header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-bold text-white">Gnaw</h1>
-          <span className="text-neutral-600 text-xs font-mono truncate max-w-xs">{url || "—"}</span>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Gnaw</span>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">
+            {url || "HTTP request scratchpad"}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           {response?.status_code != null && (

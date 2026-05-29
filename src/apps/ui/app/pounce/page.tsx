@@ -6,8 +6,13 @@ export default function PouncePage() {
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Page header strip */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <h1 className="text-sm font-bold text-white">Pounce</h1>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Pounce</span>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">
+            Automated payload fuzzing
+          </span>
+        </div>
         <span className="px-2 py-0.5 border text-xs bg-neutral-800 border-neutral-700 text-neutral-500">
           Coming Soon
         </span>

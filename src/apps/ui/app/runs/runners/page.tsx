@@ -795,8 +795,11 @@ export default function RunnersPage() {
         style={{ width: `${listWidth}px` }}
       >
         {/* Left nav header - aligned with Runs page */}
-        <div className="flex items-center justify-between h-9 px-3 border-b border-neutral-800 bg-neutral-900/60 flex-shrink-0">
-          <span className="text-xs font-semibold text-white">Runners</span>
+        <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold tracking-wider text-white">Runners</span>
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Isolated execution</span>
+          </div>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -859,15 +862,18 @@ export default function RunnersPage() {
         {selectedItem === "keys" ? (
           /* KEY MANAGEMENT VIEW */
           <div className="flex-1 flex flex-col h-full overflow-hidden">
-            {/* Header row — exact same h-9, borders and colors as /runs */}
-            <div className="h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <Key className="w-3.5 h-3.5 text-brand-400" />
-                <span className="text-xs font-semibold text-white">Subscription Keys</span>
+            {/* Header row — exact same h-[48px], borders and colors as /runs */}
+            <div className="flex items-center justify-between px-4 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3 sticky top-0 z-10 backdrop-blur-md">
+              <div className="flex flex-col min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Key className="w-3.5 h-3.5 text-brand-400" />
+                  <span className="text-sm font-bold tracking-wider text-white">Subscription Keys</span>
+                </div>
+                <span className="text-[10px] text-neutral-500 mt-0.5 leading-none">Security and credentials</span>
               </div>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-1 bg-brand-500 hover:bg-brand-600 text-neutral-950 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+                className="flex items-center gap-1.5 text-[11px] font-bold bg-brand-400 hover:bg-brand-300 text-neutral-950 px-2.5 py-1 transition-colors rounded-sm"
               >
                 <Plus className="w-3 h-3" /> Generate Key
               </button>
@@ -943,28 +949,30 @@ export default function RunnersPage() {
         ) : selectedRunner ? (
           /* RUNNER AGENT DETAIL VIEW */
           <div className="flex-1 flex flex-col h-full overflow-hidden">
-            {/* Header row — exact same h-9, borders and colors as /runs */}
-            <div className="h-9 px-4 border-b border-neutral-800 bg-neutral-900/60 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md flex-shrink-0">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <Cpu className="w-3.5 h-3.5 text-brand-400 flex-shrink-0" />
-                <span className="text-xs font-semibold text-white truncate font-mono">{selectedRunner.id}</span>
-                {selectedRunner.status === "provisioning" ? (
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-                    <span className="w-1 h-1 rounded-full bg-yellow-500 animate-pulse" />
-                    Pending
-                  </span>
-                ) : Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? (
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-green-500/10 text-green-400 border border-green-500/20">
-                    <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                    Online
-                  </span>
-                ) : (
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-neutral-800 text-neutral-400 border border-neutral-700/60">
-                    <span className="w-1 h-1 rounded-full bg-neutral-600" />
-                    Offline
-                  </span>
-                )}
-                <span className="text-[10px] text-neutral-500 truncate hidden sm:inline">
+            {/* Header row — exact same h-[48px], borders and colors as /runs */}
+            <div className="flex items-center justify-between px-4 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3 sticky top-0 z-10 backdrop-blur-md">
+              <div className="flex flex-col min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-3.5 h-3.5 text-brand-400 flex-shrink-0" />
+                  <span className="text-sm font-bold tracking-wider text-white truncate font-mono">{selectedRunner.id}</span>
+                  {selectedRunner.status === "provisioning" ? (
+                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                      <span className="w-1 h-1 rounded-full bg-yellow-500 animate-pulse" />
+                      Pending
+                    </span>
+                  ) : Date.now() - parseUtcDate(selectedRunner.last_heartbeat).getTime() < 30000 ? (
+                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-green-500/10 text-green-400 border border-green-500/20">
+                      <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+                      Online
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 bg-neutral-800 text-neutral-400 border border-neutral-700/60">
+                      <span className="w-1 h-1 rounded-full bg-neutral-600" />
+                      Offline
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-neutral-500 mt-0.5 leading-none">
                   Last HB: {parseUtcDate(selectedRunner.last_heartbeat).toLocaleTimeString()}
                 </span>
               </div>

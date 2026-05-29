@@ -247,8 +247,11 @@ export default function ProjectsPage() {
     <div className="flex flex-col h-full overflow-hidden bg-neutral-950 text-white">
 
       {/* ── Page header ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 h-10 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <h1 className="text-sm font-semibold text-white">Projects</h1>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-bold tracking-wider text-white">Projects</span>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Workspace environments</span>
+        </div>
         <div className="flex items-center gap-1.5">
           {/* Search */}
           <div className="relative">

@@ -332,34 +332,41 @@ function FileViewer({ workspaceId, file, onClose }: FileViewerProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Viewer header */}
-      <div className="flex items-center gap-2 px-3 h-8 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <span
-          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-          style={{ background: color }}
-        />
-        <span className="text-[11px] text-neutral-300 font-mono flex-1 truncate">
-          {file.subdir}/{file.name}
-        </span>
-        <span className="text-[10px] text-neutral-600 flex-shrink-0">{formatSize(file.size)}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors px-1.5 py-0.5 border border-neutral-800 hover:border-neutral-600 rounded"
-        >
-          {copied ? <Check className="w-2.5 h-2.5 text-green-400" /> : <Copy className="w-2.5 h-2.5" />}
-          {copied ? "Copied" : "Copy"}
-        </button>
-        <button
-          onClick={handleDownload}
-          className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors px-1.5 py-0.5 border border-neutral-800 hover:border-neutral-600 rounded"
-        >
-          <Download className="w-2.5 h-2.5" />
-        </button>
-        <button
-          onClick={onClose}
-          className="text-neutral-600 hover:text-red-400 transition-colors ml-1"
-        >
-          <X className="w-3 h-3" />
-        </button>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3">
+        <div className="flex flex-col min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{ background: color }}
+            />
+            <span className="text-sm font-bold tracking-wider text-white truncate font-mono">
+              {file.name}
+            </span>
+            <span className="text-[10px] text-neutral-600 flex-shrink-0">({formatSize(file.size)})</span>
+          </div>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Path: {file.subdir}/{file.name}</span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 text-[11px] font-bold bg-brand-400 hover:bg-brand-300 text-neutral-950 px-2.5 py-1 transition-colors rounded-sm"
+          >
+            {copied ? <Check className="w-3 h-3 text-neutral-950" /> : <Copy className="w-3 h-3" />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button
+            onClick={handleDownload}
+            className="flex items-center justify-center text-[11px] font-bold bg-neutral-800 hover:bg-neutral-700 text-white px-2 py-1 transition-colors rounded-sm border border-neutral-700"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={onClose}
+            className="text-neutral-400 hover:text-red-400 transition-colors p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
       {/* Content */}
       <div className="flex-1 overflow-hidden bg-neutral-950">
@@ -445,8 +452,11 @@ function FileBrowser({ workspace, selectedFile, savedFilePath, onSelectFile }: F
   if (!workspace) {
     return (
       <div className="flex flex-col h-full">
-        <div className="h-8 border-b border-neutral-800 flex items-center px-3 bg-neutral-900 flex-shrink-0">
-          <span className="text-[11px] text-neutral-600">No workspace selected</span>
+        <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold tracking-wider text-white">Files</span>
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">No workspace selected</span>
+          </div>
         </div>
         <div className="flex-1 flex items-center justify-center">
           <span className="text-[11px] text-neutral-700">Select a workspace</span>
@@ -469,11 +479,11 @@ function FileBrowser({ workspace, selectedFile, savedFilePath, onSelectFile }: F
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 h-8 border-b border-neutral-800 flex-shrink-0 bg-neutral-900">
-        <FolderOpen className="w-3 h-3 text-neutral-600 flex-shrink-0" />
-        <span className="text-[12px] font-mono font-medium text-neutral-200 truncate flex-shrink-0">
-          {workspace.name}
-        </span>
+      <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-3">
+        <div className="flex flex-col min-w-0 max-w-[200px] flex-shrink-0">
+          <span className="text-sm font-bold tracking-wider text-white truncate">{workspace.name}</span>
+          <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Workspace files</span>
+        </div>
         {/* Dynamic filter pills */}
         <div className="flex items-center gap-1.5 flex-1 overflow-x-auto min-w-0 scrollbar-none">
           {["all", ...subdirs].map(d => (
@@ -482,7 +492,7 @@ function FileBrowser({ workspace, selectedFile, savedFilePath, onSelectFile }: F
               onClick={() => { setActiveFilter(d); onSelectFile(null) }}
               className={`text-[10px] px-2 py-0.5 rounded-full border flex-shrink-0 font-mono transition-colors ${
                 activeFilter === d
-                  ? "border-orange-500/40 bg-orange-500/10 text-orange-400"
+                  ? "border-brand-500/40 bg-brand-500/10 text-brand-400"
                   : "border-neutral-800 text-neutral-600 hover:text-neutral-400 hover:border-neutral-700"
               }`}
             >
@@ -1036,27 +1046,32 @@ export default function WorkspacesPage() {
 
       {/* ── LEFT PANEL: Workspace tree ──────────────────────────────────── */}
       <div
-        className="flex flex-col border-r border-neutral-800 bg-neutral-900 flex-shrink-0 overflow-hidden"
+        className="flex flex-col border-r border-neutral-800 bg-[#0a0a0a] flex-shrink-0 overflow-hidden"
         style={{ width: listWidth }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-2 h-8 border-b border-neutral-800 flex-shrink-0 gap-2">
-          <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider flex-1">
-            Workspaces
-          </span>
+        <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0 gap-2">
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="text-sm font-bold tracking-wider text-white">Workspaces</span>
+            <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">Target environments</span>
+          </div>
           <button
             onClick={toggleSortBy}
-            className="text-[9px] px-1.5 py-0.5 rounded border border-neutral-800 text-neutral-500 hover:text-neutral-300 hover:border-neutral-600 transition-colors flex-shrink-0"
+            className={`text-[10px] px-2 py-0.5 rounded-sm border transition-colors flex-shrink-0 font-medium ${
+              sortBy === "status"
+                ? "border-brand-500/30 bg-brand-500/15 text-brand-400 hover:bg-brand-500/25"
+                : "border-neutral-800 bg-neutral-800/40 text-neutral-400 hover:border-neutral-700 hover:bg-neutral-800/80 hover:text-white"
+            }`}
             title={`Sorting by ${sortBy === "name" ? "alphabetical name" : "HTTP status code"}`}
           >
             {sortBy === "name" ? "Name ↑" : "Status ↑"}
           </button>
           <button
             onClick={toggleHideDeadHosts}
-            className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors flex-shrink-0 ${
+            className={`text-[10px] px-2 py-0.5 rounded-sm border transition-colors flex-shrink-0 font-medium ${
               hideDeadHosts
-                ? "border-orange-500/50 text-orange-500 bg-orange-950/20 hover:bg-orange-950/30"
-                : "border-neutral-800 text-neutral-500 hover:text-neutral-300 hover:border-neutral-600"
+                ? "border-brand-500/30 bg-brand-500/15 text-brand-400 hover:bg-brand-500/25"
+                : "border-neutral-800 bg-neutral-800/40 text-neutral-400 hover:border-neutral-700 hover:bg-neutral-800/80 hover:text-white"
             }`}
             title={hideDeadHosts ? "Showing active hosts only" : "Showing all hosts"}
           >
@@ -1064,22 +1079,23 @@ export default function WorkspacesPage() {
           </button>
           <button
             onClick={() => fetchWorkspaces(false)}
-            className="text-neutral-600 hover:text-neutral-400 transition-colors"
+            className="text-neutral-600 hover:text-neutral-400 transition-colors flex-shrink-0"
             title="Refresh"
           >
             <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
           </button>
           <button
             onClick={() => { setTargetWorkspace(null); setShowNewRunModal(true) }}
-            className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-neutral-300 border border-neutral-800 hover:border-neutral-600 px-1.5 py-0.5 rounded transition-colors"
+            className="flex items-center justify-center w-6 h-6 bg-brand-400 hover:bg-brand-300 text-neutral-950 transition-colors rounded-sm flex-shrink-0"
+            title="New"
           >
-            <Plus className="w-2.5 h-2.5" />New
+            <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Summary */}
         {workspaces.length > 0 && (
-          <div className="flex items-center gap-3 px-3 py-1 border-b border-neutral-800/60 flex-shrink-0">
+          <div className="flex items-center gap-3 px-3 h-[36px] border-b border-neutral-800/60 flex-shrink-0">
             <span className="text-[10px] text-neutral-600">
               <span className="text-neutral-400">{workspaces.length}</span> ws
             </span>
@@ -1164,7 +1180,12 @@ export default function WorkspacesPage() {
             />
           ) : (
             <div className="flex flex-col h-full">
-              <div className="h-8 border-b border-neutral-800 flex items-center px-3 bg-neutral-900 flex-shrink-0" />
+              <div className="flex items-center justify-between px-3 h-[48px] border-b border-neutral-800 bg-[#171717] flex-shrink-0">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm font-bold tracking-wider text-white">Viewer</span>
+                  <span className="text-[10px] text-neutral-500 mt-0.5 leading-none whitespace-nowrap truncate">No file selected</span>
+                </div>
+              </div>
               <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-neutral-950">
                 <File className="w-9 h-9 text-neutral-800" />
                 <span className="text-[12px] text-neutral-600">Select a file to view its contents</span>
