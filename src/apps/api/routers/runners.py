@@ -343,6 +343,10 @@ async def runner_control_channel(websocket: WebSocket, runner_id: str):
         _log.warning(f"WebSocket control connection lost for runner {runner_id}: {e}")
     finally:
         _active_runners_ws.pop(runner_id, None)
+        try:
+            await deps.db_client.update_runner_status(runner_id, "offline")
+        except Exception as db_err:
+            _log.error(f"Failed to set runner {runner_id} status to offline: {db_err}")
 
 
 @router.websocket("/{runner_id}/shell")

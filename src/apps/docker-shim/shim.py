@@ -56,7 +56,7 @@ log = logging.getLogger("ferret-shim")
 # /v1.NN is stripped before matching so patterns are written without it.
 
 _HEX = r"[0-9a-fA-F]+"
-_CONTAINER = re.escape(ALLOWED_CONTAINER)
+_CONTAINER = rf"(?:{re.escape(ALLOWED_CONTAINER)}|[0-9a-fA-F]{{12,64}}|ferret-runner-[a-zA-Z0-9_\-]+)"
 
 ALLOW_PATTERNS = [
     # ping: GET|HEAD /_ping

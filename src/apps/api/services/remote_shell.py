@@ -34,7 +34,8 @@ class RunnerShellSession(ABC):
 
 
 class MockShellSession(RunnerShellSession):
-    def __init__(self):
+    def __init__(self, runner_id: str):
+        self.runner_id = runner_id
         self.master_fd = None
         self.pid = None
         self.callback = None
@@ -44,11 +45,27 @@ class MockShellSession(RunnerShellSession):
         self.loop = asyncio.get_running_loop()
         pid, master_fd = pty.fork()
         if pid == 0:
-            # Child process: Try starting tmux session; fallback to bash if tmux fails/absent
+            env = os.environ.copy()
+            target_container = self.runner_id
+            if target_container == "local":
+                target_container = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab")
+            elif target_container.startswith("runner-"):
+                parts = target_container.split("-")
+                if len(parts) == 3:
+                    target_container = parts[1]
+            # Try starting tmux session inside the sandbox/runner container; fallback to bash
             try:
-                os.execvp("tmux", ["tmux", "new-session", "-A", "-s", "ferret-shell-mock", "bash", ";", "set-option", "-g", "mouse", "on"])
+                args = [
+                    "docker", "exec", "-it", target_container,
+                    "tmux", "new-session", "-A", "-s", "ferret-shell-mock", "bash", ";", "set-option", "-g", "mouse", "on"
+                ]
+                os.execvpe("docker", args, env)
             except Exception:
-                os.execvp("bash", ["bash"])
+                try:
+                    args = ["docker", "exec", "-it", target_container, "bash"]
+                    os.execvpe("docker", args, env)
+                except Exception:
+                    os.execvp("bash", ["bash"])
         else:
             # Parent process
             self.pid = pid
@@ -272,15 +289,22 @@ def create_shell_session(runner_id: str) -> RunnerShellSession:
     """Factory to return either a real AWSECSShellSession or a MockShellSession based on runner id."""
     if runner_id.startswith("runner-fargate-"):
         return AWSECSShellSession(runner_id)
-    return MockShellSession()
+    return MockShellSession(runner_id)
 
 
 async def kill_shell_session(runner_id: str) -> None:
     """Kills the active tmux shell session in the container or host to allow a clean restart."""
     if not runner_id.startswith("runner-fargate-"):
         try:
+            target_container = runner_id
+            if target_container == "local":
+                target_container = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab")
+            elif target_container.startswith("runner-"):
+                parts = target_container.split("-")
+                if len(parts) == 3:
+                    target_container = parts[1]
             proc = await asyncio.create_subprocess_exec(
-                "tmux", "kill-session", "-t", "ferret-shell-mock",
+                "docker", "exec", target_container, "tmux", "kill-session", "-t", "ferret-shell-mock",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL
             )

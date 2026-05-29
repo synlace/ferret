@@ -342,10 +342,16 @@ class ProjectsMixin:
         return runners
 
     async def update_runner_status(self, runner_id: str, status: str) -> None:
-        await self._db.execute(
-            "UPDATE runners SET status = ? WHERE id = ?",
-            (status, runner_id),
-        )
+        if status == "offline":
+            await self._db.execute(
+                "UPDATE runners SET status = ?, last_heartbeat = '1970-01-01T00:00:00' WHERE id = ?",
+                (status, runner_id),
+            )
+        else:
+            await self._db.execute(
+                "UPDATE runners SET status = ? WHERE id = ?",
+                (status, runner_id),
+            )
         await self._db.commit()
 
     async def create_runner_key(self, key: str, name: str) -> None:
