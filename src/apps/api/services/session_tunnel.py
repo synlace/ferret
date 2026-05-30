@@ -32,6 +32,12 @@ class SessionTunnel:
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
 
+        from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+        ctx_project_id.set(run["project_id"])
+        ctx_workspace_id.set(run["workspace_id"])
+        ctx_workflow_id.set(f"pipeline_{run_id}")
+        ctx_run_id.set(run_id)
+
         run_log_path = run.get("run_log_path")
         if not run_log_path:
             log_filename = f"run_{run_id[:8]}.log"
@@ -96,6 +102,12 @@ class SessionTunnel:
         run = await self.db_client.get_run(run_id)
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
+
+        from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+        ctx_project_id.set(run["project_id"])
+        ctx_workspace_id.set(run["workspace_id"])
+        ctx_workflow_id.set(f"pipeline_{run_id}")
+        ctx_run_id.set(run_id)
 
         await self.db_client.update_run_status(
             run_id,

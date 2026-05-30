@@ -14,6 +14,12 @@ class FargateWGOrchestrator:
         """Evaluates active/provisioning vs busy runner headroom for a Den,
         and dynamically provisions additional runners to satisfy the requirement.
         """
+        from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+        ctx_project_id.set("system")
+        ctx_workspace_id.set("system")
+        ctx_workflow_id.set(f"fargate_{den_id}")
+        ctx_run_id.set("system")
+
         # Fetch targeted Den record first to check if AWS
         den = await deps.db_client.get_den(den_id)
         if not den or den["type"] != "aws":
@@ -38,6 +44,12 @@ class FargateWGOrchestrator:
             runner_count: How many runners to spawn.
             is_warm: True for warm pool runners (no idle timeout). False for single-use job runners.
         """
+        from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+        ctx_project_id.set("system")
+        ctx_workspace_id.set("system")
+        ctx_workflow_id.set(f"fargate_{den_id}")
+        ctx_run_id.set("system")
+
         # 1. Fetch targeted Den record
         den = await deps.db_client.get_den(den_id)
         if not den or den["type"] != "aws":

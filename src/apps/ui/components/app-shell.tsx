@@ -23,6 +23,7 @@ import {
   Layers,
   Play,
   Cpu,
+  Terminal,
 } from "lucide-react"
 import ProjectSwitcher from "@/components/project-switcher"
 import ProjectSheet from "@/components/project-sheet"
@@ -53,6 +54,7 @@ const navItems = [
   { href: "/hunts",      icon: Crosshair,         label: "Hunts" },
   { href: "/findings",   icon: Shield,            label: "Findings" },
   { href: "/projects",   icon: FolderOpen,        label: "Projects" },
+  { href: "/logs",       icon: Terminal,          label: "Logs" },
   { href: "/settings",   icon: SlidersHorizontal, label: "Settings" },
 ]
 

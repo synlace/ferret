@@ -130,6 +130,12 @@ class ScriptExecutionEngine:
         """Background orchestration of script execution, template substitutions, logging, 
         and real-time streaming manifest parsing.
         """
+        from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+        ctx_project_id.set(project_id)
+        ctx_workspace_id.set(workspace_id)
+        ctx_workflow_id.set(f"pipeline_{run_id}")
+        ctx_run_id.set(run_id)
+
         from routers.chats_runners import stream_run_script
         from routers.plans import _find_plan
 

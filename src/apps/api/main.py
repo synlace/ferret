@@ -33,10 +33,13 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stderr)]
 )
 
+from services.workflow_logging import configure_unified_logging
+configure_unified_logging()
+
 _log = logging.getLogger(__name__)
 
 import deps
-from routers import requests, proxy, findings, tests, projects, settings, hunts, setup, plans, sources, runners
+from routers import requests, proxy, findings, tests, projects, settings, hunts, setup, plans, sources, runners, system_logs
 from routers import auth as auth_router
 from routers import chats, workspaces, runs
 
@@ -135,7 +138,12 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> Response:
-    _log.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    _log.exception(
+        "Unhandled exception on %s %s", 
+        request.method, 
+        request.url.path,
+        extra={"details": "An unhandled exception was captured by the FastAPI global exception handler. The server returned a 500 Internal Server Error."}
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
@@ -266,6 +274,7 @@ app.include_router(sources.router)
 app.include_router(workspaces.router)
 app.include_router(runs.router)
 app.include_router(runners.router)
+app.include_router(system_logs.router)
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +295,11 @@ async def websocket_endpoint(websocket: WebSocket):
     # curl/wscat without --origin will have an empty string — allowed for
     # localhost developer tooling.
     if origin not in _WS_ALLOWED_ORIGINS:
-        _log.warning("WebSocket rejected: disallowed origin %r", origin)
+        _log.warning(
+            "WebSocket rejected: disallowed origin %r", 
+            origin,
+            extra={"details": "An incoming WebSocket connection request was blocked because its origin header does not match the allowed client ports (local UI)."}
+        )
         await websocket.close(code=1008)  # 1008 = Policy Violation
         return
     await ws_manager.connect(websocket)
