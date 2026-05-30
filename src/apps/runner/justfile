@@ -1,4 +1,4 @@
-# FERRET Lab Runner — Interactive Debugging & Diagnostics helper
+# FERRET Runner — Interactive Debugging & Diagnostics helper
 # Run inside an active ECS Exec shell or local runner shell
 
 # Show available diagnostic recipes (default)

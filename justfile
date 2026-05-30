@@ -25,15 +25,15 @@ up:
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Syncing lab runner.py to api/runner.py..."
-    cp src/apps/lab/runner.py src/apps/api/runner.py
-    LAB_IMG="${FERRET_LAB_IMAGE:-}"
-    if [[ -z "$LAB_IMG" || "$LAB_IMG" == ghcr.io/* ]]; then
-        echo "Pulling latest ferret-lab image from GHCR..."
-        docker compose pull lab
+    echo "Syncing runner runner.py to api/runner.py..."
+    cp src/apps/runner/runner.py src/apps/api/runner.py
+    RUNNER_IMG="${FERRET_RUNNER_IMAGE_LOCAL:-}"
+    if [[ -z "$RUNNER_IMG" || "$RUNNER_IMG" == ghcr.io/* ]]; then
+        echo "Pulling latest ferret-runner image from GHCR..."
+        docker compose pull runner
     fi
-    echo "Starting API and lab containers (with hot reload)..."
-    docker compose up --build -d api lab
+    echo "Starting API and runner containers (with hot reload)..."
+    docker compose up --build -d api runner
     echo ""
     echo "FERRET dev mode:"
     echo "  UI  → http://localhost:3000 (hot reload)"
@@ -56,7 +56,7 @@ down:
 
 # Build images without starting (no k3s import)
 build:
-    cp src/apps/lab/runner.py src/apps/api/runner.py
+    cp src/apps/runner/runner.py src/apps/api/runner.py
     docker compose build
 
 # Tail logs from all services
@@ -416,21 +416,21 @@ restore:
     docker compose up -d api
     echo "Restore complete."
 
-# Drop into the ferret-lab sandbox container shell
+# Drop into the ferret-runner sandbox container shell
 shell:
-    docker exec -it ferret-lab bash
+    docker exec -it ferret-runner bash
 
-# Build the lab image locally (for contributors modifying src/apps/lab/).
-# Set FERRET_LAB_IMAGE=ferret-lab:local in .env to use this image instead of GHCR.
-build-lab:
-    docker buildx build -t ferret-lab:local src/apps/lab
+# Build the runner image locally (for contributors modifying src/apps/runner/).
+# Set FERRET_RUNNER_IMAGE_LOCAL=ferret-runner:local in .env to use this image instead of GHCR.
+build-runner:
+    docker buildx build -t ferret-runner:local src/apps/runner
 
-# Rebuild the local lab image and restart the container.
-# Requires FERRET_LAB_IMAGE=ferret-lab:local in .env.
-restart-lab:
-    docker compose stop lab
-    docker buildx build -t ferret-lab:local src/apps/lab
-    docker compose start lab
+# Rebuild the local runner image and restart the container.
+# Requires FERRET_RUNNER_IMAGE_LOCAL=ferret-runner:local in .env.
+restart-runner:
+    docker compose stop runner
+    docker buildx build -t ferret-runner:local src/apps/runner
+    docker compose start runner
 
 # Start an isolated outbound polling runner container using a subscription key.
 # Usage:
@@ -440,7 +440,7 @@ restart-lab:
 runner key api_url="http://localhost:8000":
     #!/usr/bin/env bash
     set -euo pipefail
-    IMAGE="${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}"
+    IMAGE="${FERRET_RUNNER_IMAGE_LOCAL:-ghcr.io/synlace/ferret-runner:latest}"
     KEY_SHORT=$(echo -n "{{key}}" | md5sum | cut -c1-6)
     NAME="ferret-runner-${KEY_SHORT}"
     echo "Starting isolated outbound runner container: ${NAME}"
@@ -458,18 +458,18 @@ runner key api_url="http://localhost:8000":
     echo "Runner started successfully. To view its logs, run:"
     echo "  docker logs -f ${NAME}"
 
-# Push a new ferret-lab image to GHCR (maintainers only).
+# Push a new ferret-runner image to GHCR (maintainers only).
 # Requires docker login to ghcr.io and write access to the repo packages.
-# CI runs this automatically on push to main when src/apps/lab/** changes.
-publish-lab:
+# CI runs this automatically on push to main when src/apps/runner/** changes.
+publish-runner:
     docker buildx build \
         --platform linux/amd64 \
-        -t ghcr.io/synlace/ferret-lab:latest \
+        -t ghcr.io/synlace/ferret-runner:latest \
         --push \
-        src/apps/lab
+        src/apps/runner
 
 # Create and push a semver release tag, triggering the GA workflow to publish
-# a versioned ferret-lab image to GHCR, and rebuilds the UI image with the
+# a versioned ferret-runner image to GHCR, and rebuilds the UI image with the
 # new version baked in via NEXT_PUBLIC_APP_VERSION.
 # Usage: just tag major | just tag minor | just tag patch
 # With no existing tags, major → v1.0.0, minor → v0.1.0, patch → v0.0.1.
@@ -496,7 +496,7 @@ tag bump:
         -e "s|ferret-docker-shim:\${FERRET_VERSION:-v[^}]*}|ferret-docker-shim:\${FERRET_VERSION:-${NEW}}|g" \
         -e "s|ferret-api:\${FERRET_VERSION:-v[^}]*}|ferret-api:\${FERRET_VERSION:-${NEW}}|g" \
         -e "s|ferret-ui:\${FERRET_VERSION:-v[^}]*}|ferret-ui:\${FERRET_VERSION:-${NEW}}|g" \
-        -e "s|ferret-lab:v[0-9][^}]*}|ferret-lab:${NEW}}|g" \
+        -e "s|ferret-runner:v[0-9][^}]*}|ferret-runner:${NEW}}|g" \
         docker-compose.prod.yml
     git add docker-compose.prod.yml
     git commit -m "chore(release): pin docker-compose.prod.yml defaults to ${NEW}"
@@ -505,8 +505,8 @@ tag bump:
     git push origin HEAD "$NEW"
     echo ""
     echo "Tag ${NEW} pushed. GitHub Actions will publish:"
-    echo "  ghcr.io/synlace/ferret-lab:${NEW}"
-    echo "  ghcr.io/synlace/ferret-lab:latest"
+    echo "  ghcr.io/synlace/ferret-runner:${NEW}"
+    echo "  ghcr.io/synlace/ferret-runner:latest"
     echo ""
     echo "Rebuilding UI image with NEXT_PUBLIC_APP_VERSION=${NEW}..."
     NEXT_PUBLIC_APP_VERSION="${NEW}" docker compose build ui
@@ -548,20 +548,20 @@ test-docker-proxy:
         fi
     }
 
-    # Resolve the actual container name/ID for ferret-lab (may differ from service name)
-    LAB_CONTAINER=$(docker compose ps -q lab 2>/dev/null | head -1)
-    if [[ -z "$LAB_CONTAINER" ]]; then
-        echo "ERROR: ferret-lab container not found — is the stack running? (just up)"
+    # Resolve the actual container name/ID for ferret-runner (may differ from service name)
+    RUNNER_CONTAINER=$(docker compose ps -q runner 2>/dev/null | head -1)
+    if [[ -z "$RUNNER_CONTAINER" ]]; then
+        echo "ERROR: ferret-runner container not found — is the stack running? (just up)"
         exit 1
     fi
 
     echo ""
     echo "=== Docker socket proxy integration tests ==="
-    echo "    lab container: $LAB_CONTAINER"
+    echo "    runner container: $RUNNER_CONTAINER"
     echo ""
     echo "--- Allowed operations ---"
     run "container list (CONTAINERS=1)"  yes  ps -q
-    run "exec into ferret-lab (EXEC=1)"  yes  exec "$LAB_CONTAINER" echo proxy-exec-ok
+    run "exec into ferret-runner (EXEC=1)"  yes  exec "$RUNNER_CONTAINER" echo proxy-exec-ok
 
     echo ""
     echo "--- Blocked operations ---"

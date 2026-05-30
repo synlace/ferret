@@ -1,11 +1,11 @@
-name: Publish ferret-lab image
+name: Publish ferret-runner image
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'src/apps/lab/**'
+      - 'src/apps/runner/**'
     tags:
       - 'v*'
   workflow_dispatch: {}
@@ -34,22 +34,22 @@ jobs:
       - name: Compute image tags
         id: meta
         run: |
-          TAGS="ghcr.io/${{ github.repository_owner }}/ferret-lab:latest"
-          TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/ferret-lab:${{ github.sha }}"
+          TAGS="ghcr.io/${{ github.repository_owner }}/ferret-runner:latest"
+          TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/ferret-runner:${{ github.sha }}"
           # On a version tag push (e.g. v1.0), also tag the image with that version
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${{ github.ref_name }}"
-            TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/ferret-lab:${VERSION}"
+            TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/ferret-runner:${VERSION}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push ferret-lab
+      - name: Build and push ferret-runner
         uses: docker/build-push-action@v5
         with:
-          context: src/apps/lab
-          file: src/apps/lab/Dockerfile
+          context: src/apps/runner
+          file: src/apps/runner/Dockerfile
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ferret-lab:cache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ferret-lab:cache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ferret-runner:cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/ferret-runner:cache,mode=max

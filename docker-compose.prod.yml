@@ -31,9 +31,9 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-3-flash-preview}
       FERRET_TESTS_DIR: /data/tests
       FERRET_WORKSPACES_DIR: /data/workspaces
-      FERRET_SANDBOX_CONTAINER: ferret-lab
+      FERRET_SANDBOX_CONTAINER: ferret-runner
       DOCKER_HOST: tcp://docker-shim:2375
-      FERRET_RUNNER_IMAGE: "ghcr.io/synlace/ferret-lab:${FERRET_VERSION:-v1.6.3}"
+      FERRET_RUNNER_IMAGE: "ghcr.io/synlace/ferret-runner:${FERRET_VERSION:-v1.6.3}"
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       - ./terraform:/app/terraform
@@ -69,9 +69,9 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  lab:
-    image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:v1.6.3}
-    container_name: ferret-lab
+  runner:
+    image: ${FERRET_RUNNER_IMAGE_LOCAL:-ghcr.io/synlace/ferret-runner:v1.6.3}
+    container_name: ferret-runner
     volumes:
       - ${FERRET_DATA_DIR:-./data}/workspaces:/data/workspaces
       - ${FERRET_DATA_DIR:-./data}/workspaces:/workspaces

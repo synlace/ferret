@@ -1,4 +1,4 @@
-# ferret-lab — Kali Linux pentest sandbox for FERRET AI test execution
+# ferret-runner — Kali Linux pentest sandbox for FERRET AI test execution
 FROM kalilinux/kali-rolling
 
 # Prevent interactive prompts during package installation

@@ -48,7 +48,7 @@ class MockShellSession(RunnerShellSession):
             env = os.environ.copy()
             target_container = self.runner_id
             if target_container == "local":
-                target_container = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab")
+                target_container = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-runner")
             elif target_container.startswith("runner-"):
                 parts = target_container.split("-")
                 if len(parts) == 3:
@@ -298,7 +298,7 @@ async def kill_shell_session(runner_id: str) -> None:
         try:
             target_container = runner_id
             if target_container == "local":
-                target_container = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab")
+                target_container = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-runner")
             elif target_container.startswith("runner-"):
                 parts = target_container.split("-")
                 if len(parts) == 3:

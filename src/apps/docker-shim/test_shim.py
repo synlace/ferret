@@ -4,7 +4,7 @@ test_shim.py — Unit tests for the Ferret docker-exec shim allow/block logic.
 Tests the _is_allowed() function exhaustively:
   - All permitted patterns (with and without /v1.NN version prefix)
   - The critical blocked patterns (POST /containers/create, GET /containers/json, etc.)
-  - docker cp archive endpoint (PUT/GET/HEAD /containers/ferret-lab/archive)
+  - docker cp archive endpoint (PUT/GET/HEAD /containers/ferret-runner/archive)
   - Edge cases: wrong method, wrong container name, partial path matches
 
 Run with:
@@ -25,7 +25,7 @@ import unittest
 # Import shim with a known ALLOWED_CONTAINER so tests are deterministic
 # regardless of the host environment variable.
 # ---------------------------------------------------------------------------
-os.environ.setdefault("ALLOWED_CONTAINER", "ferret-lab")
+os.environ.setdefault("ALLOWED_CONTAINER", "ferret-runner")
 
 # Add the shim directory to sys.path so we can import shim.py directly.
 _SHIM_DIR = os.path.dirname(__file__)
@@ -65,21 +65,21 @@ class TestAllowedPatterns(unittest.TestCase):
     # ── container-inspect (Docker CLI resolves name→ID before exec-create) ───
 
     def test_container_inspect_bare(self):
-        self.assertTrue(_is_allowed("GET", "/containers/ferret-lab/json"))
+        self.assertTrue(_is_allowed("GET", "/containers/ferret-runner/json"))
 
     def test_container_inspect_versioned(self):
-        self.assertTrue(_is_allowed("GET", "/v1.41/containers/ferret-lab/json"))
+        self.assertTrue(_is_allowed("GET", "/v1.41/containers/ferret-runner/json"))
 
     # ── exec-create ──────────────────────────────────────────────────────────
 
     def test_exec_create_bare(self):
-        self.assertTrue(_is_allowed("POST", "/containers/ferret-lab/exec"))
+        self.assertTrue(_is_allowed("POST", "/containers/ferret-runner/exec"))
 
     def test_exec_create_versioned(self):
-        self.assertTrue(_is_allowed("POST", "/v1.41/containers/ferret-lab/exec"))
+        self.assertTrue(_is_allowed("POST", "/v1.41/containers/ferret-runner/exec"))
 
     def test_exec_create_versioned_high(self):
-        self.assertTrue(_is_allowed("POST", "/v1.47/containers/ferret-lab/exec"))
+        self.assertTrue(_is_allowed("POST", "/v1.47/containers/ferret-runner/exec"))
 
     # ── exec-start ───────────────────────────────────────────────────────────
 
@@ -114,40 +114,40 @@ class TestAllowedPatterns(unittest.TestCase):
     def test_exec_inspect_short_id(self):
         self.assertTrue(_is_allowed("GET", f"/exec/{EXEC_ID_SHORT}/json"))
 
-    # ── docker-cp archive (PUT/GET/HEAD /containers/ferret-lab/archive) ──────
+    # ── docker-cp archive (PUT/GET/HEAD /containers/ferret-runner/archive) ──────
 
     def test_archive_put_bare(self):
-        """PUT /containers/ferret-lab/archive — docker cp host→container."""
-        self.assertTrue(_is_allowed("PUT", "/containers/ferret-lab/archive"))
+        """PUT /containers/ferret-runner/archive — docker cp host→container."""
+        self.assertTrue(_is_allowed("PUT", "/containers/ferret-runner/archive"))
 
     def test_archive_put_versioned(self):
-        self.assertTrue(_is_allowed("PUT", "/v1.41/containers/ferret-lab/archive"))
+        self.assertTrue(_is_allowed("PUT", "/v1.41/containers/ferret-runner/archive"))
 
     def test_archive_get_bare(self):
-        """GET /containers/ferret-lab/archive — docker cp container→host."""
-        self.assertTrue(_is_allowed("GET", "/containers/ferret-lab/archive"))
+        """GET /containers/ferret-runner/archive — docker cp container→host."""
+        self.assertTrue(_is_allowed("GET", "/containers/ferret-runner/archive"))
 
     def test_archive_get_versioned(self):
-        self.assertTrue(_is_allowed("GET", "/v1.41/containers/ferret-lab/archive"))
+        self.assertTrue(_is_allowed("GET", "/v1.41/containers/ferret-runner/archive"))
 
     def test_archive_head_bare(self):
-        """HEAD /containers/ferret-lab/archive — docker cp stat path."""
-        self.assertTrue(_is_allowed("HEAD", "/containers/ferret-lab/archive"))
+        """HEAD /containers/ferret-runner/archive — docker cp stat path."""
+        self.assertTrue(_is_allowed("HEAD", "/containers/ferret-runner/archive"))
 
     def test_archive_head_versioned(self):
-        self.assertTrue(_is_allowed("HEAD", "/v1.41/containers/ferret-lab/archive"))
+        self.assertTrue(_is_allowed("HEAD", "/v1.41/containers/ferret-runner/archive"))
 
     def test_archive_put_with_query_string(self):
         """Query strings (e.g. ?path=/tmp) must not break archive matching."""
-        self.assertTrue(_is_allowed("PUT", "/containers/ferret-lab/archive?path=%2Ftmp"))
+        self.assertTrue(_is_allowed("PUT", "/containers/ferret-runner/archive?path=%2Ftmp"))
 
     def test_archive_get_with_query_string(self):
-        self.assertTrue(_is_allowed("GET", "/containers/ferret-lab/archive?path=%2Ftmp"))
+        self.assertTrue(_is_allowed("GET", "/containers/ferret-runner/archive?path=%2Ftmp"))
 
     # ── query strings must not break matching ─────────────────────────────────
 
     def test_exec_create_with_query_string(self):
-        self.assertTrue(_is_allowed("POST", "/containers/ferret-lab/exec?foo=bar"))
+        self.assertTrue(_is_allowed("POST", "/containers/ferret-runner/exec?foo=bar"))
 
     def test_exec_start_with_query_string(self):
         self.assertTrue(_is_allowed("POST", f"/exec/{EXEC_ID}/start?foo=bar"))
@@ -174,7 +174,7 @@ class TestBlockedPatterns(unittest.TestCase):
         self.assertFalse(_is_allowed("GET", "/v1.41/containers/json"))
 
     def test_block_container_inspect_wrong_container(self):
-        """Inspecting any container other than ferret-lab must be blocked."""
+        """Inspecting any container other than ferret-runner must be blocked."""
         self.assertFalse(_is_allowed("GET", "/containers/evil-container/json"))
 
     def test_block_container_inspect_listing(self):
@@ -215,16 +215,16 @@ class TestBlockedPatterns(unittest.TestCase):
     # ── Container start/stop/kill ─────────────────────────────────────────────
 
     def test_block_container_start(self):
-        self.assertFalse(_is_allowed("POST", "/containers/ferret-lab/start"))
+        self.assertFalse(_is_allowed("POST", "/containers/ferret-runner/start"))
 
     def test_block_container_stop(self):
-        self.assertFalse(_is_allowed("POST", "/containers/ferret-lab/stop"))
+        self.assertFalse(_is_allowed("POST", "/containers/ferret-runner/stop"))
 
     def test_block_container_kill(self):
-        self.assertFalse(_is_allowed("POST", "/containers/ferret-lab/kill"))
+        self.assertFalse(_is_allowed("POST", "/containers/ferret-runner/kill"))
 
     def test_block_container_remove(self):
-        self.assertFalse(_is_allowed("DELETE", "/containers/ferret-lab"))
+        self.assertFalse(_is_allowed("DELETE", "/containers/ferret-runner"))
 
     # ── Archive (docker cp) on a DIFFERENT container ──────────────────────────
 
@@ -239,11 +239,11 @@ class TestBlockedPatterns(unittest.TestCase):
         self.assertFalse(_is_allowed("HEAD", "/containers/attacker/archive"))
 
     def test_block_archive_post_ferret_lab(self):
-        """POST /containers/ferret-lab/archive is not a valid Docker operation."""
-        self.assertFalse(_is_allowed("POST", "/containers/ferret-lab/archive"))
+        """POST /containers/ferret-runner/archive is not a valid Docker operation."""
+        self.assertFalse(_is_allowed("POST", "/containers/ferret-runner/archive"))
 
     def test_block_archive_delete_ferret_lab(self):
-        self.assertFalse(_is_allowed("DELETE", "/containers/ferret-lab/archive"))
+        self.assertFalse(_is_allowed("DELETE", "/containers/ferret-runner/archive"))
 
     def test_block_archive_wrong_container_versioned(self):
         self.assertFalse(_is_allowed("PUT", "/v1.41/containers/evil/archive"))
@@ -251,7 +251,7 @@ class TestBlockedPatterns(unittest.TestCase):
     # ── Exec operations on a DIFFERENT container ──────────────────────────────
 
     def test_block_exec_create_wrong_container(self):
-        """exec-create on any container other than ferret-lab must be blocked."""
+        """exec-create on any container other than ferret-runner must be blocked."""
         self.assertFalse(_is_allowed("POST", "/containers/evil-container/exec"))
 
     def test_block_exec_create_wrong_container_versioned(self):
@@ -261,7 +261,7 @@ class TestBlockedPatterns(unittest.TestCase):
 
     def test_block_get_exec_create(self):
         """GET on exec-create path must be blocked (only POST is allowed)."""
-        self.assertFalse(_is_allowed("GET", "/containers/ferret-lab/exec"))
+        self.assertFalse(_is_allowed("GET", "/containers/ferret-runner/exec"))
 
     def test_block_get_exec_start(self):
         self.assertFalse(_is_allowed("GET", f"/exec/{EXEC_ID}/start"))
@@ -276,15 +276,15 @@ class TestBlockedPatterns(unittest.TestCase):
     # ── Path traversal / injection attempts ──────────────────────────────────
 
     def test_block_path_traversal_container_name(self):
-        self.assertFalse(_is_allowed("POST", "/containers/ferret-lab/../evil/exec"))
+        self.assertFalse(_is_allowed("POST", "/containers/ferret-runner/../evil/exec"))
 
     def test_block_prefix_match_only(self):
-        """ferret-lab-extra must not match the ferret-lab allow rule."""
-        self.assertFalse(_is_allowed("POST", "/containers/ferret-lab-extra/exec"))
+        """ferret-runner2 must not match the ferret-runner allow rule."""
+        self.assertFalse(_is_allowed("POST", "/containers/ferret-runner2/exec"))
 
     def test_block_suffix_match_only(self):
-        """prefix-ferret-lab must not match the ferret-lab allow rule."""
-        self.assertFalse(_is_allowed("POST", "/containers/prefix-ferret-lab/exec"))
+        """prefix-ferret-runner must not match the ferret-runner allow rule."""
+        self.assertFalse(_is_allowed("POST", "/containers/prefix-ferret-runner/exec"))
 
     # ── Non-hex exec IDs must not match ──────────────────────────────────────
 
@@ -300,14 +300,14 @@ class TestVersionPrefixStripping(unittest.TestCase):
     """Version prefix stripping must work for a range of version numbers."""
 
     def test_v1_24(self):
-        self.assertTrue(_is_allowed("POST", "/v1.24/containers/ferret-lab/exec"))
+        self.assertTrue(_is_allowed("POST", "/v1.24/containers/ferret-runner/exec"))
 
     def test_v1_99(self):
-        self.assertTrue(_is_allowed("POST", "/v1.99/containers/ferret-lab/exec"))
+        self.assertTrue(_is_allowed("POST", "/v1.99/containers/ferret-runner/exec"))
 
     def test_double_version_prefix_blocked(self):
         """A double version prefix is not a valid Docker path — must be blocked."""
-        self.assertFalse(_is_allowed("POST", "/v1.41/v1.41/containers/ferret-lab/exec"))
+        self.assertFalse(_is_allowed("POST", "/v1.41/v1.41/containers/ferret-runner/exec"))
 
 
 if __name__ == "__main__":

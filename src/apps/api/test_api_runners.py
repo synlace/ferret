@@ -15,7 +15,7 @@ async def test_runners_register_heartbeat_and_list(client, mem_db):
     assert resp.json() == []
 
     # Register a runner via heartbeat
-    resp = await client.post("/api/runners/heartbeat", json={"runner_id": "ferret-lab-test-1", "url": "http://ferret-lab-test-1:8080"})
+    resp = await client.post("/api/runners/heartbeat", json={"runner_id": "ferret-runner-test-1", "url": "http://ferret-runner-test-1:8080"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
 
@@ -24,19 +24,19 @@ async def test_runners_register_heartbeat_and_list(client, mem_db):
     assert resp.status_code == 200
     runners = resp.json()
     assert len(runners) == 1
-    assert runners[0]["id"] == "ferret-lab-test-1"
-    assert runners[0]["url"] == "http://ferret-lab-test-1:8080"
+    assert runners[0]["id"] == "ferret-runner-test-1"
+    assert runners[0]["url"] == "http://ferret-runner-test-1:8080"
     assert runners[0]["status"] == "active"
 
 @pytest.mark.asyncio
 async def test_runners_offline_timeout(client, mem_db):
     # Register a runner
-    await client.post("/api/runners/heartbeat", json={"runner_id": "ferret-lab-temp", "url": None})
+    await client.post("/api/runners/heartbeat", json={"runner_id": "ferret-runner-temp", "url": None})
 
     # Forcibly backdate heartbeat to simulate offline status
     await mem_db._db.execute(
         "UPDATE runners SET last_heartbeat = ? WHERE id = ?",
-        ((datetime.utcnow() - timedelta(seconds=60)).isoformat(), "ferret-lab-temp")
+        ((datetime.utcnow() - timedelta(seconds=60)).isoformat(), "ferret-runner-temp")
     )
     await mem_db._db.commit()
 
@@ -45,7 +45,7 @@ async def test_runners_offline_timeout(client, mem_db):
     assert resp.status_code == 200
     runners = resp.json()
     assert len(runners) == 1
-    assert runners[0]["id"] == "ferret-lab-temp"
+    assert runners[0]["id"] == "ferret-runner-temp"
     assert runners[0]["status"] == "offline"
 
 @pytest.mark.asyncio

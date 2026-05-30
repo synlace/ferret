@@ -253,7 +253,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             "label": "Install pip package",
             "group": "Testing",
             "description": (
-                "Install one or more Python packages into the ferret-lab sandbox environment "
+                "Install one or more Python packages into the ferret-runner sandbox environment "
                 "using pip3. Use this when a test fails with ModuleNotFoundError. "
                 "Packages persist in the sandbox until it is restarted. "
                 "Prefer packages already available (requests, httpx, websockets, "
@@ -360,7 +360,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             "label": "Run script",
             "group": "Execution",
             "description": (
-                "Write and execute an arbitrary bash or Python script in the ferret-lab sandbox. "
+                "Write and execute an arbitrary bash or Python script in the ferret-runner sandbox. "
                 "Use this to run exploit PoCs, custom scanners, or any shell command that "
                 "doesn't fit into write_test. "
                 "The script runs inside the sandbox container with network access. "
@@ -477,7 +477,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             "label": "Fuzz with ffuf",
             "group": "Execution",
             "description": (
-                "Run ffuf (Fuzz Faster U Fool) inside the ferret-lab sandbox for parameter fuzzing, "
+                "Run ffuf (Fuzz Faster U Fool) inside the ferret-runner sandbox for parameter fuzzing, "
                 "credential brute-forcing, vhost discovery, or SQLi fuzzing. "
                 "NOT intended for directory/file discovery — use run_katana for that instead. "
                 "Place the FUZZ keyword anywhere in the URL, headers, or POST data. "
@@ -572,7 +572,7 @@ SESSION_CHAT_TOOLS: List[Dict[str, Any]] = [
             "label": "Scan with Nuclei",
             "group": "Execution",
             "description": (
-                "Run Nuclei inside the ferret-lab sandbox to scan a target URL or host "
+                "Run Nuclei inside the ferret-runner sandbox to scan a target URL or host "
                 "for known vulnerabilities using community templates. "
                 "Nuclei covers CVEs, misconfigurations, exposed panels, default credentials, "
                 "and many other vulnerability classes. "

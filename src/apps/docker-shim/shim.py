@@ -21,7 +21,7 @@ Allowed patterns (versioned /v1.xx/... and bare paths both match):
 Everything else → 403.
 
 Environment variables:
-  ALLOWED_CONTAINER   container name the shim will accept (default: ferret-lab)
+  ALLOWED_CONTAINER   container name the shim will accept (default: ferret-runner)
   DOCKER_SOCK         path to the Docker Unix socket   (default: /var/run/docker.sock)
   LISTEN_PORT         TCP port to listen on            (default: 2375)
 
@@ -38,7 +38,7 @@ import threading
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
-ALLOWED_CONTAINER = os.environ.get("ALLOWED_CONTAINER", "ferret-lab")
+ALLOWED_CONTAINER = os.environ.get("ALLOWED_CONTAINER", "ferret-runner")
 DOCKER_SOCK       = os.environ.get("DOCKER_SOCK", "/var/run/docker.sock")
 LISTEN_PORT       = int(os.environ.get("LISTEN_PORT", "2375"))
 
@@ -63,10 +63,10 @@ ALLOW_PATTERNS = [
     # Docker CLI sends this before every command to negotiate the API version.
     ("GET",   re.compile(r"^/_ping$")),
     ("HEAD",  re.compile(r"^/_ping$")),
-    # container-inspect: GET /containers/ferret-lab/json
+    # container-inspect: GET /containers/ferret-runner/json
     # Docker CLI resolves the container name → ID before issuing exec-create.
     ("GET",   re.compile(rf"^/containers/{_CONTAINER}/json$")),
-    # exec-create: POST /containers/ferret-lab/exec
+    # exec-create: POST /containers/ferret-runner/exec
     ("POST",  re.compile(rf"^/containers/{_CONTAINER}/exec$")),
     # exec-start: POST /exec/<id>/start
     ("POST",  re.compile(rf"^/exec/{_HEX}/start$")),
@@ -74,7 +74,7 @@ ALLOW_PATTERNS = [
     ("POST",  re.compile(rf"^/exec/{_HEX}/resize$")),
     # exec-inspect: GET /exec/<id>/json
     ("GET",   re.compile(rf"^/exec/{_HEX}/json$")),
-    # docker-cp: archive endpoint scoped to ferret-lab only.
+    # docker-cp: archive endpoint scoped to ferret-runner only.
     # PUT  → copy file/dir into the container  (docker cp host → container)
     # GET  → copy file/dir out of the container (docker cp container → host)
     # HEAD → stat a path inside the container

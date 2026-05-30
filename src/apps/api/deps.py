@@ -34,7 +34,7 @@ _log = logging.getLogger(__name__)
 
 db_client = SQLiteClient()
 mitm_manager = MitmproxyManager()
-sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab"))
+sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-runner"))
 workspace_service = WorkspaceService()
 script_execution_engine = ScriptExecutionEngine()
 fargate_orchestrator = FargateWGOrchestrator()
@@ -135,7 +135,7 @@ def get_ai_config() -> dict:
 # ---------------------------------------------------------------------------
 
 TESTS_DIR = Path(os.getenv("FERRET_TESTS_DIR", "/tests"))
-SANDBOX_CONTAINER = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-lab")
+SANDBOX_CONTAINER = os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-runner")
 
 # ---------------------------------------------------------------------------
 # Workspaces directory (host-mounted via docker-compose)
@@ -218,7 +218,7 @@ def test_file_path(request_id: str, host: str) -> Path:
 
 
 async def run_pytest(test_path: Path) -> str:
-    """Run pytest on *test_path* inside the ferret-lab sandbox container.
+    """Run pytest on *test_path* inside the ferret-runner sandbox container.
 
     ``-s`` disables output capture so that ``print()`` calls inside test
     functions are included in the returned output.  This is critical for the
