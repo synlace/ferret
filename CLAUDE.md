@@ -15,7 +15,12 @@ The repository uses a single-context layout. See `docs/agents/domain.md`.
 ## Git & Pull Request Workflow
 
 - **Direct Pushes Blocked:** Direct pushes to the `main` branch are blocked by repository rulesets.
-- **Workflow:** 
+- **Workflow Shortcut (Recommended):**
+  You can execute the entire branch, commit, push, PR creation, and merge flow in a single command using:
+  ```bash
+  just pr-land "your commit message"
+  ```
+- **Manual Workflow:** 
   1. Create a descriptive feature branch from `main`.
   2. Implement, test, and commit your changes locally.
   3. Push the feature branch to the remote origin.
