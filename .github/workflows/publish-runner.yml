@@ -14,6 +14,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
       packages: write
 
@@ -28,18 +29,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ferret-github-actions-role
+          aws-region: ${{ secrets.AWS_REGION || 'eu-west-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Log in to AWS Elastic Container Registry (ECR)
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Compute image tags
         id: meta
         run: |
-          TAGS="ghcr.io/${{ github.repository_owner }}/ferret-runner:latest"
-          TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/ferret-runner:${{ github.sha }}"
-          # On a version tag push (e.g. v1.0), also tag the image with that version
+          GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          AWS_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          
+          # Dual-publish tags (GHCR + ECR)
+          TAGS="ghcr.io/${GH_OWNER}/ferret-runner:latest"
+          TAGS="${TAGS},${AWS_REGISTRY}/ferret-runner:latest"
+          TAGS="${TAGS},ghcr.io/${GH_OWNER}/ferret-runner:${{ github.sha }}"
+          TAGS="${TAGS},${AWS_REGISTRY}/ferret-runner:${{ github.sha }}"
+          
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${{ github.ref_name }}"
-            TAGS="${TAGS},ghcr.io/${{ github.repository_owner }}/ferret-runner:${VERSION}"
+            TAGS="${TAGS},ghcr.io/${GH_OWNER}/ferret-runner:${VERSION}"
+            TAGS="${TAGS},${AWS_REGISTRY}/ferret-runner:${VERSION}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
