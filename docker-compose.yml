@@ -48,7 +48,7 @@ services:
       # on Docker bind mounts where host inotify events are not propagated into
       # the container (common on Linux with overlayfs).
       WATCHFILES_FORCE_POLLING: "true"
-      FERRET_RUNNER_IMAGE: ${FERRET_RUNNER_IMAGE:-ghcr.io/synlace/ferret-runner:b299a03c0a356bc078460c7200e929b93c133835}
+      FERRET_RUNNER_IMAGE: ${FERRET_RUNNER_IMAGE:-ghcr.io/synlace/ferret-runner:bec8cb721967e19f33a8fb2f8b60804c70930509}
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       # Mount source over the built image so Python changes are picked up
