@@ -18,3 +18,4 @@ pyotp==2.9.0
 qrcode[pil]==7.4.2
 litellm==1.67.0
 boto3==1.34.0
+pyyaml==6.0.1
