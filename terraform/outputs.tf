@@ -28,8 +28,3 @@ output "hub_public_ip" {
   description = "The Public IP of the EC2 WireGuard Hub"
 }
 
-output "ecr_repository_url" {
-  value       = aws_ecr_repository.ferret_runner.repository_url
-  description = "The URL of the AWS Elastic Container Registry (ECR) for ferret-runner"
-}
-
