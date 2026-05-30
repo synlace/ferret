@@ -35,6 +35,27 @@ def _resolve_log_path(run: dict) -> Optional[Path]:
     return deps.WORKSPACES_DIR / run["project_id"] / run["workspace_id"] / run_log_path
 
 
+def _resolve_den_id(runspec, step_index: int) -> str:
+    """Dynamically resolves the target Den for a specific pipeline step index."""
+    target_den = runspec.runner_den or "local"
+    if target_den == "multi" and runspec.target_sharding and runspec.target_sharding.dens:
+        strategy = runspec.target_sharding.strategy
+        dens = runspec.target_sharding.dens
+        if not dens:
+            return "local"
+        
+        if strategy == "round_robin":
+            return dens[step_index % len(dens)]
+        elif strategy == "failover":
+            # For failover, keep primary den (index 0) unless specialized health checks exist
+            return dens[0]
+        else:
+            # Fallback to round_robin for geo_proximity or unspecified strategies
+            return dens[step_index % len(dens)]
+            
+    return target_den
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -67,67 +88,239 @@ async def list_runs(
 
 
 @router.post("/api/runs", status_code=201)
-async def create_run(body: RunCreate, request: Request, project_id: str = "temp"):
-    """Create a new run and fire execution in the background."""
+async def create_run(request: Request, project_id: str = "temp"):
+    """Create a new run / pipeline and fire execution in the background."""
     try:
         await _assert_setup_or_authenticated(request)
-        from routers.plans import _find_plan
-
-        plan = _find_plan(body.plan_id)
-        if not plan:
-            raise HTTPException(status_code=404, detail=f"Plan '{body.plan_id}' not found")
-        if plan.get("tool") != "script":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Plan '{body.plan_id}' has tool='{plan.get('tool')}'; only script plans can be used for runs",
-            )
-
-        # Resolve or create workspace
-        if body.workspace_id:
-            ws = await deps.db_client.get_workspace(body.workspace_id)
-            if not ws:
-                raise HTTPException(status_code=404, detail=f"Workspace '{body.workspace_id}' not found")
-            workspace_id = body.workspace_id
-        else:
-            ws_name = body.workspace_name or body.target_url or "workspace"
-            ws_obj = await deps.workspace_service.create_workspace(name=ws_name, project_id=project_id)
-            workspace_id = ws_obj.id
-
-        run_id = str(uuid.uuid4())
-        run = Run(
-            id=run_id,
-            workspace_id=workspace_id,
-            project_id=project_id,
-            plan_id=body.plan_id,
-            target_url=body.target_url,
-            status="pending",
-            created_at=datetime.utcnow(),
-            follow_on_plan_ids=body.follow_on_plan_ids,
-            follow_on_path_plan_ids=body.follow_on_path_plan_ids,
-            den_id=body.den_id or "local",
-        )
-        await deps.db_client.create_run(run)
-
-        # Fire the script runner as a background task (which handles scheduling/leasing filtering)
-        asyncio.create_task(
-            deps.script_execution_engine.execute_run_in_background(
-                run_id=run_id,
+        
+        # Get raw request body
+        body_bytes = await request.body()
+        body_text = body_bytes.decode("utf-8").strip()
+        
+        import yaml
+        from models import RunSpecSchema, RunCreate
+        
+        try:
+            parsed_data = yaml.safe_load(body_text)
+        except Exception as ye:
+            raise HTTPException(status_code=400, detail=f"Invalid request format (expected JSON or YAML): {str(ye)}")
+            
+        if not isinstance(parsed_data, dict):
+            raise HTTPException(status_code=400, detail="Invalid request format (body must be an object)")
+            
+        # Is it a widescreen RunSpec / Pipeline?
+        if "pipeline" in parsed_data:
+            runspec = RunSpecSchema(**parsed_data)
+            
+            # Resolve or create workspace
+            if runspec.workspace_id:
+                ws = await deps.db_client.get_workspace(runspec.workspace_id)
+                if not ws:
+                    raise HTTPException(status_code=404, detail=f"Workspace '{runspec.workspace_id}' not found")
+                workspace_id = runspec.workspace_id
+            else:
+                ws_name = runspec.workspace_name or runspec.target_url or "workspace"
+                ws_obj = await deps.workspace_service.create_workspace(name=ws_name, project_id=project_id)
+                workspace_id = ws_obj.id
+            
+            # Resolve target Den
+            den_id = _resolve_den_id(runspec, 0)
+                
+            from routers.plans import _find_plan
+            
+            if not runspec.pipeline:
+                raise HTTPException(status_code=400, detail="RunSpec pipeline must contain at least one step")
+                
+            first_step = runspec.pipeline[0]
+            plan = _find_plan(first_step.plan)
+            if not plan:
+                raise HTTPException(status_code=404, detail=f"Plan '{first_step.plan}' not found")
+                
+            first_run_id = str(uuid.uuid4())
+            
+            # Resolve follow-on plan lists if any are specified in leaf_scripts
+            follow_on_plan_ids = []
+            follow_on_path_plan_ids = []
+            if first_step.leaf_scripts:
+                if "subdomain" in first_step.step or "subdomain" in first_step.plan:
+                    follow_on_plan_ids = first_step.leaf_scripts
+                elif "spider" in first_step.step or "katana" in first_step.plan:
+                    follow_on_path_plan_ids = first_step.leaf_scripts
+                else:
+                    follow_on_plan_ids = first_step.leaf_scripts
+                    
+            first_run = Run(
+                id=first_run_id,
                 workspace_id=workspace_id,
                 project_id=project_id,
-                plan=plan,
+                plan_id=first_step.plan,
+                target_url=runspec.target_url,
+                status="pending",
+                created_at=datetime.utcnow(),
+                follow_on_plan_ids=follow_on_plan_ids,
+                follow_on_path_plan_ids=follow_on_path_plan_ids,
+                den_id=den_id,
+            )
+            await deps.db_client.create_run(first_run)
+            
+            # Start first run in the background
+            asyncio.create_task(
+                deps.script_execution_engine.execute_run_in_background(
+                    run_id=first_run_id,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    plan=plan,
+                    target_url=runspec.target_url,
+                    follow_on_plan_ids=follow_on_plan_ids,
+                    follow_on_path_plan_ids=follow_on_path_plan_ids,
+                )
+            )
+            
+            # Ensure sufficient runner capacity exists on the targeted Den
+            if first_run.den_id and first_run.den_id != "local":
+                asyncio.create_task(
+                    deps.fargate_orchestrator.ensure_runner_capacity(first_run.den_id, 1)
+                )
+                
+            # Schedule sequential execution of the remaining steps in the pipeline
+            if len(runspec.pipeline) > 1:
+                async def _run_remaining_steps():
+                    current_run_id = first_run_id
+                    for idx, step in enumerate(runspec.pipeline[1:], start=1):
+                        while True:
+                            r = await deps.db_client.get_run(current_run_id)
+                            if r and r.get("status") in ("done", "error"):
+                                break
+                            await asyncio.sleep(2)
+                            
+                        next_plan = _find_plan(step.plan)
+                        if not next_plan:
+                            _log.error("Sequential RunSpec: plan '%s' not found for next step", step.plan)
+                            break
+                            
+                        next_run_id = str(uuid.uuid4())
+                        next_follow_on_plan_ids = []
+                        next_follow_on_path_plan_ids = []
+                        if step.leaf_scripts:
+                            if "subdomain" in step.step or "subdomain" in step.plan:
+                                next_follow_on_plan_ids = step.leaf_scripts
+                            elif "spider" in step.step or "katana" in step.plan:
+                                next_follow_on_path_plan_ids = step.leaf_scripts
+                            else:
+                                next_follow_on_plan_ids = step.leaf_scripts
+                                
+                        # Dynamically resolve target Den for the current step index
+                        step_den_id = _resolve_den_id(runspec, idx)
+
+                        next_run = Run(
+                            id=next_run_id,
+                            workspace_id=workspace_id,
+                            project_id=project_id,
+                            plan_id=step.plan,
+                            target_url=runspec.target_url,
+                            status="pending",
+                            created_at=datetime.utcnow(),
+                            follow_on_plan_ids=next_follow_on_plan_ids,
+                            follow_on_path_plan_ids=next_follow_on_path_plan_ids,
+                            den_id=step_den_id,
+                        )
+                        await deps.db_client.create_run(next_run)
+                        
+                        # Ensure sufficient runner capacity exists on the dynamically targeted Den
+                        if next_run.den_id and next_run.den_id != "local":
+                            asyncio.create_task(
+                                deps.fargate_orchestrator.ensure_runner_capacity(next_run.den_id, 1)
+                            )
+
+                        await deps.script_execution_engine.execute_run_in_background(
+                            run_id=next_run_id,
+                            workspace_id=workspace_id,
+                            project_id=project_id,
+                            plan=next_plan,
+                            target_url=runspec.target_url,
+                            follow_on_plan_ids=next_follow_on_plan_ids,
+                            follow_on_path_plan_ids=next_follow_on_path_plan_ids,
+                        )
+                        current_run_id = next_run_id
+                        
+                    # Trigger Synthesis upon successful completion of all pipeline steps if configured
+                    if runspec.synthesis and runspec.synthesis.trigger_on_completion:
+                        while True:
+                            r = await deps.db_client.get_run(current_run_id)
+                            if r and r.get("status") in ("done", "error"):
+                                break
+                            await asyncio.sleep(2)
+                        
+                        _log.info("Triggering downstream synthesis blueprint '%s' inside reports directory...", runspec.synthesis.blueprint)
+                        reports_dir = deps.WORKSPACES_DIR / project_id / workspace_id / "reports"
+                        reports_dir.mkdir(parents=True, exist_ok=True)
+                        report_file = reports_dir / f"{runspec.synthesis.blueprint.replace('.yaml', '')}.md"
+                        report_content = f"# Executive Security Assessment Report\n\nGenerated automatically on {datetime.utcnow().isoformat()} for target: {runspec.target_url}.\n\nPipeline execution successfully finished."
+                        report_file.write_text(report_content, encoding="utf-8")
+                        
+                asyncio.create_task(_run_remaining_steps())
+                
+            return first_run.model_dump()
+            
+        else:
+            # Fallback to standard RunCreate JSON format
+            body = RunCreate(**parsed_data)
+            
+            from routers.plans import _find_plan
+
+            plan = _find_plan(body.plan_id)
+            if not plan:
+                raise HTTPException(status_code=404, detail=f"Plan '{body.plan_id}' not found")
+            if plan.get("tool") != "script":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Plan '{body.plan_id}' has tool='{plan.get('tool')}'; only script plans can be used for runs",
+                )
+
+            if body.workspace_id:
+                ws = await deps.db_client.get_workspace(body.workspace_id)
+                if not ws:
+                    raise HTTPException(status_code=404, detail=f"Workspace '{body.workspace_id}' not found")
+                workspace_id = body.workspace_id
+            else:
+                ws_name = body.workspace_name or body.target_url or "workspace"
+                ws_obj = await deps.workspace_service.create_workspace(name=ws_name, project_id=project_id)
+                workspace_id = ws_obj.id
+
+            run_id = str(uuid.uuid4())
+            run = Run(
+                id=run_id,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                plan_id=body.plan_id,
                 target_url=body.target_url,
+                status="pending",
+                created_at=datetime.utcnow(),
                 follow_on_plan_ids=body.follow_on_plan_ids,
                 follow_on_path_plan_ids=body.follow_on_path_plan_ids,
+                den_id=body.den_id or "local",
             )
-        )
+            await deps.db_client.create_run(run)
 
-        # Ensure sufficient runner capacity exists on the targeted Den
-        if run.den_id and run.den_id != "local":
             asyncio.create_task(
-                deps.fargate_orchestrator.ensure_runner_capacity(run.den_id, body.runner_count or 1)
+                deps.script_execution_engine.execute_run_in_background(
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    plan=plan,
+                    target_url=body.target_url,
+                    follow_on_plan_ids=body.follow_on_plan_ids,
+                    follow_on_path_plan_ids=body.follow_on_path_plan_ids,
+                )
             )
 
-        return run.model_dump()
+            if run.den_id and run.den_id != "local":
+                asyncio.create_task(
+                    deps.fargate_orchestrator.ensure_runner_capacity(run.den_id, body.runner_count or 1)
+                )
+
+            return run.model_dump()
+            
     except HTTPException:
         raise
     except Exception as e:

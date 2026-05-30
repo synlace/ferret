@@ -296,6 +296,36 @@ class RunCreate(BaseModel):
     timeout: Optional[int] = None
 
 
+class TargetSharding(BaseModel):
+    strategy: str = Field(..., description="round_robin | geo_proximity | failover")
+    dens: List[str] = Field(..., description="List of targeted Den IDs")
+    max_concurrency_per_den: int = Field(default=1, ge=1)
+
+
+class PipelineStep(BaseModel):
+    step: str = Field(..., description="Step identifier")
+    plan: str = Field(..., description="Plan ID")
+    params: Optional[Dict[str, Any]] = Field(default=None, description="Optional step parameter overrides")
+    leaf_scripts: Optional[List[str]] = Field(default_factory=list, description="Downstream scripts")
+
+
+class SynthesisBlock(BaseModel):
+    trigger_on_completion: bool = Field(default=True)
+    blueprint: str = Field(..., description="Synthesis blueprint file")
+    write_directory: str = Field(default="reports/")
+
+
+class RunSpecSchema(BaseModel):
+    """Canonical declarative RunSpec schema representing a parsed runspec.yaml"""
+    target_url: str = Field(..., description="Target URL / domain")
+    runner_den: str = Field(default="local", description="Den host target ('local', 'multi', or specific ID)")
+    target_sharding: Optional[TargetSharding] = None
+    pipeline: List[PipelineStep] = Field(default_factory=list)
+    synthesis: Optional[SynthesisBlock] = None
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Test Runs
 # ---------------------------------------------------------------------------
