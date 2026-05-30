@@ -289,6 +289,12 @@ async def complete_run(
 @router.websocket("/{runner_id}/control")
 async def runner_control_channel(websocket: WebSocket, runner_id: str):
     """WebSocket control channel for outbound-initiated, real-time runner orchestration."""
+    from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+    ctx_project_id.set("system")
+    ctx_workspace_id.set("system")
+    ctx_workflow_id.set(f"runner_ws_{runner_id}")
+    ctx_run_id.set("system")
+
     key = websocket.headers.get("x-runner-key") or websocket.query_params.get("key")
     if key:
         try:

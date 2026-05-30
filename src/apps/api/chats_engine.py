@@ -55,6 +55,18 @@ class AgenticOrchestrator:
         is_background: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Unified agentic orchestration execution loop."""
+        _session_record = await deps.db_client.get_chat_session(session_id)
+        _workspace_id = "system"
+        if _session_record and _session_record.get("workspace_dir"):
+            parts = _session_record["workspace_dir"].split("/")
+            _workspace_id = parts[-1] if len(parts) > 1 else _session_record["workspace_dir"]
+
+        from services.workflow_logging import ctx_project_id, ctx_workspace_id, ctx_workflow_id, ctx_run_id
+        ctx_project_id.set(project_id)
+        ctx_workspace_id.set(_workspace_id)
+        ctx_workflow_id.set(f"hunt_{session_id}")
+        ctx_run_id.set("system")
+
         try:
             resolved_project_id, _api_key, _ai_cfg, _project = await routers.chats_ai_litellm._resolve_project_and_key(
                 session_id, project_id
@@ -86,7 +98,6 @@ class AgenticOrchestrator:
         resolved_model = model or _project_model
 
         # Load enabled tools
-        _session_record = await deps.db_client.get_chat_session(session_id)
         _enabled_tools_names = (
             _session_record.get("enabled_tools") if _session_record else None
         )
@@ -130,7 +141,11 @@ class AgenticOrchestrator:
                         _total_usage["completion_tokens"] += _usage.get("completion_tokens", 0)
                         _total_usage["total_tokens"] += _usage.get("total_tokens", 0)
             except Exception as e:
-                _log.error("[chats_engine] LiteLLM error: %s", e)
+                _log.error(
+                    "[chats_engine] LiteLLM error: %s", 
+                    e, 
+                    extra={"details": "The AI Agent loop encountered a connection, rate-limiting, or execution error with the LLM API backend via LiteLLM."}
+                )
                 if is_background:
                     await deps.db_client.update_hunt_status(session_id, "error")
                 yield {"type": "error", "detail": str(e)}
@@ -292,7 +307,11 @@ class AgenticOrchestrator:
 
         if is_background:
             await deps.db_client.update_hunt_status(session_id, "done")
-            _log.info("[chats_engine] [hunt] completed session=%s", session_id)
+            _log.info(
+                "[chats_engine] [hunt] completed session=%s", 
+                session_id,
+                extra={"details": "The AI Agent autonomous hunt loop completed successfully, finalizing its target investigation steps."}
+            )
 
         updated = await deps.db_client.get_chat_history(session_id)
         _done_evt: Dict[str, Any] = {"type": "done", "messages": clean_messages_for_display(updated)}

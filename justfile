@@ -59,9 +59,67 @@ build:
     cp src/apps/runner/runner.py src/apps/api/runner.py
     docker compose build
 
-# Tail logs from all services
-logs:
-    docker compose logs -f
+# Tail or interrogate unified system logs, docker containers, or local workspace files
+# Usage:
+#   just logs                        — Interactive selector with live fuzzy search (using fzf)
+#   just logs compose                — Tail standard docker compose logs for all containers
+#   just logs <service>              — Tail logs of a specific service (api, runner, ui, docker-shim)
+#   just logs grep <pattern>         — Search for <pattern> across the master JSON logs
+logs action="" query="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    MASTER_LOG="data/ferret_master.jsonl"
+    
+    if [[ -z "{{action}}" ]]; then
+      if ! command -v fzf &> /dev/null; then
+        echo "fzf not found. Falling back to default docker-compose logs."
+        docker compose logs -f
+        exit 0
+      fi
+      
+      if [ ! -f "$MASTER_LOG" ]; then
+        echo "Master log file not found yet at $MASTER_LOG"
+        echo "Falling back to default docker compose logs."
+        docker compose logs -f
+        exit 0
+      fi
+      
+      # Select logs using fzf and parse dynamically with jq
+      cat "$MASTER_LOG" | jq -r '. | "[\(.timestamp)] [\(.level)] [\(.component)] \(.message)"' | fzf \
+        --header "=== FERRET CONSOLIDATED SYSTEM LOGS ===" \
+        --prompt "Fuzzy filter logs > " \
+        --layout=reverse-list
+      exit 0
+    fi
+    
+    case "{{action}}" in
+      compose)
+        docker compose logs -f
+        ;;
+      api|runner|docker-shim|ui)
+        docker compose logs -f "{{action}}"
+        ;;
+      grep)
+        if [[ -z "{{query}}" ]]; then
+          echo "Error: Pattern required. Usage: just logs grep <pattern>"
+          exit 1
+        fi
+        if [ ! -f "$MASTER_LOG" ]; then
+          echo "No master log file found yet at $MASTER_LOG"
+          exit 1
+        fi
+        jq -r --arg q "{{query}}" 'select(.message | test($q; "i")) | "[\(.timestamp)] [\(.level)] [\(.component)] \(.message)"' "$MASTER_LOG" || true
+        ;;
+      *)
+        echo "Unknown action: {{action}}"
+        echo "Available:"
+        echo "  just logs                        — Interactive master log fuzzy search"
+        echo "  just logs compose                — Tail all docker compose service logs"
+        echo "  just logs <service>              — Tail specific container (api, runner, ui, docker-shim)"
+        echo "  just logs grep <pattern>         — Filter master log by regex pattern"
+        exit 1
+        ;;
+    esac
 
 # Show running service status
 status:

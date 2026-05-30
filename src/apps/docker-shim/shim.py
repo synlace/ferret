@@ -35,6 +35,7 @@ import re
 import select
 import socket
 import threading
+from datetime import datetime, timezone
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -44,12 +45,53 @@ LISTEN_PORT       = int(os.environ.get("LISTEN_PORT", "2375"))
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
+class ShimJSONFormatter(logging.Formatter):
+    """Formats Docker shim log records into structured JSON lines."""
+    def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        details = getattr(record, "details", None)
+        if not details:
+            if record.levelname == "WARNING":
+                details = "Security Audit Warning: Unauthorized Docker API call was blocked by the docker-shim container sandbox proxy."
+            elif "ALLOW" in message:
+                details = "Audited Container operation permitted. The docker-shim proxy allowed the execution request."
+            else:
+                details = "Audited Docker CLI communication or event handled by the docker-shim proxy."
+
+        log_data = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+            "level": record.levelname,
+            "component": "docker-shim",
+            "message": message,
+            "details": details,
+            "context": {
+                "project_id": "system",
+                "workspace_id": "system",
+                "workflow_id": "docker-shim",
+                "run_id": "system"
+            }
+        }
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_data)
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [shim] %(levelname)s %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 log = logging.getLogger("ferret-shim")
+
+# Add common master file logger if /data is mounted
+if os.path.isdir("/data"):
+    try:
+        master_log_path = "/data/ferret_master.jsonl"
+        file_handler = logging.FileHandler(master_log_path, encoding="utf-8")
+        file_handler.setFormatter(ShimJSONFormatter())
+        file_handler.setLevel(logging.INFO)
+        logging.getLogger().addHandler(file_handler)
+    except Exception as e:
+        log.warning("Could not initialize master file logging inside shim: %s", e)
 
 # ── Allow-list patterns ────────────────────────────────────────────────────────
 # Each entry is (method, compiled-regex).  The optional version prefix
@@ -397,7 +439,10 @@ def _handle_client(client_sock: socket.socket, addr):
             path   = parts[1].decode("latin-1")
 
             allowed = _is_allowed(method, path)
-            log.info("%s %s → %s", method, path, "ALLOW" if allowed else "BLOCK")
+            if allowed:
+                log.info("%s %s from %s → ALLOW", method, path, addr)
+            else:
+                log.warning("Security Audit Warning: Unauthorized Docker API call blocked! %s %s from %s", method, path, addr)
 
             if not allowed:
                 _send_403(client_sock)
