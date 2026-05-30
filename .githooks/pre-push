@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🛡️ Running local pre-push TruffleHog secret scan..."
+
+# Run TruffleHog via Docker utilizing our exclude paths
+if ! docker run --rm -v "$(pwd):/pwd" trufflesecurity/trufflehog:latest git file:///pwd --exclude-paths=/pwd/security/trufflehog-exclude.txt --fail; then
+  echo "❌ Push blocked: TruffleHog detected potential secrets in your commit history!"
+  echo "Please rotate the credential immediately, purge it from git history, and try again."
+  exit 1
+fi
+
+echo "✅ No secrets detected. Proceeding with push."
+exit 0
