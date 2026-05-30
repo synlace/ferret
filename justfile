@@ -616,3 +616,11 @@ destroy-aws region="eu-west-1":
     terraform destroy -auto-approve
     echo "[destroy-aws] AWS teardown complete."
 
+# Scan local git commits for secrets using TruffleHog (via Docker)
+scan-secrets-git:
+    docker run --rm -v "{{justfile_directory()}}:/pwd" trufflesecurity/trufflehog:latest git file:///pwd --exclude-paths=/pwd/security/trufflehog-exclude.txt
+
+# Scan uncommitted changes in the filesystem for secrets
+scan-secrets-files:
+    docker run --rm -v "{{justfile_directory()}}:/pwd" trufflesecurity/trufflehog:latest filesystem /pwd --exclude-paths=/pwd/security/trufflehog-exclude.txt
+
