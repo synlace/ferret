@@ -279,4 +279,46 @@ resource "aws_ecs_cluster" "ferret_runners" {
   name = "ferret-runners"
 }
 
+# 6. AWS Elastic Container Registry (ECR) for Ferret Runner
+resource "aws_ecr_repository" "ferret_runner" {
+  name                 = "ferret-runner"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = {
+    Name        = "ferret-runner-registry"
+    Environment = var.environment
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "ferret_runner_cleanup" {
+  repository = aws_ecr_repository.ferret_runner.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Expire untagged images older than 14 days"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 14
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+
 
