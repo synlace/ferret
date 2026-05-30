@@ -41,7 +41,7 @@ class SandboxExecutor(ABC):
 
 
 class DockerSandboxExecutor(SandboxExecutor):
-    def __init__(self, container_name: str = "ferret-lab"):
+    def __init__(self, container_name: str = "ferret-runner"):
         self.container_name = container_name
 
     def with_container(self, name: str) -> "DockerSandboxExecutor":

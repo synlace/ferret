@@ -1,4 +1,4 @@
-# ferret-lab - lightweight web pentest sandbox for FERRET AI test execution
+# ferret-runner - lightweight web pentest sandbox for FERRET AI test execution
 # The full tool set is preserved in Dockerfile.full for reference.
 FROM kalilinux/kali-rolling
 

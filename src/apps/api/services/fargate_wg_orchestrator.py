@@ -178,7 +178,7 @@ class FargateWGOrchestrator:
             except Exception as b64_err:
                 _log.warning("[FARGATE_ORCHESTRATOR] Failed to read/encode local runner.py: %s", b64_err)
 
-            task_image = den.get("runner_image") or os.environ.get("FERRET_RUNNER_IMAGE") or "ghcr.io/synlace/ferret-lab:latest"
+            task_image = den.get("runner_image") or os.environ.get("FERRET_RUNNER_IMAGE") or "ghcr.io/synlace/ferret-runner:latest"
             kill_flag = "1" if den.get("kill_if_unreachable", 1) else "0"
 
             # Base task environment — runner-specific vars are injected per-task via containerOverrides

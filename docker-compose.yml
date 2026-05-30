@@ -41,14 +41,14 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-3-flash-preview}
       FERRET_TESTS_DIR: /data/tests
       FERRET_WORKSPACES_DIR: /data/workspaces
-      FERRET_SANDBOX_CONTAINER: ferret-lab
+      FERRET_SANDBOX_CONTAINER: ferret-runner
       # Route Docker CLI calls through the exec shim instead of the raw socket.
       DOCKER_HOST: tcp://docker-shim:2375
       # Use stat()-based polling instead of inotify so watchfiles detects changes
       # on Docker bind mounts where host inotify events are not propagated into
       # the container (common on Linux with overlayfs).
       WATCHFILES_FORCE_POLLING: "true"
-      FERRET_RUNNER_IMAGE: ${FERRET_RUNNER_IMAGE:-ghcr.io/synlace/ferret-lab:b299a03c0a356bc078460c7200e929b93c133835}
+      FERRET_RUNNER_IMAGE: ${FERRET_RUNNER_IMAGE:-ghcr.io/synlace/ferret-runner:b299a03c0a356bc078460c7200e929b93c133835}
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
       # Mount source over the built image so Python changes are picked up
@@ -108,12 +108,12 @@ services:
       retries: 3
       start_period: 30s
 
-  lab:
-    # Pre-built image is published to GHCR by .github/workflows/publish-lab.yml.
-    # To build locally instead (e.g. when modifying the lab image), set:
-    #   FERRET_LAB_IMAGE=ferret-lab:local in .env, then run: just build-lab
-    image: ${FERRET_LAB_IMAGE:-ghcr.io/synlace/ferret-lab:latest}
-    container_name: ferret-lab
+  runner:
+    # Pre-built image is published to GHCR by .github/workflows/publish-runner.yml.
+    # To build locally instead (e.g. when modifying the runner image), set:
+    #   FERRET_RUNNER_IMAGE_LOCAL=ferret-runner:local in .env, then run: just build-runner
+    image: ${FERRET_RUNNER_IMAGE_LOCAL:-ghcr.io/synlace/ferret-runner:latest}
+    container_name: ferret-runner
     volumes:
       - ${FERRET_DATA_DIR:-./data}/workspaces:/data/workspaces
       - ${FERRET_DATA_DIR:-./data}/workspaces:/workspaces
@@ -121,7 +121,7 @@ services:
       - NET_ADMIN
       - NET_RAW
       - SYS_PTRACE
-    # Allow scripts running inside the lab sandbox to reach local AI providers
+    # Allow scripts running inside the runner sandbox to reach local AI providers
     # on the host machine via the same host-gateway hostname.
     extra_hosts:
       - "host-gateway:host-gateway"
@@ -131,7 +131,7 @@ services:
 
 # No named volumes — data is bind-mounted to ${FERRET_DATA_DIR:-./data} on the host.
 # This makes ./data/tests, ./data/mitmproxy, ./data/workspaces, etc. directly accessible for editing.
-# The lab container also gets ./data/workspaces mounted at /workspaces so scripts/tests
+# The runner container also gets ./data/workspaces mounted at /workspaces so scripts/tests
 # written by the AI are accessible at the same path the API uses when building docker exec commands.
 
 networks:
