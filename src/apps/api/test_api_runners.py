@@ -239,3 +239,160 @@ async def test_runner_workspace_archive_upload(client, mem_db, tmp_path):
     assert (ws_real_root / "notes" / "whatweb.md").exists()
     assert (ws_real_root / "notes" / "whatweb_raw.json").read_text() == '{"http_status": 200}'
 
+
+@pytest.mark.asyncio
+async def test_runners_reaping_and_recovery(client, mem_db, tmp_path):
+    import io
+    import zipfile
+    import deps
+    from services.script_execution_engine import ScriptExecutionEngine
+
+    deps.WORKSPACES_DIR = tmp_path
+
+    # Pre-seed a project and workspace
+    now = datetime.utcnow()
+    await mem_db._db.execute(
+        "INSERT INTO projects (id, name, created_at, updated_at) VALUES ('p-reap', 'p-reap', ?, ?)",
+        (now.isoformat(), now.isoformat())
+    )
+    await mem_db._db.execute(
+        "INSERT INTO workspaces (id, project_id, name, created_at) VALUES ('ws-reap', 'p-reap', 'ws-reap', ?)",
+        (now.isoformat(),)
+    )
+
+    # 1. Create a run that has NOT timed out yet
+    run_live = Run(
+        id="run-live",
+        workspace_id="ws-reap",
+        project_id="p-reap",
+        plan_id="builtin:whatweb",
+        target_url="http://example.com",
+        status="running",
+        created_at=now - timedelta(seconds=10),
+        timeout=120
+    )
+    await mem_db.create_run(run_live)
+
+    # Create a run that HAS timed out (created 20 minutes ago, timeout 10 minutes)
+    run_timed_out = Run(
+        id="run-timed-out",
+        workspace_id="ws-reap",
+        project_id="p-reap",
+        plan_id="builtin:whatweb",
+        target_url="http://example.com",
+        status="running",
+        created_at=now - timedelta(minutes=20),
+        timeout=600
+    )
+    await mem_db.create_run(run_timed_out)
+
+    await mem_db._db.commit()
+
+    # 2. Trigger start_scheduler
+    engine = ScriptExecutionEngine(db_client=mem_db)
+    # Patch self._scheduler_loop to be a no-op so it doesn't spin in background
+    async def mock_scheduler_loop():
+        pass
+    engine._scheduler_loop = mock_scheduler_loop
+
+    await engine.start_scheduler()
+
+    # 3. Assert run-live is PRESERVED in "running" status
+    run_live_db = await mem_db.get_run("run-live")
+    assert run_live_db["status"] == "running"
+
+    # 4. Assert run-timed-out is REAPED into "error" status
+    run_timed_out_db = await mem_db.get_run("run-timed-out")
+    assert run_timed_out_db["status"] == "error"
+
+    # 5. Let's test archive upload state recovery for "run-timed-out"
+    # Recover state back to "done" upon workspace-archive upload
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        zip_file.writestr("notes/whatweb_raw.json", '{"http_status": 200}')
+    zip_buffer.seek(0)
+
+    resp = await client.post(
+        "/api/runners/runs/run-timed-out/workspace-archive",
+        files={"file": ("workspace.zip", zip_buffer, "application/zip")},
+        headers={"X-Runner-Key": "fr_local_dev_key_default_33794b"}
+    )
+    assert resp.status_code == 200
+
+    # Verify run-timed-out status is now recovered to "done"
+    run_timed_out_db_after = await mem_db.get_run("run-timed-out")
+    assert run_timed_out_db_after["status"] == "done"
+    assert run_timed_out_db_after["exit_code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_warm_pool_reaping(client, mem_db):
+    from services.script_execution_engine import ScriptExecutionEngine
+    import time
+    import asyncio
+
+    # 1. Create an AWS Den with warm_runners=2
+    await mem_db._db.execute(
+        """
+        INSERT INTO dens (id, name, type, max_runners, warm_runners, created_at)
+        VALUES ('aws-reap-den', 'AWS Reap Den', 'aws', 5, 2, '2026-05-30T00:00:00')
+        """
+    )
+
+    # Pre-seed a project and workspace
+    now_str = datetime.utcnow().isoformat()
+    await mem_db._db.execute(
+        "INSERT INTO projects (id, name, created_at, updated_at) VALUES ('p-reap-warm', 'p-reap-warm', ?, ?)",
+        (now_str, now_str)
+    )
+    await mem_db._db.execute(
+        "INSERT INTO workspaces (id, project_id, name, created_at) VALUES ('ws-reap-warm', 'p-reap-warm', 'ws-reap-warm', ?)",
+        (now_str,)
+    )
+
+    # Register 3 active runners for this den
+    hb_r1 = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+    hb_r2 = (datetime.utcnow() - timedelta(minutes=30)).isoformat()
+    hb_r3 = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+
+    await mem_db._db.execute(
+        "INSERT INTO runners (id, status, last_heartbeat) VALUES ('runner-fargate-aws-reap-den-r1', 'active', ?)",
+        (hb_r1,)
+    )
+    await mem_db._db.execute(
+        "INSERT INTO runners (id, status, last_heartbeat) VALUES ('runner-fargate-aws-reap-den-r2', 'active', ?)",
+        (hb_r2,)
+    )
+    await mem_db._db.execute(
+        "INSERT INTO runners (id, status, last_heartbeat) VALUES ('runner-fargate-aws-reap-den-r3', 'active', ?)",
+        (hb_r3,)
+    )
+
+    # Make r2 busy with a running run
+    await mem_db._db.execute(
+        """
+        INSERT INTO runs (id, workspace_id, status, runner_id, den_id, created_at)
+        VALUES ('run-busy-r2', 'ws-reap-warm', 'running', 'runner-fargate-aws-reap-den-r2', 'aws-reap-den', '2026-05-30T00:00:00')
+        """
+    )
+    await mem_db._db.commit()
+
+    # 2. Trigger _maintain_warm_pools
+    engine = ScriptExecutionEngine(db_client=mem_db)
+    engine._startup_time = time.time() - 100.0
+
+    await engine._maintain_warm_pools()
+
+    # Wait briefly for background tasks
+    await asyncio.sleep(0.1)
+
+    # 3. Verify
+    runners = await mem_db.get_active_runners(timeout_seconds=3600)
+    runner_states = {r["id"]: r["status"] for r in runners}
+
+    assert runner_states["runner-fargate-aws-reap-den-r1"] == "offline"
+    assert runner_states["runner-fargate-aws-reap-den-r2"] == "active"
+    assert runner_states["runner-fargate-aws-reap-den-r3"] == "active"
+
+
+

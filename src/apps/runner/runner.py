@@ -16,6 +16,7 @@ import asyncio
 import websockets
 import json
 import inspect
+import threading
 
 # Configure Logging
 from collections import deque
@@ -65,6 +66,25 @@ session.headers.update({
     "X-Runner-Key": RUNNER_KEY,
     "Content-Type": "application/json"
 })
+
+def run_background_heartbeat():
+    logger.info("Starting background keepalive heartbeat thread...")
+    while True:
+        try:
+            url = f"{API_URL}/api/runners/heartbeat"
+            payload = {
+                "runner_id": RUNNER_ID,
+                "url": None,
+                "logs": None
+            }
+            resp = session.post(url, json=payload, timeout=10)
+            if resp.status_code == 200:
+                logger.debug("Background HTTP heartbeat sent successfully")
+            else:
+                logger.error(f"Background HTTP heartbeat failed: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            logger.error(f"Error in background heartbeat thread: {e}")
+        time.sleep(HEARTBEAT_INTERVAL)
 
 def upload_workspace_archive(run_payload: dict) -> bool:
     """Finds, packages, and pushes local workspace files back to the API server."""
@@ -222,6 +242,10 @@ async def execute_job_async(ws, run_payload):
             pass
 
 async def async_main():
+    # Start background keepalive daemon thread
+    heartbeat_thread = threading.Thread(target=run_background_heartbeat, daemon=True)
+    heartbeat_thread.start()
+
     api_ws_url = API_URL.replace("http://", "ws://").replace("https://", "wss://")
     ws_uri = f"{api_ws_url}/api/runners/{RUNNER_ID}/control"
     

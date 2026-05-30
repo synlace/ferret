@@ -260,6 +260,12 @@ async def upload_run_workspace_archive(
             zip_ref.extractall(ws_root)
             
         _log.info("Successfully extracted workspace archive for run %s into %s", run_id, ws_root)
+
+        # Allow recovery back to "done" if it was prematurely marked as "error"
+        if run.get("status") == "error":
+            _log.info("Recovering run %s status from error to done upon archive submission", run_id)
+            await session_tunnel.complete_session_run(run_id, 0, "done")
+
         return {"status": "ok"}
     except Exception as e:
         _log.exception("Failed to unpack workspace archive for run %s", run_id)
