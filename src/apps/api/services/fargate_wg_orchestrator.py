@@ -310,3 +310,80 @@ class FargateWGOrchestrator:
         except Exception as e:
             _log.error("[Orchestrator] Fargate spawning failed: %s", e)
             return []
+
+    @staticmethod
+    async def stop_runner_task(den_id: str, runner_id: str) -> bool:
+        """Finds and terminates the specific Fargate ECS task associated with a runner_id."""
+        _log.info("[FARGATE_ORCHESTRATOR] [STOP] Attempting to stop runner task %s", runner_id)
+        
+        # 1. Fetch targeted Den record
+        den = await deps.db_client.get_den(den_id)
+        if not den or den["type"] != "aws":
+            _log.info("[Orchestrator] Den ID '%s' is not an AWS Den — bypassing cloud Fargate stop.", den_id)
+            await deps.db_client.update_runner_status(runner_id, "offline")
+            return True
+
+        aws_key = den.get("aws_access_key") or ""
+        aws_secret = den.get("aws_secret_key") or ""
+        aws_region = den.get("aws_region") or "eu-west-1"
+
+        if not aws_key or not aws_secret:
+            _log.error("[FARGATE_ORCHESTRATOR] [FAILED] Missing AWS credentials in Den '%s' settings — cannot stop cloud runner.", den_id)
+            await deps.db_client.update_runner_status(runner_id, "offline")
+            return False
+
+        try:
+            import boto3
+            from botocore.config import Config
+        except ImportError:
+            _log.warning("[Orchestrator] 'boto3' not installed in this environment — simulating successful AWS Fargate task stop.")
+            await deps.db_client.update_runner_status(runner_id, "offline")
+            return True
+
+        def _stop_fargate_task():
+            config = Config(region_name=aws_region)
+            ecs = boto3.client("ecs", aws_access_key_id=aws_key, aws_secret_access_key=aws_secret, config=config)
+
+            resp = ecs.list_tasks(cluster="ferret-runners")
+            task_arns = resp.get("taskArns", [])
+            if not task_arns:
+                _log.warning("[FARGATE_ORCHESTRATOR] [STOP] No active tasks found on cluster 'ferret-runners'")
+                return False
+
+            task_arn = None
+            for i in range(0, len(task_arns), 100):
+                chunk = task_arns[i:i+100]
+                tasks_resp = ecs.describe_tasks(cluster="ferret-runners", tasks=chunk)
+                for task in tasks_resp.get("tasks", []):
+                    container_overrides = task.get("overrides", {}).get("containerOverrides", [])
+                    for co in container_overrides:
+                        env = co.get("environment", [])
+                        for env_var in env:
+                            if env_var.get("name") == "FERRET_RUNNER_ID" and env_var.get("value") == runner_id:
+                                task_arn = task.get("taskArn")
+                                break
+                        if task_arn:
+                            break
+                    if task_arn:
+                        break
+                if task_arn:
+                    break
+
+            if not task_arn:
+                _log.warning("[FARGATE_ORCHESTRATOR] [STOP] No active Fargate task found for runner %s", runner_id)
+                return False
+
+            task_id = task_arn.split("/")[-1]
+            _log.info("[FARGATE_ORCHESTRATOR] [STOP] Found task %s. Stopping task...", task_id)
+            ecs.stop_task(cluster="ferret-runners", task=task_id, reason="Reaped excess warm runner")
+            return True
+
+        try:
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, _stop_fargate_task)
+            await deps.db_client.update_runner_status(runner_id, "offline")
+            return success
+        except Exception as e:
+            _log.error("[Orchestrator] Fargate stop failed for runner %s: %s", runner_id, e)
+            await deps.db_client.update_runner_status(runner_id, "offline")
+            return False

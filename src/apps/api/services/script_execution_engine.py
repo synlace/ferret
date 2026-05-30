@@ -487,16 +487,55 @@ class ScriptExecutionEngine:
     async def start_scheduler(self) -> None:
         """Clean up orphaned 'running' runs and launch the background pending runs scheduler."""
         try:
-            async with self.db_client._db.execute("SELECT id FROM runs WHERE status = 'running'") as cur:
+            now = datetime.utcnow()
+            async with self.db_client._db.execute(
+                """
+                SELECT r.id, r.timeout, r.started_at, rn.last_heartbeat, r.runner_id, r.created_at
+                FROM runs r
+                LEFT JOIN runners rn ON r.runner_id = rn.id
+                WHERE r.status = 'running'
+                """
+            ) as cur:
                 rows = await cur.fetchall()
             for row in rows:
-                run_id = row[0]
-                await self.db_client.update_run_status(
-                    run_id,
-                    status="error",
-                    finished_at=datetime.utcnow(),
-                )
-                _log.info("Reset orphaned running run %s to error status", run_id)
+                run_id, timeout, started_at_str, last_heartbeat_str, runner_id, created_at_str = row
+                timeout = timeout or 600
+                
+                elapsed = None
+                # Check runner's last heartbeat first
+                if last_heartbeat_str:
+                    try:
+                        last_hb = datetime.fromisoformat(last_heartbeat_str.replace("Z", ""))
+                        elapsed = (now - last_hb).total_seconds()
+                    except Exception:
+                        pass
+                
+                # Fallback to started_at
+                if elapsed is None and started_at_str:
+                    try:
+                        started_at = datetime.fromisoformat(started_at_str.replace("Z", ""))
+                        elapsed = (now - started_at).total_seconds()
+                    except Exception:
+                        pass
+                
+                # Fallback to created_at
+                if elapsed is None and created_at_str:
+                    try:
+                        created_at = datetime.fromisoformat(created_at_str.replace("Z", ""))
+                        elapsed = (now - created_at).total_seconds()
+                    except Exception:
+                        pass
+                
+                # If we computed elapsed time and it exceeds timeout, then reap it
+                if elapsed is not None and elapsed > timeout:
+                    await self.db_client.update_run_status(
+                        run_id,
+                        status="error",
+                        finished_at=datetime.utcnow(),
+                    )
+                    _log.info("Reset timed-out running run %s to error status (elapsed: %s > timeout: %s)", run_id, elapsed, timeout)
+                else:
+                    _log.info("Preserving active running run %s on startup (elapsed: %s <= timeout: %s)", run_id, elapsed, timeout)
         except Exception as e:
             _log.warning("Failed to clean up orphaned running runs: %s", e)
 
@@ -612,5 +651,35 @@ class ScriptExecutionEngine:
                     asyncio.create_task(
                         deps.fargate_orchestrator.spawn_runners_if_needed(den_id, needed, is_warm=True)
                     )
+                elif den_active_count > warm_count:
+                    # Query all busy runner IDs currently executing a run to identify idle runners
+                    async with self.db_client._db.execute(
+                        "SELECT DISTINCT runner_id FROM runs WHERE status = 'running' AND runner_id IS NOT NULL"
+                    ) as cur:
+                        busy_runner_rows = await cur.fetchall()
+                    busy_runner_ids = {row[0] for row in busy_runner_rows}
+
+                    den_runners = [
+                        r for r in active_runners
+                        if r["id"].startswith(f"runner-fargate-{den_id}-")
+                        and r.get("status") in ("active", "provisioning")
+                    ]
+                    # Idle runners are active/provisioning runners that are not currently busy
+                    idle_den_runners = [
+                        r for r in den_runners
+                        if r["id"] not in busy_runner_ids
+                    ]
+                    # Sort by last_heartbeat ascending (oldest first)
+                    idle_den_runners.sort(key=lambda r: r.get("last_heartbeat", ""))
+
+                    excess_count = den_active_count - warm_count
+                    reapable_runners = idle_den_runners[:excess_count]
+                    if reapable_runners:
+                        _log.info("[WARM_POOL] Den '%s' has %d active runners, but only needs %d warm runners. Reaping %d oldest idle excess runner(s)...", den_id, den_active_count, warm_count, len(reapable_runners))
+                        for runner in reapable_runners:
+                            runner_id = runner["id"]
+                            asyncio.create_task(
+                                deps.fargate_orchestrator.stop_runner_task(den_id, runner_id)
+                            )
         except Exception as err:
             _log.warning("Error maintaining warm pools: %s", err)
