@@ -623,6 +623,12 @@ class ScriptExecutionEngine:
                 _log.debug("Skipping warm pool maintenance during startup grace period.")
                 return
 
+            # Check if setup is marked as complete before spawning runners
+            setup_complete = await self.db_client.get_setting("setup_complete")
+            if setup_complete != "1":
+                _log.debug("Skipping warm pool maintenance because setup is not complete.")
+                return
+
             dens = await self.db_client.get_dens()
             active_runners = await self.db_client.get_active_runners(timeout_seconds=30)
             
