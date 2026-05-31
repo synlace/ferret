@@ -5,6 +5,7 @@ Application settings endpoints.
 import os
 import base64
 import json
+import logging
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
@@ -17,6 +18,8 @@ import deps
 from models import Project
 
 router = APIRouter()
+
+_log = logging.getLogger(__name__)
 
 
 class ActiveProjectBody(BaseModel):
@@ -796,6 +799,12 @@ async def import_settings(body: ImportRequest, request: Request):
         try:
             imported_settings = raw_payload.get("settings", {})
             for key, value in imported_settings.items():
+                if key == "setup_complete" and complete != "1":
+                    _log.info(
+                        "Skipped importing setup_complete from backup to preserve active setup wizard state",
+                        extra={"details": "Bypassed importing the setup_complete flag from the restored backup settings because the target installation's setup is not yet complete."}
+                    )
+                    continue
                 await deps.db_client.set_setting(key, value)
                 
             # 3. Apply items to `dens` table

@@ -576,6 +576,56 @@ class TestSetupProgress:
 
 
 # ---------------------------------------------------------------------------
+# Backup Import in Setup tests
+# ---------------------------------------------------------------------------
+
+class TestBackupImportInSetup:
+    async def test_backup_import_prefills_without_completing_setup(self, client):
+        """Verify that importing a backup on a fresh database pre-fills the
+        settings but does NOT mark the setup as complete (setup_complete = "1").
+        """
+        import base64
+        import json
+
+        # Prepare a mock backup payload that contains setup_complete="1"
+        backup_data = {
+            "settings": {
+                "ai_provider": "openrouter",
+                "ai_model": "x-ai/grok-2",
+                "setup_complete": "1"
+            },
+            "dens": [
+                {
+                    "id": "aws",
+                    "name": "aws",
+                    "type": "aws",
+                    "max_runners": 10,
+                    "warm_runners": 5
+                }
+            ],
+            "projects": []
+        }
+        
+        backup_bytes = json.dumps({"data": backup_data}).encode("utf-8")
+        base64_payload = base64.b64encode(backup_bytes).decode("utf-8")
+
+        # 1. Post to import settings
+        r = await client.post("/api/settings/import", json={"file_content": base64_payload})
+        assert r.status_code == 200
+
+        # 2. Get setup status - setup_complete must still be False!
+        r_setup = await client.get("/api/setup")
+        assert r_setup.status_code == 200
+        assert r_setup.json()["setup_complete"] is False
+
+        # 3. Verify that the imported settings are still readable to pre-fill the wizard
+        r_config = await client.get("/api/setup/config")
+        assert r_config.status_code == 200
+        assert r_config.json()["ai_provider"] == "openrouter"
+        assert r_config.json()["ai_model"] == "x-ai/grok-2"
+
+
+# ---------------------------------------------------------------------------
 # RTK installation verification test
 # ---------------------------------------------------------------------------
 
