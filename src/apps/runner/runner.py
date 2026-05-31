@@ -56,6 +56,11 @@ IS_WARM_RUNNER = os.environ.get("FERRET_IS_WARM_RUNNER", "0") == "1"
 _default_kill_timeout = 1800 if IS_WARM_RUNNER else 180
 KILL_TIMEOUT_SECONDS = float(os.environ.get("FERRET_KILL_TIMEOUT_SECONDS", str(_default_kill_timeout)))
 
+RUNNER_START_TIME = time.time()
+_active_task = None
+_current_subprocess = None
+_has_connected = False
+
 logger.info("Starting Ferret Outbound Runner Daemon...")
 logger.info(f"API URL: {API_URL}")
 logger.info(f"Runner ID: {RUNNER_ID}")
@@ -111,19 +116,29 @@ def upload_workspace_archive(run_payload: dict) -> bool:
         shutil.make_archive(tmp_zip_path.replace(".zip", ""), 'zip', workspace_dir)
         
         url = f"{API_URL}/api/runners/runs/{run_id}/workspace-archive"
-        logger.info(f"Uploading workspace archive to {url}...")
         
-        with open(tmp_zip_path, "rb") as f:
-            files = {"file": (f"{run_id}_workspace.zip", f, "application/zip")}
-            headers = {"X-Runner-Key": RUNNER_KEY}
-            resp = requests.post(url, files=files, headers=headers, timeout=60)
+        for attempt in range(5):
+            try:
+                logger.info(f"Uploading workspace archive to {url} (attempt {attempt + 1}/5)...")
+                with open(tmp_zip_path, "rb") as f:
+                    files = {"file": (f"{run_id}_workspace.zip", f, "application/zip")}
+                    headers = {"X-Runner-Key": RUNNER_KEY}
+                    resp = requests.post(url, files=files, headers=headers, timeout=60)
+                    
+                    if resp.status_code == 200:
+                        logger.info("Workspace archive uploaded successfully")
+                        return True
+                    else:
+                        logger.error(f"Workspace upload failed: {resp.status_code} - {resp.text}")
+            except Exception as e:
+                logger.error(f"Error uploading workspace on attempt {attempt + 1}: {e}")
             
-            if resp.status_code == 200:
-                logger.info("Workspace archive uploaded successfully")
-                return True
-            else:
-                logger.error(f"Workspace upload failed: {resp.status_code} - {resp.text}")
-                return False
+            if attempt < 4:
+                sleep_time = min(16, 2 ** attempt)
+                logger.info(f"Retrying workspace upload in {sleep_time} seconds...")
+                time.sleep(sleep_time)
+                
+        return False
     except Exception as e:
         logger.error(f"Error packaging/uploading workspace: {e}")
         return False
@@ -162,12 +177,14 @@ async def execute_job_async(ws, run_payload):
 
         logger.info(f"Running command: {' '.join(cmd)}")
 
+        global _current_subprocess
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid
         )
+        _current_subprocess = process
 
         current_chunk = []
         last_stream_time = time.time()
@@ -236,6 +253,14 @@ async def execute_job_async(ws, run_payload):
         except Exception:
             pass
     finally:
+        global _current_subprocess
+        if _current_subprocess:
+            try:
+                os.killpg(os.getpgid(_current_subprocess.pid), 9)
+                logger.info(f"Terminated active subprocess group for pid {_current_subprocess.pid}")
+            except Exception:
+                pass
+            _current_subprocess = None
         try:
             os.unlink(temp_file_path)
         except Exception:
@@ -263,11 +288,13 @@ async def async_main():
     last_active_time = time.time()
     last_successful_contact = time.time()
     
+    global _active_task, _has_connected
     while True:
         try:
             async with websockets.connect(ws_uri, **connect_kwargs) as ws:
                 logger.info("Successfully connected to central API WebSocket control channel.")
                 backoff = 1  # Reset backoff on success
+                _has_connected = True
                 last_successful_contact = time.time()
                 
                 # Start background heartbeat sender task
@@ -279,33 +306,60 @@ async def async_main():
                         mtype = message.get("type")
                         if mtype == "execute_command":
                             payload = message.get("payload")
+                            if _active_task and not _active_task.done():
+                                logger.warning("Received execute_command request while a job is already active! Ignoring.")
+                                continue
+                            
                             last_active_time = time.time()
-                            asyncio.create_task(execute_job_async(ws, payload))
+                            _active_task = asyncio.create_task(execute_job_async(ws, payload))
                             
                             # Single-use Fargate runner: initiate shutdown after a job runs and finishes
                             if RUNNER_ID.startswith("runner-fargate-") and not IS_WARM_RUNNER:
-                                # Give job some time to start, or let it complete asynchronously
-                                pass
+                                logger.info("Single-use Fargate runner waiting for job execution to complete...")
+                                try:
+                                    await _active_task
+                                except asyncio.CancelledError:
+                                    logger.warning("Single-use task execution was cancelled.")
+                                logger.info("Single-use Fargate runner completed its run. Shutting down daemon...")
+                                return  # Exits async_main, shutting down the container
                 except websockets.ConnectionClosed:
                     logger.warning("WebSocket control connection closed by server.")
                 finally:
                     heartbeat_task.cancel()
+                    if _active_task and not _active_task.done():
+                        logger.warning("WebSocket disconnected. Cancelling active execution task...")
+                        _active_task.cancel()
+                        try:
+                            await _active_task
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception as e:
+                            logger.error(f"Error while cancelling active task: {e}")
+                        _active_task = None
         except Exception as e:
             logger.error(f"Failed to connect or maintain WebSocket: {e}. Reconnecting in {backoff}s...")
             
             # Fargate runner lifecycle checks during API outage
             now = time.time()
             if RUNNER_ID.startswith("runner-fargate-"):
-                if not IS_WARM_RUNNER:
-                    if now - last_active_time > 60.0:
-                        logger.info("Fargate runner idle timeout reached. Initiating shutdown...")
+                if _has_connected:
+                    if not IS_WARM_RUNNER:
+                        if now - last_active_time > 60.0:
+                            logger.info("Fargate runner idle timeout reached. Initiating shutdown...")
+                            break
+                    if KILL_IF_UNREACHABLE and (now - last_successful_contact > KILL_TIMEOUT_SECONDS):
+                        logger.critical(
+                            f"Fargate runner lost contact with Ferret API for over {int(KILL_TIMEOUT_SECONDS // 60)} minutes. "
+                            "Initiating self-preservation shutdown..."
+                        )
                         break
-                if KILL_IF_UNREACHABLE and (now - last_successful_contact > KILL_TIMEOUT_SECONDS):
-                    logger.critical(
-                        f"Fargate runner lost contact with Ferret API for over {int(KILL_TIMEOUT_SECONDS // 60)} minutes. "
-                        "Initiating self-preservation shutdown..."
-                    )
-                    break
+                else:
+                    if KILL_IF_UNREACHABLE and (now - RUNNER_START_TIME > KILL_TIMEOUT_SECONDS):
+                        logger.critical(
+                            f"Fargate runner failed to reach API during boot window of {int(KILL_TIMEOUT_SECONDS // 60)} minutes. "
+                            "Initiating self-preservation shutdown..."
+                        )
+                        break
             
             await asyncio.sleep(backoff)
             backoff = min(60, backoff * 2)
