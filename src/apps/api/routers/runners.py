@@ -296,13 +296,17 @@ async def runner_control_channel(websocket: WebSocket, runner_id: str):
     ctx_run_id.set("system")
 
     key = websocket.headers.get("x-runner-key") or websocket.query_params.get("key")
-    if key:
-        try:
-            await identity_registry.authenticate_key(key)
-        except Exception as e:
-            _log.error(f"WebSocket control auth failed for runner {runner_id}: {e}")
-            await websocket.close(code=1008)
-            return
+    if not key:
+        _log.error(f"WebSocket control connection rejected: missing key for runner {runner_id}")
+        await websocket.close(code=1008)
+        return
+
+    try:
+        await identity_registry.authenticate_key(key)
+    except Exception as e:
+        _log.error(f"WebSocket control auth failed for runner {runner_id}: {e}")
+        await websocket.close(code=1008)
+        return
 
     await websocket.accept()
     _active_runners_ws[runner_id] = websocket
