@@ -232,6 +232,18 @@ class SQLiteClient(ProjectsMixin):
                 value TEXT NOT NULL
             );
 
+            -- Setup progress (single-row persistent state)
+            CREATE TABLE IF NOT EXISTS setup_progress (
+                id            INTEGER PRIMARY KEY CHECK (id = 1),
+                step          INTEGER,
+                den_type      TEXT,
+                verified      INTEGER,
+                verifying     INTEGER,
+                verify_logs   TEXT,
+                active_run_id TEXT,
+                corrupted     INTEGER
+            );
+
             -- OpenRouter provisioned API keys per project
             CREATE TABLE IF NOT EXISTS project_api_keys (
                 id          TEXT PRIMARY KEY,

@@ -24,6 +24,7 @@ interface Step3DenProps {
   existingSetup: {
     exists: boolean
     working: boolean
+    provisioning?: boolean
     instance_id?: string
     public_ip?: string
     detail?: string
@@ -344,6 +345,24 @@ export default function Step3Den({
                       "Clean Up & Redeploy"
                     )}
                   </button>
+                </div>
+              ) : existingSetup && existingSetup.provisioning ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-3">
+                  <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+                  <p className="text-xs font-semibold text-neutral-300">Deploying persistent EC2 WireGuard Hub...</p>
+                  <p className="text-[10px] text-neutral-500">Awaiting EC2 instance creation and local WireGuard tunnel handshake</p>
+                  {verifyLogs.length > 0 && (
+                    <div className="border-t border-neutral-800 pt-3 w-full flex items-center justify-between">
+                      <span className="text-[11px] text-neutral-500 font-medium">Deployment logs</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowLogsModal(true)}
+                        className="rounded border border-neutral-700 bg-neutral-800/40 px-2.5 py-1 text-[11px] font-medium text-neutral-300 hover:border-neutral-500 hover:text-white transition-colors"
+                      >
+                        View Logs ({verifyLogs.length})
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : existingSetup && existingSetup.exists && existingSetup.working ? (
                 <div className="p-4 rounded-lg border border-brand-500/20 bg-brand-950/20 text-left space-y-3">

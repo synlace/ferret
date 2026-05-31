@@ -2,7 +2,7 @@
 
 import { apiFetch } from "@/lib/api-fetch"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { FileJson } from "lucide-react"
@@ -115,6 +115,7 @@ export default function SetupPage() {
     return null
   })
   const [corrupted, setCorruptedState] = useState(false)
+  const intentionalCloseRef = useRef(false)
 
   // Helper to save setup progress to database settings table
   const saveProgressToDb = async (patch: {
@@ -338,7 +339,7 @@ export default function SetupPage() {
   }, [provider, apiKey, baseUrl])
 
   useEffect(() => {
-    if (step === 3 && denType === "aws" && !hasAutoChecked && !verifying && denAwsKey && denAwsSecret) {
+    if (step === 3 && denType === "aws" && !hasAutoChecked && denAwsKey && denAwsSecret) {
       setHasAutoChecked(true)
       setCheckingExisting(true)
       setVerifyLogs(["[Setup] Restored credentials detected. Synchronizing settings to backend..."])
@@ -375,24 +376,30 @@ export default function SetupPage() {
         .then(checkData => {
           if (checkData) {
             setExistingSetup(checkData)
-            if (checkData.exists && checkData.working) {
+            if (checkData.provisioning) {
+              setVerifying(true)
+            } else if (checkData.exists && checkData.working) {
               setVerified(true)
+              setVerifying(false)
               setVerifyLogs(prev => [
                 ...prev,
                 `[Setup] ✓ Found working running instance: ${checkData.instance_id} (${checkData.public_ip})`,
                 `[Setup] ✓ Tunnel is already working and connected.`
               ])
-            } else if (checkData.exists && !checkData.working) {
-              setVerifyLogs(prev => [
-                ...prev,
-                `[Setup] ⚠ Found existing VM (${checkData.instance_id}) but local client tunnel is offline/misconfigured.`,
-                `[Setup] Click "Verify AWS Den" to sync settings and restore the connection.`
-              ])
             } else {
-              setVerifyLogs(prev => [
-                ...prev,
-                `[Setup] No existing Fargate VM found. Click "Verify AWS Den" to deploy new infrastructure.`
-              ])
+              setVerifying(false)
+              if (checkData.exists && !checkData.working) {
+                setVerifyLogs(prev => [
+                  ...prev,
+                  `[Setup] ⚠ Found existing VM (${checkData.instance_id}) but local client tunnel is offline/misconfigured.`,
+                  `[Setup] Click "Verify AWS Den" to sync settings and restore the connection.`
+                ])
+              } else {
+                setVerifyLogs(prev => [
+                  ...prev,
+                  `[Setup] No existing Fargate VM found. Click "Verify AWS Den" to deploy new infrastructure.`
+                ])
+              }
             }
           }
         })
@@ -403,7 +410,7 @@ export default function SetupPage() {
           setCheckingExisting(false)
         })
     }
-  }, [step, denType, hasAutoChecked, verifying, denAwsKey, denAwsSecret, denMaxRunners, denAwsRegion, denRunnerImage, denWarmRunners, denKillIfUnreachable])
+  }, [step, denType, hasAutoChecked, denAwsKey, denAwsSecret, denMaxRunners, denAwsRegion, denRunnerImage, denWarmRunners, denKillIfUnreachable])
 
   // Reset auto-check trigger whenever leaving the Den step
   useEffect(() => {
@@ -411,6 +418,67 @@ export default function SetupPage() {
       setHasAutoChecked(false)
     }
   }, [step])
+
+  // Poll to check if the EC2 VM is deployed and connected when we detect an active deployment
+  useEffect(() => {
+    if (!ready || !verifying || activeRunId) return
+
+    let intervalId: any = null
+
+    const checkConnection = async () => {
+      try {
+        const checkRes = await apiFetch(`${API_BASE}/api/settings/dens/check-existing`, {
+          method: "POST"
+        })
+        if (checkRes.ok) {
+          const checkData = await checkRes.json()
+          setExistingSetup(checkData)
+
+          // Once backend is no longer provisioning and the tunnel is responsive (working)
+          if (!checkData.provisioning && checkData.working) {
+            setVerified(true)
+            setVerifying(false)
+            setVerifyLogs(prev => {
+              const msg = `[Setup] ✓ WireGuard Hub deployed successfully (Instance: ${checkData.instance_id}).`;
+              if (prev.includes(msg)) return prev;
+              return [
+                ...prev,
+                msg,
+                `[Setup] ✓ Gateway Public IP: ${checkData.public_ip}`,
+                `[Setup] ✓ API container client tunnel is active on 10.0.0.2!`,
+                `[Setup] ✓ Connection check succeeded. Handshake established!`
+              ]
+            })
+            clearInterval(intervalId)
+          } else if (checkData.provisioning) {
+            setVerifyLogs(prev => {
+              const msg = "[Setup] EC2 Hub is deploying/provisioning in background...";
+              if (prev.includes(msg)) return prev;
+              return [...prev, msg]
+            })
+          } else if (checkData.exists && !checkData.working) {
+            setVerifyLogs(prev => {
+              const msg = `[Setup] EC2 Hub is running (${checkData.instance_id}). Awaiting WireGuard tunnel handshake...`;
+              if (prev.includes(msg)) return prev;
+              return [...prev, msg]
+            })
+          }
+        }
+      } catch (e) {
+        // Non-fatal, keep polling
+      }
+    }
+
+    // Run check immediately
+    checkConnection()
+
+    // Poll every 5 seconds
+    intervalId = setInterval(checkConnection, 5000)
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [ready, verifying, activeRunId])
 
   // Reconnect active verification log stream if page was reloaded or navigated back
   useEffect(() => {
@@ -425,6 +493,8 @@ export default function SetupPage() {
     if (typeof window !== "undefined") {
       window.addEventListener("beforeunload", handleBeforeUnload)
     }
+
+    intentionalCloseRef.current = false
 
     const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:"
     const apiHost = API_BASE.replace(/^https?:\/\//, "")
@@ -442,6 +512,7 @@ export default function SetupPage() {
         }
         if (msg.status === "done") {
           setVerifyLogs(prev => [...prev, "✓ Verification callback success! Connection established. Ready to proceed."])
+          intentionalCloseRef.current = true
           ws.close()
           setVerified(true)
           setVerifying(false)
@@ -449,6 +520,7 @@ export default function SetupPage() {
           setCorrupted(false)
         } else if (msg.status === "error") {
           setVerifyLogs(prev => [...prev, "✗ Verification callback failed. Check Fargate / STS logs."])
+          intentionalCloseRef.current = true
           ws.close()
           setSaveError("Verification test run failed.")
           setCorrupted(true) // Mark deployment corrupted on test run failure
@@ -460,10 +532,39 @@ export default function SetupPage() {
       }
     }
 
-    ws.onerror = () => {
+    ws.onerror = async () => {
       if (!isMounted || isUnloading) return
+
+      // Attempt a check-existing fallback to see if the deployment succeeded but the WebSocket stream was simply lost/expired
+      try {
+        const checkRes = await apiFetch(`${API_BASE}/api/settings/dens/check-existing`, {
+          method: "POST"
+        })
+        if (checkRes.ok) {
+          const checkData = await checkRes.json()
+          setExistingSetup(checkData)
+          if (checkData.exists && checkData.working) {
+            setVerified(true)
+            setVerifying(false)
+            setActiveRunId(null)
+            setCorrupted(false)
+            setVerifyLogs(prev => [
+              ...prev,
+              `[Setup] ✓ WebSocket connection failed, but verified active WireGuard Hub (Instance: ${checkData.instance_id}).`,
+              `[Setup] ✓ Connection check succeeded. Handshake established!`
+            ])
+            intentionalCloseRef.current = true
+            ws.close()
+            return
+          }
+        }
+      } catch (e) {
+        // Fallback check failed, proceed with marking corrupted
+      }
+
       setVerifyLogs(prev => [...prev, "✗ WebSocket connection failed. API may have restarted/failed."])
       setSaveError("Failed to connect log listener stream.")
+      intentionalCloseRef.current = true
       setCorrupted(true) // API went down/restarted mid-deploy
       setVerifying(false)
       setActiveRunId(null)
@@ -474,11 +575,32 @@ export default function SetupPage() {
       if (!isMounted || isUnloading || event.code === 1001) return
       setWsInstance(prev => {
         if (prev === ws) {
-          if (verifying) {
-            setCorrupted(true)
-            setVerifying(false)
+          if (verifying && !intentionalCloseRef.current) {
+            // Trigger the fallback check and cleanup asynchronously
+            apiFetch(`${API_BASE}/api/settings/dens/check-existing`, { method: "POST" })
+              .then(res => res.ok ? res.json() : null)
+              .then(checkData => {
+                if (checkData && checkData.exists && checkData.working) {
+                  setExistingSetup(checkData)
+                  setVerified(true)
+                  setVerifying(false)
+                  setActiveRunId(null)
+                  setCorrupted(false)
+                } else {
+                  setCorrupted(true)
+                  setVerifying(false)
+                  setActiveRunId(null)
+                }
+              })
+              .catch(() => {
+                setCorrupted(true)
+                setVerifying(false)
+                setActiveRunId(null)
+              })
+          } else {
+            setActiveRunId(null)
           }
-          setActiveRunId(null)
+          return null
         }
         return prev
       })

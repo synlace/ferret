@@ -1210,6 +1210,65 @@ class ProjectsMixin:
         await self._db.commit()
 
     # ------------------------------------------------------------------
+    # Setup Progress CRUD
+    # ------------------------------------------------------------------
+
+    async def get_setup_progress(self) -> Optional[Dict[str, Any]]:
+        async with self._db.execute(
+            "SELECT * FROM setup_progress WHERE id = 1"
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def save_setup_progress(
+        self,
+        step: Optional[int] = None,
+        den_type: Optional[str] = None,
+        verified: Optional[bool] = None,
+        verifying: Optional[bool] = None,
+        verify_logs: Optional[List[str]] = None,
+        active_run_id: Optional[str] = None,
+        corrupted: Optional[bool] = None,
+    ) -> None:
+        # Ensure the row with id = 1 exists
+        await self._db.execute(
+            "INSERT OR IGNORE INTO setup_progress (id) VALUES (1)"
+        )
+        
+        updates = []
+        params = []
+        if step is not None:
+            updates.append("step = ?")
+            params.append(step)
+        if den_type is not None:
+            updates.append("den_type = ?")
+            params.append(den_type)
+        if verified is not None:
+            updates.append("verified = ?")
+            params.append(1 if verified else 0)
+        if verifying is not None:
+            updates.append("verifying = ?")
+            params.append(1 if verifying else 0)
+        if verify_logs is not None:
+            updates.append("verify_logs = ?")
+            params.append(json.dumps(verify_logs))
+        if active_run_id is not None:
+            updates.append("active_run_id = ?")
+            params.append(active_run_id)
+        if corrupted is not None:
+            updates.append("corrupted = ?")
+            params.append(1 if corrupted else 0)
+            
+        if updates:
+            sql = f"UPDATE setup_progress SET {', '.join(updates)} WHERE id = 1"
+            await self._db.execute(sql, tuple(params))
+            await self._db.commit()
+
+    async def delete_setup_progress(self) -> None:
+        await self._db.execute("DELETE FROM setup_progress WHERE id = 1")
+        await self._db.commit()
+
+    # ------------------------------------------------------------------
     # Dens CRUD
     # ------------------------------------------------------------------
 
