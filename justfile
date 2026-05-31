@@ -381,7 +381,7 @@ delete-all-projects:
     @echo "Deleting all projects..."
     curl -X DELETE "http://localhost:8000/api/projects/all?confirm=destroy"
 
-# Reset the database: backs up the current DB then wipes it and restarts the API (DANGER).
+# Reset the database and master log: backs up current DB and log, then wipes them and restarts the API (DANGER).
 # Requires typing 'yes' at the prompt. Use 'just restore' to recover a backup.
 # Data is bind-mounted to ${FERRET_DATA_DIR:-./data} on the host (not a named Docker volume).
 reset:
@@ -389,10 +389,10 @@ reset:
     set -euo pipefail
     DATA_DIR="${FERRET_DATA_DIR:-./data}"
     echo ""
-    echo "The following files will be backed up and replaced with a fresh database:"
+    echo "The following files will be backed up and replaced with fresh instances:"
     echo ""
     found=0
-    for f in "${DATA_DIR}/ferret.db" "${DATA_DIR}/ferret.db-wal" "${DATA_DIR}/ferret.db-shm"; do
+    for f in "${DATA_DIR}/ferret.db" "${DATA_DIR}/ferret.db-wal" "${DATA_DIR}/ferret.db-shm" "${DATA_DIR}/ferret_master.jsonl"; do
         if [[ -f "$f" ]]; then
             size=$(du -sh "$f" 2>/dev/null | cut -f1)
             echo "  $f  ($size)"
@@ -400,10 +400,10 @@ reset:
         fi
     done
     if [[ $found -eq 0 ]]; then
-        echo "  (no database files found in ${DATA_DIR})"
+        echo "  (no database or log files found in ${DATA_DIR})"
     fi
     echo ""
-    read -r -p "⚠️  This will wipe ALL Ferret data. Type 'yes' to confirm: " confirm
+    read -r -p "⚠️  This will wipe ALL Ferret data and logs. Type 'yes' to confirm: " confirm
     [[ "$confirm" == "yes" ]] || { echo "Aborted."; exit 1; }
     echo ""
 
@@ -431,18 +431,26 @@ reset:
         echo "Stopping and removing any active local ferret-runner containers..."
         docker ps -aq --filter "name=ferret-runner-" | xargs -r docker rm -f 2>/dev/null || true
     fi
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     if [[ -f "${DATA_DIR}/ferret.db" ]]; then
-        BACKUP="${DATA_DIR}/ferret.db.bak.$(date +%Y%m%d_%H%M%S)"
+        BACKUP="${DATA_DIR}/ferret.db.bak.${TIMESTAMP}"
         mv "${DATA_DIR}/ferret.db" "$BACKUP"
         rm -f "${DATA_DIR}/ferret.db-wal" "${DATA_DIR}/ferret.db-shm"
         echo "DB backed up to $BACKUP"
     else
         echo "No DB file found — nothing to back up."
     fi
-    echo "Restarting API (will re-create schema + temp workspace)..."
+    if [[ -f "${DATA_DIR}/ferret_master.jsonl" ]]; then
+        BACKUP_LOG="${DATA_DIR}/ferret_master.jsonl.bak.${TIMESTAMP}"
+        mv "${DATA_DIR}/ferret_master.jsonl" "$BACKUP_LOG"
+        echo "Master log backed up to $BACKUP_LOG"
+    else
+        echo "No master log file found — nothing to back up."
+    fi
+    echo "Restarting API (will re-create schema, log file + temp workspace)..."
     docker compose up -d api
     echo ""
-    echo "Database reset complete. Fresh temp workspace ready."
+    echo "Database and master log reset complete. Fresh temp workspace ready."
 
 # Restore a previous database backup created by 'just reset'.
 # Lists available backups and prompts for selection.
