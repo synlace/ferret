@@ -458,6 +458,106 @@ PersistentKeepalive = 25
         raise deps.server_error(e)
 
 
+@router.post("/api/settings/dens/teardown-wg")
+async def teardown_wireguard_hub(request: Request):
+    """
+    Tears down the persistent EC2 WireGuard VPN Hub in AWS using Terraform,
+    bringing down the client-level tunnel interface, and cleaning up local state.
+    """
+    import subprocess
+    import asyncio
+    import logging
+    import os
+    from pathlib import Path
+
+    _log = logging.getLogger(__name__)
+
+    try:
+        await _assert_setup_or_authenticated(request)
+        
+        # 1. Fetch saved AWS Den settings
+        _log.info("[WG_TEARDOWN] [START] Initiating WireGuard EC2 Hub teardown via Terraform.")
+        den = await deps.db_client.get_den("aws")
+        if not den:
+            _log.error("[WG_TEARDOWN] [FAILED] AWS Den configuration not found in DB.")
+            raise HTTPException(status_code=404, detail="AWS Den configuration not found. Please save credentials first.")
+            
+        aws_key = den.get("aws_access_key") or ""
+        aws_secret = den.get("aws_secret_key") or ""
+        aws_region = den.get("aws_region") or "eu-west-1"
+        
+        if not aws_key or not aws_secret:
+            _log.error("[WG_TEARDOWN] [FAILED] Missing AWS credentials in saved AWS Den.")
+            raise HTTPException(status_code=400, detail="Missing AWS credentials in saved AWS Den.")
+
+        # 2. Drop the local WireGuard tunnel interface inside the API container
+        try:
+            _log.info("[WG_TEARDOWN] [INTERFACE_DOWN] Dropping wg0 interface locally...")
+            subprocess.run(["sudo", "wg-quick", "down", "wg0"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as down_err:
+            _log.warning("[WG_TEARDOWN] [INTERFACE_DOWN_WARNING] Failed to drop wg0: %s", down_err)
+
+        # 3. Clean up the local wg0.conf profile
+        try:
+            data_wg_path = Path("/data/wg0.conf")
+            if data_wg_path.exists():
+                data_wg_path.unlink()
+                _log.info("[WG_TEARDOWN] [CLEAN_CONF] Removed /data/wg0.conf")
+            etc_wg_path = Path("/etc/wireguard/wg0.conf")
+            subprocess.run(["sudo", "rm", "-f", "/etc/wireguard/wg0.conf"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as file_err:
+            _log.warning("[WG_TEARDOWN] [CLEAN_CONF_WARNING] Error cleaning up conf files: %s", file_err)
+
+        # 4. Execute Terraform destroy to tear down the static infrastructure
+        terraform_dir = Path("/app/terraform")
+        _log.info("[WG_TEARDOWN] [TERRAFORM_START] Running Terraform destroy in directory: %s", terraform_dir)
+        
+        # Set AWS credentials for Terraform
+        env = os.environ.copy()
+        env["AWS_ACCESS_KEY_ID"] = aws_key
+        env["AWS_SECRET_ACCESS_KEY"] = aws_secret
+        env["AWS_DEFAULT_REGION"] = aws_region
+
+        # 4a. Run terraform init
+        _log.info("[WG_TEARDOWN] [TERRAFORM_INIT] Initializing Terraform backend...")
+        init_proc = await asyncio.create_subprocess_exec(
+            "terraform", "init", "-reconfigure",
+            cwd=str(terraform_dir),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        init_stdout, init_stderr = await init_proc.communicate()
+        if init_proc.returncode != 0:
+            _log.error("[WG_TEARDOWN] [TERRAFORM_INIT_FAILED] %s", init_stderr.decode())
+            raise HTTPException(status_code=500, detail=f"Terraform initialization failed: {init_stderr.decode()}")
+        _log.info("[WG_TEARDOWN] [TERRAFORM_INIT_SUCCESS] Terraform initialized successfully.")
+
+        # 4b. Run terraform destroy
+        _log.info("[WG_TEARDOWN] [TERRAFORM_DESTROY] Destroying Terraform configuration...")
+        destroy_proc = await asyncio.create_subprocess_exec(
+            "terraform", "destroy", "-auto-approve",
+            "-var=hub_priv=mock",
+            "-var=local_pub=mock",
+            f"-var=aws_region={aws_region}",
+            cwd=str(terraform_dir),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        destroy_stdout, destroy_stderr = await destroy_proc.communicate()
+        if destroy_proc.returncode != 0:
+            _log.error("[WG_TEARDOWN] [TERRAFORM_DESTROY_FAILED] %s", destroy_stderr.decode())
+            raise HTTPException(status_code=500, detail=f"Terraform destroy failed: {destroy_stderr.decode()}")
+        _log.info("[WG_TEARDOWN] [TERRAFORM_DESTROY_SUCCESS] Terraform destroy completed successfully.")
+
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise deps.server_error(e)
+
+
 @router.post("/api/settings/dens/check-existing")
 async def check_existing_wireguard_hub(request: Request):
     """

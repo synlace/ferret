@@ -30,6 +30,8 @@ interface Step3DenProps {
   } | null
   setVerified: (v: boolean) => void
   verified: boolean
+  corrupted?: boolean
+  teardownAwsDen?: () => Promise<void>
   saveError: string
   verifyLogs: string[]
   setShowLogsModal: (show: boolean) => void
@@ -62,6 +64,8 @@ export default function Step3Den({
   existingSetup,
   setVerified,
   verified,
+  corrupted = false,
+  teardownAwsDen,
   saveError,
   verifyLogs,
   setShowLogsModal,
@@ -312,6 +316,34 @@ export default function Step3Den({
                   <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
                   <p className="text-xs font-semibold text-neutral-300">Checking for existing Fargate infrastructure...</p>
                   <p className="text-[10px] text-neutral-500">Checking EC2 instance status and local WireGuard tunnel</p>
+                </div>
+              ) : corrupted ? (
+                <div className="p-4 rounded-lg border border-red-500/20 bg-red-950/10 text-left space-y-3">
+                  <div className="flex items-center gap-2 text-red-400">
+                    <span className="text-red-400 font-bold text-xs">⚠</span>
+                    <span className="font-semibold text-xs uppercase tracking-wider">Deployment Corrupted</span>
+                  </div>
+                  <p className="text-xs text-neutral-300 leading-normal">
+                    The active deployment connection was lost or corrupted (likely due to an API restart or network failure).
+                  </p>
+                  <p className="text-[10px] text-neutral-500">
+                    We must tear down the interrupted resources on AWS before you can redeploy, to avoid dangling resource charges.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={teardownAwsDen}
+                    disabled={saving || verifying}
+                    className="w-full py-2 px-3 text-xs bg-red-500 hover:bg-red-600 disabled:opacity-40 text-white rounded font-semibold transition-colors flex items-center justify-center gap-2"
+                  >
+                    {(saving || verifying) ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Tearing down...
+                      </>
+                    ) : (
+                      "Clean Up & Redeploy"
+                    )}
+                  </button>
                 </div>
               ) : existingSetup && existingSetup.exists && existingSetup.working ? (
                 <div className="p-4 rounded-lg border border-brand-500/20 bg-brand-950/20 text-left space-y-3">

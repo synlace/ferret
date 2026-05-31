@@ -21,7 +21,13 @@ export default function SetupPage() {
   const router = useRouter()
 
   // Step 1 = provider, 2 = configure, 3 = model, 4 = den, 5 = done
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
+  const [step, setStepState] = useState<1 | 2 | 3 | 4 | 5>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:step")
+      if (saved) return Number(saved) as any
+    }
+    return 1
+  })
 
   const [showImportModal, setShowImportModal] = useState(false)
   const [password, setPassword] = useState("")
@@ -46,7 +52,13 @@ export default function SetupPage() {
   const [saveError, setSaveError] = useState("")
 
   // Den State Variables
-  const [denType, setDenType] = useState<"local" | "aws">("local")
+  const [denType, setDenTypeState] = useState<"local" | "aws">((() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:denType")
+      if (saved === "local" || saved === "aws") return saved as any
+    }
+    return "local"
+  }))
   const [denMaxRunners, setDenMaxRunners] = useState<number>(10)
   const [denAwsKey, setDenAwsKey] = useState("")
   const [denAwsSecret, setDenAwsSecret] = useState("")
@@ -55,25 +67,190 @@ export default function SetupPage() {
   const [denWarmRunners, setDenWarmRunners] = useState<number>(0)
   const [denKillIfUnreachable, setDenKillIfUnreachable] = useState<boolean>(true)
   
-  const [verified, setVerified] = useState(false)
+  const [verified, setVerifiedState] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:verified")
+      if (saved) return saved === "true"
+    }
+    return false
+  })
   const [checkingExisting, setCheckingExisting] = useState(false)
-  const [existingSetup, setExistingSetup] = useState<{
+  const [existingSetup, setExistingSetupState] = useState<{
     exists: boolean
     working: boolean
     instance_id?: string
     public_ip?: string
     detail?: string
-  } | null>(null)
+  } | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:existingSetup")
+      if (saved) return JSON.parse(saved)
+    }
+    return null
+  })
   
   // Verification Callback States
-  const [verifying, setVerifying] = useState(false)
-  const [verifyLogs, setVerifyLogs] = useState<string[]>([])
+  const [verifying, setVerifyingState] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:verifying")
+      if (saved) return saved === "true"
+    }
+    return false
+  })
+  const [verifyLogs, setVerifyLogsState] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:verifyLogs")
+      if (saved) return JSON.parse(saved)
+    }
+    return []
+  })
   const [, setWsInstance] = useState<WebSocket | null>(null)
   const [showLogsModal, setShowLogsModal] = useState(false)
   const [hasAutoChecked, setHasAutoChecked] = useState(false)
+  const [activeRunId, setActiveRunIdState] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ferret:setup:activeRunId")
+      if (saved) return saved
+    }
+    return null
+  })
+  const [corrupted, setCorruptedState] = useState(false)
+
+  // Helper to save setup progress to database settings table
+  const saveProgressToDb = async (patch: {
+    step?: number
+    den_type?: string
+    verified?: boolean
+    verifying?: boolean
+    verify_logs?: string[]
+    active_run_id?: string | null
+    corrupted?: boolean
+  }) => {
+    try {
+      await apiFetch(`${API_BASE}/api/setup/progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch)
+      })
+    } catch (e) {
+      console.error("Failed to save progress to DB:", e)
+    }
+  }
+
+  // Wrapper setters to sync state to sessionStorage and DB settings table
+  const setStep = (s: 1 | 2 | 3 | 4 | 5) => {
+    setStepState(s)
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("ferret:setup:step", String(s))
+    }
+    saveProgressToDb({ step: s })
+  }
+
+  const setDenType = (type: "local" | "aws") => {
+    setDenTypeState(type)
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("ferret:setup:denType", type)
+    }
+    saveProgressToDb({ den_type: type })
+  }
+
+  const setVerified = (v: boolean) => {
+    setVerifiedState(v)
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("ferret:setup:verified", String(v))
+    }
+    saveProgressToDb({ verified: v })
+  }
+
+  const setVerifying = (v: boolean) => {
+    setVerifyingState(v)
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("ferret:setup:verifying", String(v))
+    }
+    saveProgressToDb({ verifying: v })
+  }
+
+  const setVerifyLogs = (logs: string[] | ((prev: string[]) => string[])) => {
+    if (typeof logs === "function") {
+      setVerifyLogsState(prev => {
+        const next = logs(prev)
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("ferret:setup:verifyLogs", JSON.stringify(next))
+        }
+        saveProgressToDb({ verify_logs: next })
+        return next
+      })
+    } else {
+      setVerifyLogsState(logs)
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("ferret:setup:verifyLogs", JSON.stringify(logs))
+      }
+      saveProgressToDb({ verify_logs: logs })
+    }
+  }
+
+  const setExistingSetup = (setup: any) => {
+    setExistingSetupState(setup)
+    if (typeof window !== "undefined") {
+      if (setup) {
+        sessionStorage.setItem("ferret:setup:existingSetup", JSON.stringify(setup))
+      } else {
+        sessionStorage.removeItem("ferret:setup:existingSetup")
+      }
+    }
+  }
+
+  const setActiveRunId = (runId: string | null) => {
+    setActiveRunIdState(runId)
+    if (typeof window !== "undefined") {
+      if (runId) {
+        sessionStorage.setItem("ferret:setup:activeRunId", runId)
+      } else {
+        sessionStorage.removeItem("ferret:setup:activeRunId")
+      }
+    }
+    saveProgressToDb({ active_run_id: runId ?? "" })
+  }
+
+  const setCorrupted = (c: boolean) => {
+    setCorruptedState(c)
+    saveProgressToDb({ corrupted: c })
+  }
+
+  // Clear setup storage on successful complete
+  const clearSetupStorage = () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("ferret:setup:step")
+      sessionStorage.removeItem("ferret:setup:denType")
+      sessionStorage.removeItem("ferret:setup:verified")
+      sessionStorage.removeItem("ferret:setup:verifying")
+      sessionStorage.removeItem("ferret:setup:verifyLogs")
+      sessionStorage.removeItem("ferret:setup:existingSetup")
+      sessionStorage.removeItem("ferret:setup:activeRunId")
+    }
+    apiFetch(`${API_BASE}/api/setup/progress`, {
+      method: "DELETE"
+    }).catch(() => {})
+  }
 
   useEffect(() => {
     setReady(true)
+
+    // Load any saved setup progress from database table
+    apiFetch(`${API_BASE}/api/setup/progress`)
+      .then(r => r.ok ? r.json() : null)
+      .then(p => {
+        if (p) {
+          if (p.step) setStepState(p.step)
+          if (p.den_type === "local" || p.den_type === "aws") setDenTypeState(p.den_type)
+          if (p.verified !== null) setVerifiedState(p.verified)
+          if (p.verifying !== null) setVerifyingState(p.verifying)
+          if (p.verify_logs) setVerifyLogsState(p.verify_logs)
+          if (p.active_run_id) setActiveRunIdState(p.active_run_id)
+          if (p.corrupted !== null) setCorruptedState(p.corrupted)
+        }
+      })
+      .catch(() => {})
 
     // Check if there is pre-existing configuration from a restored backup
     apiFetch(`${API_BASE}/api/setup/config`)
@@ -161,7 +338,7 @@ export default function SetupPage() {
   }, [provider, apiKey, baseUrl])
 
   useEffect(() => {
-    if (step === 3 && denType === "aws" && !hasAutoChecked && denAwsKey && denAwsSecret) {
+    if (step === 3 && denType === "aws" && !hasAutoChecked && !verifying && denAwsKey && denAwsSecret) {
       setHasAutoChecked(true)
       setCheckingExisting(true)
       setVerifyLogs(["[Setup] Restored credentials detected. Synchronizing settings to backend..."])
@@ -226,14 +403,95 @@ export default function SetupPage() {
           setCheckingExisting(false)
         })
     }
-  }, [step, denType, hasAutoChecked, denAwsKey, denAwsSecret, denMaxRunners, denAwsRegion, denRunnerImage, denWarmRunners, denKillIfUnreachable])
+  }, [step, denType, hasAutoChecked, verifying, denAwsKey, denAwsSecret, denMaxRunners, denAwsRegion, denRunnerImage, denWarmRunners, denKillIfUnreachable])
 
-  // Reset auto-check trigger whenever leaving the Den step or switching Den type
+  // Reset auto-check trigger whenever leaving the Den step
   useEffect(() => {
-    if (step !== 3 || denType !== "aws") {
+    if (step !== 3) {
       setHasAutoChecked(false)
     }
-  }, [step, denType])
+  }, [step])
+
+  // Reconnect active verification log stream if page was reloaded or navigated back
+  useEffect(() => {
+    if (!ready || !verifying || !activeRunId) return
+
+    let isMounted = true
+    let isUnloading = false
+
+    const handleBeforeUnload = () => {
+      isUnloading = true
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", handleBeforeUnload)
+    }
+
+    const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:"
+    const apiHost = API_BASE.replace(/^https?:\/\//, "")
+    const wsUrl = `${wsProto}//${apiHost}/api/runs/${activeRunId}/ws`
+
+    const ws = new WebSocket(wsUrl)
+    setWsInstance(ws)
+
+    ws.onmessage = (event) => {
+      if (!isMounted || isUnloading) return
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.line) {
+          setVerifyLogs(prev => [...prev, msg.line.trim()])
+        }
+        if (msg.status === "done") {
+          setVerifyLogs(prev => [...prev, "✓ Verification callback success! Connection established. Ready to proceed."])
+          ws.close()
+          setVerified(true)
+          setVerifying(false)
+          setActiveRunId(null)
+          setCorrupted(false)
+        } else if (msg.status === "error") {
+          setVerifyLogs(prev => [...prev, "✗ Verification callback failed. Check Fargate / STS logs."])
+          ws.close()
+          setSaveError("Verification test run failed.")
+          setCorrupted(true) // Mark deployment corrupted on test run failure
+          setVerifying(false)
+          setActiveRunId(null)
+        }
+      } catch (e) {
+        // Ignore parser issues
+      }
+    }
+
+    ws.onerror = () => {
+      if (!isMounted || isUnloading) return
+      setVerifyLogs(prev => [...prev, "✗ WebSocket connection failed. API may have restarted/failed."])
+      setSaveError("Failed to connect log listener stream.")
+      setCorrupted(true) // API went down/restarted mid-deploy
+      setVerifying(false)
+      setActiveRunId(null)
+      ws.close()
+    }
+
+    ws.onclose = (event) => {
+      if (!isMounted || isUnloading || event.code === 1001) return
+      setWsInstance(prev => {
+        if (prev === ws) {
+          if (verifying) {
+            setCorrupted(true)
+            setVerifying(false)
+          }
+          setActiveRunId(null)
+        }
+        return prev
+      })
+    }
+
+    return () => {
+      isMounted = false
+      if (typeof window !== "undefined") {
+        window.removeEventListener("beforeunload", handleBeforeUnload)
+      }
+      ws.close()
+    }
+  }, [ready, verifying, activeRunId])
 
   if (!ready) return null
 
@@ -333,6 +591,7 @@ export default function SetupPage() {
     }
 
     setExistingSetup(null)
+    setCorrupted(false)
     setVerifyLogs(["[Setup] Deploying persistent EC2 WireGuard Hub on AWS..."])
     
     try {
@@ -370,43 +629,36 @@ export default function SetupPage() {
       const runData = await runRes.json()
       const runId = runData.id
       
-      const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:"
-      const apiHost = API_BASE.replace(/^https?:\/\//, "")
-      const wsUrl = `${wsProto}//${apiHost}/api/runs/${runId}/ws`
-      
       setVerifyLogs(prev => [...prev, `[Verification] Triggered Run ${runId}. Connecting to stream logs...`])
-      const ws = new WebSocket(wsUrl)
-      setWsInstance(ws)
-      
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
-          if (msg.line) {
-            setVerifyLogs(prev => [...prev, msg.line.trim()])
-          }
-          if (msg.status === "done") {
-             setVerifyLogs(prev => [...prev, "✓ Verification callback success! Connection established. Ready to proceed."])
-             ws.close()
-             setVerified(true)
-             setVerifying(false)
-          } else if (msg.status === "error") {
-             setVerifyLogs(prev => [...prev, "✗ Verification callback failed. Check Fargate / STS logs."])
-             ws.close()
-             setSaveError("Verification test run failed.")
-             setVerifying(false)
-          }
-        } catch (e) {
-          // Ignore parser issues
-        }
-      }
-      
-      ws.onerror = () => {
-        setVerifyLogs(prev => [...prev, "✗ WebSocket connection failed."])
-        setSaveError("Failed to connect log listener stream.")
-        setVerifying(false)
-      }
+      setActiveRunId(runId)
     } catch (err: any) {
       setVerifyLogs(prev => [...prev, `✗ Deployment error: ${err.message}`])
+      setSaveError(err.message)
+      setVerifying(false)
+      setActiveRunId(null)
+    }
+  }
+
+  async function teardownAwsDen() {
+    setVerifying(true)
+    setSaveError("")
+    setVerifyLogs(prev => [...prev, "[Teardown] Initiating AWS resource teardown (Terraform Destroy)..."])
+    try {
+      const res = await apiFetch(`${API_BASE}/api/settings/dens/teardown-wg`, {
+        method: "POST"
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail ?? "Teardown failed")
+      }
+      setVerifyLogs(prev => [...prev, "[Teardown] ✓ AWS resources destroyed successfully.", "[Setup] Launching fresh deployment..."])
+      setCorrupted(false)
+      setVerified(false)
+      setExistingSetup(null)
+      // Call verifyAwsDen to start fresh
+      await verifyAwsDen(true)
+    } catch (err: any) {
+      setVerifyLogs(prev => [...prev, `✗ Teardown error: ${err.message}`])
       setSaveError(err.message)
       setVerifying(false)
     }
@@ -445,6 +697,7 @@ export default function SetupPage() {
         return
       }
 
+      clearSetupStorage()
       setStep(5)
     } catch (e) {
       setSaveError(String(e))
@@ -602,6 +855,8 @@ export default function SetupPage() {
                 existingSetup={existingSetup}
                 setVerified={setVerified}
                 verified={verified}
+                corrupted={corrupted}
+                teardownAwsDen={teardownAwsDen}
                 saveError={saveError}
                 verifyLogs={verifyLogs}
                 setShowLogsModal={setShowLogsModal}

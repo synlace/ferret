@@ -11,9 +11,20 @@ import logging
 import httpx
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
+from pydantic import BaseModel
+from typing import Optional, List
 
 import deps
 from models import SetupConfig, SetupStatus
+
+class SetupProgressSchema(BaseModel):
+    step: Optional[int] = None
+    den_type: Optional[str] = None
+    verified: Optional[bool] = None
+    verifying: Optional[bool] = None
+    verify_logs: Optional[List[str]] = None
+    active_run_id: Optional[str] = None
+    corrupted: Optional[bool] = None
 
 _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -141,6 +152,85 @@ async def get_setup_status():
                 pass  # non-fatal — fall back to stored placeholder
 
         return SetupStatus(setup_complete=True, provider=provider, model=model)
+    except Exception as e:
+        raise deps.server_error(e)
+
+
+@router.get("/api/setup/progress", response_model=SetupProgressSchema)
+async def get_setup_progress():
+    """Retrieve any saved setup progress from the database settings table."""
+    import json
+    try:
+        step_val = await deps.db_client.get_setting("setup_progress_step")
+        step = int(step_val) if step_val else None
+
+        den_type = await deps.db_client.get_setting("setup_progress_den_type")
+        
+        verified_val = await deps.db_client.get_setting("setup_progress_verified")
+        verified = (verified_val == "true") if verified_val else None
+
+        verifying_val = await deps.db_client.get_setting("setup_progress_verifying")
+        verifying = (verifying_val == "true") if verifying_val else None
+
+        logs_val = await deps.db_client.get_setting("setup_progress_verify_logs")
+        verify_logs = json.loads(logs_val) if logs_val else None
+
+        active_run_id = await deps.db_client.get_setting("setup_progress_active_run_id")
+
+        corrupted_val = await deps.db_client.get_setting("setup_progress_corrupted")
+        corrupted = (corrupted_val == "true") if corrupted_val else None
+
+        return SetupProgressSchema(
+            step=step,
+            den_type=den_type,
+            verified=verified,
+            verifying=verifying,
+            verify_logs=verify_logs,
+            active_run_id=active_run_id,
+            corrupted=corrupted
+        )
+    except Exception as e:
+        raise deps.server_error(e)
+
+
+@router.post("/api/setup/progress")
+async def save_setup_progress(body: SetupProgressSchema):
+    """Save/update setup progress in the database settings table."""
+    import json
+    try:
+        if body.step is not None:
+            await deps.db_client.set_setting("setup_progress_step", str(body.step))
+        if body.den_type is not None:
+            await deps.db_client.set_setting("setup_progress_den_type", body.den_type)
+        if body.verified is not None:
+            await deps.db_client.set_setting("setup_progress_verified", "true" if body.verified else "false")
+        if body.verifying is not None:
+            await deps.db_client.set_setting("setup_progress_verifying", "true" if body.verifying else "false")
+        if body.verify_logs is not None:
+            await deps.db_client.set_setting("setup_progress_verify_logs", json.dumps(body.verify_logs))
+        if body.active_run_id is not None:
+            await deps.db_client.set_setting("setup_progress_active_run_id", body.active_run_id)
+        elif body.active_run_id == "":
+            await deps.db_client.set_setting("setup_progress_active_run_id", "")
+        if body.corrupted is not None:
+            await deps.db_client.set_setting("setup_progress_corrupted", "true" if body.corrupted else "false")
+        return {"status": "success"}
+    except Exception as e:
+        raise deps.server_error(e)
+
+
+@router.delete("/api/setup/progress")
+async def delete_setup_progress():
+    """Clear setup progress settings from the database."""
+    try:
+        await deps.db_client.set_setting("setup_progress_step", "")
+        await deps.db_client.set_setting("setup_progress_den_type", "")
+        await deps.db_client.set_setting("setup_progress_verified", "")
+        await deps.db_client.set_setting("setup_progress_verifying", "")
+        await deps.db_client.set_setting("setup_progress_verify_logs", "")
+        await deps.db_client.set_setting("setup_progress_active_run_id", "")
+        await deps.db_client.set_setting("setup_progress_corrupted", "")
+        return {"status": "success"}
     except Exception as e:
         raise deps.server_error(e)
 
