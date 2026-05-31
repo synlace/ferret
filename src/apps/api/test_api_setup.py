@@ -575,4 +575,18 @@ class TestSetupProgress:
         assert data["den_type"] is None
 
 
+# ---------------------------------------------------------------------------
+# RTK installation verification test
+# ---------------------------------------------------------------------------
+
+class TestRtkInstallation:
+    def test_rtk_binary_installed_and_runnable(self):
+        """Verify rtk binary is installed, on the path, and executable."""
+        import subprocess
+        res = subprocess.run(["rtk", "--help"], capture_output=True, text=True)
+        assert res.returncode == 0
+        assert "rtk" in res.stdout.lower() or "usage" in res.stdout.lower() or "help" in res.stdout.lower()
+
+
+
 
