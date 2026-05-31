@@ -65,6 +65,8 @@ build:
 #   just logs compose                — Tail standard docker compose logs for all containers
 #   just logs <service>              — Tail logs of a specific service (api, runner, ui, docker-shim)
 #   just logs grep <pattern>         — Search for <pattern> across the master JSON logs
+#   just logs clear                  — Clear the consolidated master logs file
+#   just logs clear <service>        — Clear logs of a specific service (api, runner, ui, docker-shim)
 logs action="" query="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -110,6 +112,57 @@ logs action="" query="":
         fi
         jq -r --arg q "{{query}}" 'select(.message | test($q; "i")) | "[\(.timestamp)] [\(.level)] [\(.component)] \(.message)"' "$MASTER_LOG" || true
         ;;
+      clear)
+        if [[ -z "{{query}}" ]]; then
+          echo "Clearing consolidated master log file ($MASTER_LOG)..."
+          echo -n "" > "$MASTER_LOG"
+          echo "Master log file truncated."
+        else
+          case "{{query}}" in
+            api|runner|docker-shim|ui)
+              CONTAINER_ID=$(docker compose ps -q "{{query}}" 2>/dev/null || true)
+              if [[ -z "$CONTAINER_ID" ]]; then
+                echo "Error: Service '{{query}}' is not running or doesn't exist."
+                exit 1
+              fi
+              LOG_PATH=$(docker inspect "$CONTAINER_ID" | jq -r '.[0].LogPath' 2>/dev/null || true)
+              if [[ -z "$LOG_PATH" ]]; then
+                echo "Service '{{query}}' does not use local JSON logs (using journald or other driver)."
+                echo "Recreating container to clear logs..."
+                docker compose up -d --force-recreate "{{query}}"
+                echo "Container '{{query}}' recreated and logs cleared."
+              else
+                echo "Truncating logs for '{{query}}'..."
+                if [ -w "$LOG_PATH" ]; then
+                  truncate -s 0 "$LOG_PATH"
+                  echo "Logs for '{{query}}' cleared."
+                else
+                  echo "Log file is write-protected on the host. Running with sudo..."
+                  sudo truncate -s 0 "$LOG_PATH"
+                  echo "Logs for '{{query}}' cleared."
+                fi
+              fi
+              ;;
+            *)
+              echo "Unknown service to clear: {{query}}"
+              echo "Available: api, runner, docker-shim, ui"
+              exit 1
+              ;;
+          esac
+        fi
+        ;;
+      help|--help|-h)
+        echo "Usage: just logs [action] [query]"
+        echo ""
+        echo "Available:"
+        echo "  just logs                        — Interactive master log fuzzy search"
+        echo "  just logs compose                — Tail all docker compose service logs"
+        echo "  just logs <service>              — Tail specific container (api, runner, ui, docker-shim)"
+        echo "  just logs grep <pattern>         — Filter master log by regex pattern"
+        echo "  just logs clear                  — Clear the consolidated master logs file"
+        echo "  just logs clear <service>        — Clear logs of a specific service (api, runner, ui, docker-shim)"
+        exit 0
+        ;;
       *)
         echo "Unknown action: {{action}}"
         echo "Available:"
@@ -117,6 +170,8 @@ logs action="" query="":
         echo "  just logs compose                — Tail all docker compose service logs"
         echo "  just logs <service>              — Tail specific container (api, runner, ui, docker-shim)"
         echo "  just logs grep <pattern>         — Filter master log by regex pattern"
+        echo "  just logs clear                  — Clear the consolidated master logs file"
+        echo "  just logs clear <service>        — Clear logs of a specific service (api, runner, ui, docker-shim)"
         exit 1
         ;;
     esac
