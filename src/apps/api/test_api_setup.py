@@ -512,3 +512,67 @@ class TestCheckExistingAWSSetup:
             assert "working" in data
 
 
+# ---------------------------------------------------------------------------
+# Setup Progress Table tests
+# ---------------------------------------------------------------------------
+
+class TestSetupProgress:
+    async def test_progress_lifecycle(self, client):
+        # 1. Initially should return empty defaults
+        r = await client.get("/api/setup/progress")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["step"] is None
+        assert data["den_type"] is None
+
+        # 2. Save progress (step 2, den_type="local")
+        payload = {
+            "step": 2,
+            "den_type": "local",
+            "verified": False,
+            "verifying": True,
+            "verify_logs": ["Log line 1", "Log line 2"],
+            "active_run_id": "run-123",
+            "corrupted": False
+        }
+        r = await client.post("/api/setup/progress", json=payload)
+        assert r.status_code == 200
+        assert r.json() == {"status": "success"}
+
+        # 3. Retrieve and assert
+        r = await client.get("/api/setup/progress")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["step"] == 2
+        assert data["den_type"] == "local"
+        assert data["verified"] is False
+        assert data["verifying"] is True
+        assert data["verify_logs"] == ["Log line 1", "Log line 2"]
+        assert data["active_run_id"] == "run-123"
+        assert data["corrupted"] is False
+
+        # 4. Partial update (PATCH style POST since it's Optional fields on body)
+        r = await client.post("/api/setup/progress", json={"step": 3})
+        assert r.status_code == 200
+
+        # Retrieve and assert step updated but others remained intact
+        r = await client.get("/api/setup/progress")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["step"] == 3
+        assert data["den_type"] == "local"
+
+        # 5. Delete progress
+        r = await client.delete("/api/setup/progress")
+        assert r.status_code == 200
+        assert r.json() == {"status": "success"}
+
+        # Should be empty defaults again
+        r = await client.get("/api/setup/progress")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["step"] is None
+        assert data["den_type"] is None
+
+
+

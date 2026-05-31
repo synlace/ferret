@@ -482,9 +482,34 @@ restore:
     docker compose up -d api
     echo "Restore complete."
 
-# Drop into the ferret-runner sandbox container shell
-shell:
-    docker exec -it ferret-runner bash
+# Drop into a container shell
+# Usage:
+#   just shell         — Drop into the ferret-runner sandbox container shell (default)
+#   just shell api     — Drop into the ferret-api container shell
+shell service="runner":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "{{service}}" == "api" ]]; then
+      if docker compose ps -q api 2>/dev/null | grep -q .; then
+        docker compose exec -it api bash
+      elif docker compose -f docker-compose.prod.yml ps -q api 2>/dev/null | grep -q .; then
+        docker compose -f docker-compose.prod.yml exec -it api bash
+      else
+        CONTAINER_ID=$(docker ps -q --filter "name=ferret-api" | head -n 1)
+        if [[ -n "$CONTAINER_ID" ]]; then
+          docker exec -it "$CONTAINER_ID" bash
+        else
+          echo "Error: ferret-api container is not running."
+          exit 1
+        fi
+      fi
+    elif [[ "{{service}}" == "runner" ]]; then
+      docker exec -it ferret-runner bash
+    else
+      echo "Unknown service: {{service}}"
+      echo "Available: runner, api"
+      exit 1
+    fi
 
 # Build the runner image locally (for contributors modifying src/apps/runner/).
 # Set FERRET_RUNNER_IMAGE_LOCAL=ferret-runner:local in .env to use this image instead of GHCR.

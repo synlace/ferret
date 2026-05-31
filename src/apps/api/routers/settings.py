@@ -272,6 +272,10 @@ async def test_den_config(body: DenConfigSchema, request: Request):
         raise deps.server_error(e)
 
 
+# Track active WireGuard EC2 provisioning runs in-process
+_is_provisioning = False
+
+
 @router.post("/api/settings/dens/provision-wg")
 async def provision_wireguard_hub(request: Request):
     """
@@ -288,6 +292,8 @@ async def provision_wireguard_hub(request: Request):
 
     _log = logging.getLogger(__name__)
 
+    global _is_provisioning
+    _is_provisioning = True
     try:
         await _assert_setup_or_authenticated(request)
         
@@ -456,6 +462,8 @@ PersistentKeepalive = 25
         raise
     except Exception as e:
         raise deps.server_error(e)
+    finally:
+        _is_provisioning = False
 
 
 @router.post("/api/settings/dens/teardown-wg")
@@ -576,14 +584,14 @@ async def check_existing_wireguard_hub(request: Request):
 
         den = await deps.db_client.get_den("aws")
         if not den:
-            return {"exists": False, "working": False, "detail": "No AWS Den configuration saved."}
+            return {"exists": False, "working": False, "provisioning": _is_provisioning, "detail": "No AWS Den configuration saved."}
 
         aws_key = den.get("aws_access_key") or ""
         aws_secret = den.get("aws_secret_key") or ""
         aws_region = den.get("aws_region") or "eu-west-1"
 
         if not aws_key or not aws_secret:
-            return {"exists": False, "working": False, "detail": "Missing AWS credentials."}
+            return {"exists": False, "working": False, "provisioning": _is_provisioning, "detail": "Missing AWS credentials."}
 
         def _check_aws():
             import boto3
@@ -625,6 +633,7 @@ async def check_existing_wireguard_hub(request: Request):
             return {
                 "exists": False,
                 "working": False,
+                "provisioning": _is_provisioning,
                 "detail": "No running 'ferret-wg-hub' instance found."
             }
 
@@ -656,6 +665,7 @@ async def check_existing_wireguard_hub(request: Request):
         return {
             "exists": True,
             "working": bool(local_config_exists and ip_matches and tunnel_working),
+            "provisioning": _is_provisioning,
             "instance_id": instance_details["instance_id"],
             "public_ip": instance_details["public_ip"],
             "private_ip": instance_details["private_ip"],
