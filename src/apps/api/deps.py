@@ -314,13 +314,13 @@ async def require_auth(request: HTTPConnection) -> None:
     """
     path = request.url.path
     if path in _AUTH_EXEMPT_PATHS:
-        _log.debug("[AUTH_CHECK] Path: %s is strictly exempt.", path)
+        # _log.debug("[AUTH_CHECK] Path: %s is strictly exempt.", path)
         return
     if any(path.startswith(prefix) for prefix in _AUTH_EXEMPT_PREFIXES):
-        _log.debug("[AUTH_CHECK] Path: %s matches exempt prefix.", path)
+        # _log.debug("[AUTH_CHECK] Path: %s matches exempt prefix.", path)
         return
 
-    _log.debug("[AUTH_CHECK] Evaluating auth for Path: %s", path)
+    # _log.debug("[AUTH_CHECK] Evaluating auth for Path: %s", path)
 
     # 1. Bearer token (programmatic access) — only checked when FERRET_API_KEY is set.
     if _API_KEY:

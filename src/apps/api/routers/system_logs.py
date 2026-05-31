@@ -105,3 +105,44 @@ async def get_system_logs(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read logs: {str(e)}")
+
+@router.delete("/api/logs")
+async def delete_system_logs(
+    project_id: Optional[str] = Query(None, description="Optional project ID to only delete logs for a specific project")
+):
+    """
+    Delete system logs. If project_id is specified, only deletes logs for that specific project.
+    Otherwise, clears all system logs.
+    """
+    log_path = _get_master_log_path()
+    if not log_path.exists():
+        return {"message": "No logs to delete"}
+
+    try:
+        if project_id:
+            # Read all logs, filter out the ones with the specified project_id
+            remaining_lines = []
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line_str = line.strip()
+                    if not line_str:
+                        continue
+                    try:
+                        log_entry = json.loads(line_str)
+                        context = log_entry.get("context", {})
+                        if context.get("project_id") != project_id:
+                            remaining_lines.append(line)
+                    except json.JSONDecodeError:
+                        remaining_lines.append(line)
+            
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.writelines(remaining_lines)
+            
+            return {"message": f"Successfully deleted logs for project {project_id}"}
+        else:
+            # Clear all logs by truncating the file
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.truncate(0)
+            return {"message": "Successfully cleared all system logs"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete logs: {str(e)}")

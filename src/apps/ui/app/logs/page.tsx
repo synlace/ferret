@@ -26,7 +26,8 @@ import {
   Link,
   Check,
   Copy,
-  ChevronLeft
+  ChevronLeft,
+  Trash2
 } from "lucide-react"
 
 import CodeMirror, { EditorView } from "@uiw/react-codemirror"
@@ -329,8 +330,13 @@ const SOURCES = [
 type SortField = "timestamp" | "level" | "component" | "message"
 type SortDirection = "asc" | "desc" | "none"
 
+const getLogKey = (log: LogEntry): string => {
+  return `${log.timestamp}-${log.component}-${log.message}`
+}
+
 export default function LogsPage() {
-  const { activeProjectId, activeProject } = useProject()
+  const { activeProjectId, activeProject, isLoading: projectLoading } = useProject()
+  const lastProjectIdRef = useRef<string | null>(null)
   
   // Search history state (persisted specifically for logs)
   const [searchHistory, setSearchHistory] = useState<string[]>([])
@@ -359,8 +365,11 @@ export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [clearing, setClearing] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(false)
-  const [expandedLogIdx, setExpandedLogIdx] = useState<number | null>(null)
+  const [expandedLogKey, setExpandedLogKey] = useState<string | null>(null)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [copiedSelected, setCopiedSelected] = useState(false)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [copiedExcIdx, setCopiedExcIdx] = useState<number | null>(null)
   
@@ -390,17 +399,38 @@ export default function LogsPage() {
     }
   }, [])
 
+  // Helper to replace or remove project filter dynamically on sidebar transition
+  const replaceProjectToken = useCallback((query: string, newProjectId: string): string => {
+    const tokenRe = /(-?)project:("(?:[^"\\]|\\.)*"|[^\s]*)/i
+    if (newProjectId === "temp") {
+      return query.replace(tokenRe, "").replace(/\s{2,}/g, " ").trim()
+    }
+    if (tokenRe.test(query)) {
+      return query.replace(tokenRe, `project:${newProjectId}`)
+    }
+    const trimmed = query.trim()
+    return trimmed ? `${trimmed} project:${newProjectId}` : `project:${newProjectId}`
+  }, [])
+
   // Deep shareable links loader (copies proxy history pattern)
   useEffect(() => {
+    if (projectLoading) return
     const params = new URLSearchParams(window.location.search)
     const q = params.get("q")
     if (q) {
       setRawText(q)
       window.history.replaceState({}, "", window.location.pathname)
-    } else if (activeProjectId && !rawText && activePills.length === 0) {
-      setRawText(`project:${activeProjectId}`)
+    } else {
+      if (!rawText && activePills.length === 0) {
+        if (activeProjectId !== "temp") {
+          setRawText(`project:${activeProjectId}`)
+        }
+      } else if (lastProjectIdRef.current && lastProjectIdRef.current !== activeProjectId) {
+        setRawText(q => replaceProjectToken(q, activeProjectId))
+      }
     }
-  }, [activeProjectId])
+    lastProjectIdRef.current = activeProjectId
+  }, [activeProjectId, projectLoading, activePills.length, replaceProjectToken])
 
   const saveHistoryToStorage = (entries: string[]) => {
     try {
@@ -476,6 +506,7 @@ export default function LogsPage() {
   const parsedFilters = useMemo(() => parseLogsQuery(searchQuery), [searchQuery])
   
   const fetchLogs = useCallback(async () => {
+    if (projectLoading) return
     setLoading(true)
     try {
       const queryParams = new URLSearchParams()
@@ -507,7 +538,7 @@ export default function LogsPage() {
     } finally {
       setLoading(false)
     }
-  }, [parsedFilters, page, pageSize])
+  }, [parsedFilters, page, pageSize, projectLoading])
 
   useEffect(() => {
     fetchLogs()
@@ -523,6 +554,79 @@ export default function LogsPage() {
   useEffect(() => {
     setPage(1)
   }, [searchQuery])
+
+  const handleClearLogs = async () => {
+    const isTemp = activeProjectId === "temp"
+    const confirmMsg = isTemp 
+      ? "Delete all system logs? This cannot be undone."
+      : `Delete all logs for project "${activeProject?.name || activeProjectId}"? This cannot be undone.`
+
+    if (!window.confirm(confirmMsg)) return
+
+    setClearing(true)
+    try {
+      const queryParams = new URLSearchParams()
+      if (!isTemp) {
+        queryParams.append("project_id", activeProjectId)
+      }
+      const res = await apiFetch(`${API_BASE}/api/logs?${queryParams.toString()}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error(`API returned ${res.status}`)
+      
+      // Refresh the logs list
+      await fetchLogs()
+    } catch (err) {
+      console.error("Failed to clear logs:", err)
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  const toggleSelectRow = (key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const isRowSelected = (key: string) => selectedKeys.has(key)
+
+  const handleSelectAll = () => {
+    const visibleKeys = sortedLogs.map(getLogKey)
+    const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => selectedKeys.has(k))
+
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (allSelected) {
+        visibleKeys.forEach(k => next.delete(k))
+      } else {
+        visibleKeys.forEach(k => next.add(k))
+      }
+      return next
+    })
+  }
+
+  const handleCopySelected = () => {
+    const selectedLogsArray = logs.filter(log => selectedKeys.has(getLogKey(log)))
+    if (selectedLogsArray.length === 0) return
+
+    navigator.clipboard.writeText(JSON.stringify(selectedLogsArray, null, 2))
+      .then(() => {
+        setCopiedSelected(true)
+        setTimeout(() => setCopiedSelected(false), 2000)
+      })
+      .catch(err => console.error("Failed to copy selected logs:", err))
+  }
+
+  const handleClearSelection = () => {
+    setSelectedKeys(new Set())
+  }
 
   // Apply negated filter lists on client side for maximum speed and control
   const filteredLogs = useMemo(() => {
@@ -654,6 +758,31 @@ export default function LogsPage() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {/* Multi-selection copy actions */}
+          {selectedKeys.size > 0 && (
+            <>
+              <Button
+                tabIndex={-1}
+                variant="ghost"
+                size="sm"
+                onClick={handleCopySelected}
+                className="h-7 text-xs text-brand-400 hover:text-brand-300 hover:bg-brand-500/10 border border-brand-500/20"
+              >
+                {copiedSelected ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+                Copy Selected ({selectedKeys.size})
+              </Button>
+              <Button
+                tabIndex={-1}
+                variant="ghost"
+                size="sm"
+                onClick={handleClearSelection}
+                className="h-7 text-xs text-neutral-400 hover:text-white mr-1.5"
+              >
+                Clear Selection
+              </Button>
+            </>
+          )}
+
           {/* Live refresh polling button */}
           <Button
             tabIndex={-1}
@@ -683,13 +812,26 @@ export default function LogsPage() {
             Refresh
           </Button>
 
+          {/* Clear Logs button */}
+          <Button
+            tabIndex={-1}
+            variant="ghost"
+            size="sm"
+            onClick={handleClearLogs}
+            disabled={clearing}
+            className="h-7 text-xs text-neutral-400 hover:text-red-400 hover:bg-transparent"
+          >
+            {clearing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
+            Clear Logs
+          </Button>
+
           {/* Clear search query button */}
           {(rawText || activePills.length > 0) && (
             <Button
               tabIndex={-1}
               variant="ghost"
               size="sm"
-              onClick={() => { setRawText(""); setActivePills([]); setExpandedLogIdx(null); setPage(1) }}
+              onClick={() => { setRawText(""); setActivePills([]); setExpandedLogKey(null); setPage(1) }}
               className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/20"
             >
               <X className="w-3 h-3 mr-1" />
@@ -1068,6 +1210,15 @@ export default function LogsPage() {
 
       {/* 4. Grid Headers */}
       <div className="flex items-center gap-3 px-4 bg-neutral-900/60 border-b border-neutral-800 text-neutral-400 text-[10px] uppercase font-bold tracking-wider select-none shrink-0 h-[36px]">
+        {/* Bulk select checkbox column */}
+        <div className="w-6 shrink-0 flex items-center justify-center">
+          <input 
+            type="checkbox"
+            checked={sortedLogs.length > 0 && sortedLogs.every(log => selectedKeys.has(getLogKey(log)))}
+            onChange={handleSelectAll}
+            className="appearance-none rounded border border-neutral-700 bg-neutral-900 checked:bg-brand-500 checked:border-brand-500 cursor-pointer h-3.5 w-3.5 flex items-center justify-center after:content-['✓'] after:text-black after:text-[9px] after:font-extrabold after:hidden checked:after:block focus:outline-none"
+          />
+        </div>
         <div className="w-8 shrink-0"></div>
         <div 
           onClick={() => handleSort("timestamp")}
@@ -1111,7 +1262,8 @@ export default function LogsPage() {
           sortedLogs.map((log, idx) => {
             const levelStyle = getLevelBadgeStyle(log.level)
             const BadgeIcon = levelStyle.icon
-            const isExpanded = expandedLogIdx === idx
+            const logKey = getLogKey(log)
+            const isExpanded = expandedLogKey === logKey
             const friendlySource = getFriendlySource(log.component)
 
             return (
@@ -1126,8 +1278,23 @@ export default function LogsPage() {
                 {/* Table Row layout */}
                 <div 
                   className="flex items-center gap-3 cursor-pointer py-1 px-4 text-neutral-300"
-                  onClick={() => setExpandedLogIdx(isExpanded ? null : idx)}
+                  onClick={() => setExpandedLogKey(isExpanded ? null : logKey)}
                 >
+                  {/* Selection Checkbox */}
+                  <div 
+                    className="w-6 shrink-0 flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation() // Don't trigger row expand
+                      toggleSelectRow(logKey)
+                    }}
+                  >
+                    <input 
+                      type="checkbox"
+                      checked={isRowSelected(logKey)}
+                      onChange={() => {}} // handled by onClick on wrapper to ensure easy click target
+                      className="appearance-none rounded border border-neutral-700 bg-neutral-900 checked:bg-brand-500 checked:border-brand-500 cursor-pointer h-3.5 w-3.5 flex items-center justify-center after:content-['✓'] after:text-black after:text-[9px] after:font-extrabold after:hidden checked:after:block focus:outline-none"
+                    />
+                  </div>
                   {/* Expansion indicator */}
                   <span className="w-8 shrink-0 flex justify-center text-neutral-600 select-none">
                     {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-neutral-400" /> : <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />}
@@ -1152,7 +1319,7 @@ export default function LogsPage() {
                   </span>
 
                   {/* Message column */}
-                  <span className="flex-1 min-w-0 text-neutral-300 truncate select-text" title={log.message}>
+                  <span className="flex-1 min-w-0 text-neutral-300 truncate select-none" title={log.message}>
                     {log.message}
                   </span>
                 </div>
@@ -1210,7 +1377,7 @@ export default function LogsPage() {
                     )}
 
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2 mb-1.5">
                         <span className="text-neutral-600 font-semibold text-[10px] uppercase tracking-wider select-none">Raw JSON Payload</span>
                         <button
                           onClick={() => {
