@@ -152,8 +152,9 @@ test component="":
         just test shim
         ;;
       api)
-        docker compose build api
-        docker compose run --rm -w /app api python -m pytest \
+        docker compose build api >/dev/null 2>&1
+        ERR_FILE=$(mktemp)
+        if ! docker compose run --rm -w /app api rtk pytest \
           test_api_v2.py \
           test_api_chat_litellm.py \
           test_api_chat_tools.py \
@@ -170,7 +171,12 @@ test component="":
           test_api_setup.py \
           test_api_plans.py \
           test_api_runners.py \
-          -v --tb=short
+          -v --tb=short 2>"$ERR_FILE" | sed -E '/^\[Entrypoint\]|^\[#\]/d'; then
+          cat "$ERR_FILE" >&2
+          rm -f "$ERR_FILE"
+          exit 1
+        fi
+        rm -f "$ERR_FILE"
         ;;
       ui)
         cd tests/ui

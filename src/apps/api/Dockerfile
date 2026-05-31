@@ -59,6 +59,15 @@ RUN useradd -m -u 1000 ferret \
     && echo "ferret ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ferret \
     && chmod 0440 /etc/sudoers.d/ferret
 
+# Install RTK for ferret user
+USER ferret
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
+    && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+USER root
+
+# Ensure rtk is on the PATH globally for non-interactive shells
+ENV PATH="/home/ferret/.local/bin:${PATH}"
+
 # Copy and configure the entrypoint (runs as root to fix socket GID, then drops to ferret)
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
