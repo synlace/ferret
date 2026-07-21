@@ -100,7 +100,7 @@ function parseRaw(raw: string): { method: string; url: string; headersText: stri
   const lines = raw.split("\n")
   const firstParts = (lines[0] ?? "").split(" ")
   const method = firstParts[0] ?? "GET"
-  const rawPath = firstParts[1] ?? "/"
+  const rawTarget = firstParts[1] ?? "/"
 
   let host = ""
   let blankIdx = -1
@@ -111,7 +111,12 @@ function parseRaw(raw: string): { method: string; url: string; headersText: stri
     if (lines[i].toLowerCase().startsWith("host:")) host = lines[i].slice(5).trim()
   }
 
-  const url = host ? `https://${host}${rawPath}` : rawPath
+  let url: string
+  if (rawTarget.startsWith("http://") || rawTarget.startsWith("https://")) {
+    url = rawTarget
+  } else {
+    url = host ? `http://${host}${rawTarget}` : rawTarget
+  }
   const headersText = headerLines.filter(l => !l.toLowerCase().startsWith("host:")).join("\n")
   const body = blankIdx >= 0 ? lines.slice(blankIdx + 1).join("\n") : ""
   return { method, url, headersText, body }

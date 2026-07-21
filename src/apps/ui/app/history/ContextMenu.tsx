@@ -51,7 +51,7 @@ export function ContextMenu({
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n")
     return [
-      `${r.method} ${r.path} HTTP/1.1`,
+      `${r.method} ${r.url} HTTP/1.1`,
       `Host: ${r.host}`,
       ...(headerLines ? [headerLines] : []),
       "",
