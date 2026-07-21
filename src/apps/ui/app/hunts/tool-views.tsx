@@ -402,10 +402,12 @@ export function RequestDetailView({ toolArgsRaw, result }: { toolArgsRaw?: strin
       .filter(([k]) => k.toLowerCase() !== "host")
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n")
-    let reqPath = "/"
-    try { const p = new URL(String(raw.url ?? "")); reqPath = p.pathname + p.search } catch { reqPath = "/" }
+    let rawUrl = String(raw.url ?? "")
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+      rawUrl = `http://${raw.host || "localhost"}${rawUrl}`
+    }
     const rawRequest = [
-      `${req.method} ${reqPath} HTTP/1.1`,
+      `${req.method} ${rawUrl} HTTP/1.1`,
       `Host: ${req.host}`,
       ...(headerLines ? [headerLines] : []),
       "",
@@ -484,8 +486,9 @@ export function HttpRequestView({ toolArgsRaw, result }: { toolArgsRaw?: string;
       .filter(([k]) => k.toLowerCase() !== "host")
       .map(([k, v]) => `${k}: ${v}`)
       .join("\n")
+    const rawUrl = req.url || `http://${host}${path}`
     const rawRequest = [
-      `${method} ${path} HTTP/1.1`,
+      `${method} ${rawUrl} HTTP/1.1`,
       ...(host ? [`Host: ${host}`] : []),
       ...(headerLines ? [headerLines] : []),
       "",
@@ -608,9 +611,9 @@ export function SearchRequestsView({ result }: { result: string | null }) {
 
   const sendToGnaw = async (row: SearchRow) => {
     // SearchRow has no headers/body — build minimal raw request from available fields
-    const rawPath = row.path ?? "/"
+    const rawUrl = row.url || `http://${row.host ?? ""}${row.path ?? "/"}`
     const rawRequest = [
-      `${row.method ?? "GET"} ${rawPath} HTTP/1.1`,
+      `${row.method ?? "GET"} ${rawUrl} HTTP/1.1`,
       `Host: ${row.host ?? ""}`,
       "",
       "",

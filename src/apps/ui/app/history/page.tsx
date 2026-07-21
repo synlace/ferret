@@ -601,7 +601,7 @@ export default function HistoryPage() {
                 .map(([k, v]) => `${k}: ${v}`)
                 .join("\n")
               const rawRequest = [
-                `${req.method} ${req.path} HTTP/1.1`,
+                `${req.method} ${req.url} HTTP/1.1`,
                 `Host: ${req.host}`,
                 ...(headerLines ? [headerLines] : []),
                 "",
@@ -844,7 +844,7 @@ export default function HistoryPage() {
                         .map(([k, v]) => `${k}: ${v}`)
                         .join("\n")
                       const rawRequest = [
-                        `${req.method} ${req.path} HTTP/1.1`,
+                        `${req.method} ${req.url} HTTP/1.1`,
                         `Host: ${req.host}`,
                         ...(headerLines ? [headerLines] : []),
                         "",
