@@ -19,7 +19,6 @@ from models import SetupConfig, SetupStatus
 
 class SetupProgressSchema(BaseModel):
     step: Optional[int] = None
-    den_type: Optional[str] = None
     verified: Optional[bool] = None
     verifying: Optional[bool] = None
     verify_logs: Optional[List[str]] = None
@@ -174,7 +173,6 @@ async def get_setup_progress():
                 
         return SetupProgressSchema(
             step=progress.get("step"),
-            den_type=progress.get("den_type"),
             verified=bool(progress.get("verified")) if progress.get("verified") is not None else None,
             verifying=bool(progress.get("verifying")) if progress.get("verifying") is not None else None,
             verify_logs=verify_logs,
@@ -191,7 +189,6 @@ async def save_setup_progress(body: SetupProgressSchema):
     try:
         await deps.db_client.save_setup_progress(
             step=body.step,
-            den_type=body.den_type,
             verified=body.verified,
             verifying=body.verifying,
             verify_logs=body.verify_logs,

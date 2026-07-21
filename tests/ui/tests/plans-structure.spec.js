@@ -60,7 +60,7 @@ async function gotoWithPlans(page, plans = []) {
 
   await page.goto('/plans', { waitUntil: 'domcontentloaded' });
   // Wait for the Plans page header button to be visible and interactive
-  await page.waitForSelector('button:has-text("New Plan")', { timeout: 10000 });
+  await page.locator('button:has-text("New Plan")').first().waitFor({ state: 'visible', timeout: 10000 });
   // Small settle delay to ensure React event handlers are attached
   await page.waitForTimeout(300);
 }

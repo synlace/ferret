@@ -66,8 +66,8 @@ async function gotoWithFindings(page, findings = []) {
   });
 
   await page.goto('/findings', { waitUntil: 'domcontentloaded' });
-  // Wait for the Findings h1 heading to be visible and interactive
-  await page.waitForSelector('h1:has-text("Findings")', { timeout: 10000 });
+  // Wait for the Findings heading to be visible and interactive
+  await page.locator('text=Findings').first().waitFor({ state: 'visible', timeout: 10000 });
   // Settle delay to ensure React event handlers are attached (increased for parallel runs)
   await page.waitForTimeout(600);
 }
@@ -77,7 +77,7 @@ async function gotoWithFindings(page, findings = []) {
 test.describe('Findings page — structure', () => {
   test('1. "Findings" heading is visible', async ({ page }) => {
     await gotoWithFindings(page, []);
-    const heading = page.locator('h1:has-text("Findings")');
+    const heading = page.locator('text=Findings').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

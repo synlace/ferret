@@ -4,13 +4,13 @@
 Proposed
 
 ## Context
-Ferret utilizes transient outbound runners (running in either local Docker containers or AWS Fargate tasks) to execute security scanning plans. These runners communicate with the central API server over HTTP.
+Ferret utilizes transient outbound runners (running in local Docker containers) to execute security scanning plans. These runners communicate with the central API server over HTTP.
 
 ### Problem
 The current communication protocol utilizes **HTTP Polling** (the runner requests jobs from `/api/runners/poll` every 3 seconds). While robust for asynchronous background Plan Runs, this polling design introduces two major limitations:
 
 1. **High Interaction Latency:** When an analyst uses the AI Agent Chat or starts an interactive "Hunt," tool-execution calls (like `run_ffuf`, `run_katana`, or `run_nuclei`) suffer from up to a 3-second polling delay before the runner picks up the command. For a live chat session, this latency is highly disruptive.
-2. **Split-Brain Execution Paths:** To bypass this latency in local environments, the API container currently uses a direct `DockerSandboxExecutor` to execute commands via a local Docker socket (`docker-shim`). However, when targeting remote AWS Fargate Dens, direct `docker exec` is unavailable, forcing the AI Agent's interactive tools to run on the local API host instead of the designated Fargate scanner. This breaks environment parity and leaks execution environments.
+2. **Split-Brain Execution Paths:** To bypass this latency in local environments, the API container currently uses a direct `DockerSandboxExecutor` to execute commands via a local Docker socket (`docker-shim`). This breaks environment parity and leaks execution environments.
 
 ## Decision
 We will entirely replace the outbound HTTP polling mechanism with a **persistent, outbound WebSocket control channel** established from each runner to the central API server.
@@ -22,7 +22,7 @@ sequenceDiagram
     participant Agent as chats_engine.py
     participant DB as SQLite Database
     participant API as routers/runners.py (WebSocket Host)
-    participant Runner as Outbound Fargate Runner
+    participant Runner as Outbound Runner
 
     Note over Runner, API: 1. Outbound Connection Established on Boot
     Runner ->> API: WS /api/runners/{runner_id}/control
@@ -49,7 +49,7 @@ sequenceDiagram
 
 ### 1. Outbound WebSocket Control Connection
 Each runner, upon startup, will establish a persistent, outbound WebSocket connection to the API server at `WS /api/runners/{runner_id}/control`. 
-* This preserves the **outbound-only security boundary**: Fargate tasks still do not require any open inbound ports, public DNS, or security group ingress rules.
+* This preserves the **outbound-only security boundary**: outbound runners still do not require any open inbound ports, public DNS, or security group ingress rules.
 * The API server registers active WebSocket connections in an in-memory registry: `_active_runners_ws: Dict[str, WebSocket]`.
 
 ### 2. Instant Bidirectional Event Dispatching
@@ -125,7 +125,7 @@ async def start_runner_control_loop():
 ### Positive
 * **Immediate Responsiveness:** Latency for tool executions inside AI chats and background Hunts drops to near-zero, making the agent feel highly responsive.
 * **Simplified Security Posture:** Eliminates the Docker socket bind-mount from the API container, mitigating risk and removing the custom `docker-shim` from the server.
-* **Unified Parity:** Interactive tool calls run on the exact same outbound Fargate scan containers as scheduled background tasks, ensuring matching network policies, proxies, and target reachability.
+* **Unified Parity:** Interactive tool calls run on the exact same outbound runner containers as scheduled background tasks, ensuring matching network policies, proxies, and target reachability.
 * **Reduced Server Overhead:** Removes hundreds of HTTP polling requests per minute, dramatically reducing database lease transactions and API CPU usage.
 
 ### Negative / Risks

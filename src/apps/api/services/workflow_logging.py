@@ -29,8 +29,6 @@ def get_fallback_component_details(component: str, level: str) -> str:
     # High-level first-party fallback if no explicit "details" are set
     if "chats_engine" in comp or "chats_ai" in comp or "orchestrator" in comp:
         return "AI Agent Orchestrator managing reasoning loops, hunts, or target analysis."
-    if "fargate" in comp or "wg_orchestrator" in comp:
-        return "AWS ECS Fargate orchestrator managing runner node provisioning and deployment."
     if "script_execution" in comp or "execution_engine" in comp:
         return "Workflow Executor running background scripts, security scans, or pipeline automation."
     if "session_tunnel" in comp:

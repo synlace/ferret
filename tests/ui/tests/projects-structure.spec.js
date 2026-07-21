@@ -16,13 +16,12 @@ import { test, expect } from './fixtures.js';
 test.describe('Projects page — structure', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-    // Wait for the page heading to appear
-    await page.waitForSelector('h1', { timeout: 10000 });
+    await page.locator('text=Projects').first().waitFor({ state: 'visible', timeout: 10000 });
   });
 
   test('"Projects" heading is visible', async ({ page }) => {
     // The projects page renders a heading or table header
-    const heading = page.locator('h1, h2').filter({ hasText: /project/i }).first();
+    const heading = page.locator('text=Projects').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

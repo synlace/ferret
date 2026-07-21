@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y \
 # ── Layer 3: Network & recon (web-relevant only) ──────────────────────────────
 # Removed: masscan, tshark, tcpdump, wireshark-common, tcpflow, enum4linux,
 #          responder, smbclient, nfs-common, ldap-utils, aircrack-ng,
-#          openvpn, wireguard-tools (none relevant to HTTP/web testing)
+#          openvpn (none relevant to HTTP/web testing)
 RUN apt-get update && apt-get install -y \
     nmap \
     libcap2-bin \
@@ -147,7 +147,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ── Layer 11: Data directory & entrypoint ────────────────────────────────────
 RUN mkdir -p /data/tests
 
-# Remove file capabilities from nmap binary so it can run unprivileged under Docker/Fargate
+# Remove file capabilities from nmap binary so it can run unprivileged under Docker
 RUN setcap -r /usr/bin/nmap 2>/dev/null || true
 RUN setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
 

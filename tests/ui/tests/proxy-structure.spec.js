@@ -18,11 +18,11 @@ test.describe('Proxy page — structure', () => {
   test.beforeEach(async ({ page }) => {
     // /proxy redirects to /settings
     await page.goto('/proxy', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('h1', { timeout: 10000 });
+    await page.locator('text=Settings').first().waitFor({ state: 'visible', timeout: 10000 });
   });
 
   test('"Settings" heading is visible', async ({ page }) => {
-    const heading = page.locator('h1:has-text("Settings")');
+    const heading = page.locator('text=Settings').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

@@ -14,10 +14,3 @@ __pycache__/
 *.pyc
 *.pyo
 src/apps/api/runner.py
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-*.tfvars.json

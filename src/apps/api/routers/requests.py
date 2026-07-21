@@ -119,10 +119,12 @@ async def annotate_request(request_id: str):
             detail=f"No provisioned key for project '{_req_project_id}'. Add one via Projects → Keys.",
         )
 
-    # Resolve model: project default_model → global env fallback
+    # Resolve model: project default_model → global setup model → env fallback
     _project = await deps.db_client.get_project(_req_project_id)
+    _setup_model = await deps.db_client.get_setting("ai_model")
     _model = (
         (_project.get("default_model") if _project else None)
+        or _setup_model
         or deps.OPENROUTER_MODEL
     )
 
@@ -159,7 +161,8 @@ async def annotate_request(request_id: str):
                 },
             )
             r.raise_for_status()
-            annotation: str = r.json()["choices"][0]["message"]["content"].strip()
+            content = r.json()["choices"][0]["message"].get("content")
+            annotation = content.strip() if content else "(no annotation generated)"
     except httpx.HTTPStatusError as e:
         raise HTTPException(502, f"OpenRouter {e.response.status_code}: {e.response.text[:200]}")
     except Exception as e:

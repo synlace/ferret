@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     gosu \
-    wireguard-tools \
     iptables \
     iproute2 \
     procps \
@@ -31,15 +30,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get update \
     && apt-get install -y "docker-ce-cli=5:28.5.2-1~debian.12~bookworm" \
     && apt-get install -y unzip jq awscli \
-    && curl -fsSL https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_$(dpkg --print-architecture).zip -o terraform.zip \
-    && unzip terraform.zip -d /usr/local/bin/ \
-    && rm terraform.zip \
-    && ARCH=$(dpkg --print-architecture) \
-    && if [ "$ARCH" = "amd64" ]; then DIR="ubuntu_64bit"; else DIR="ubuntu_arm64"; fi \
-    && curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/$DIR/session-manager-plugin.deb" -o session-manager-plugin.deb \
-    && dpkg -i session-manager-plugin.deb \
-    && rm session-manager-plugin.deb \
-    && apt-get purge -y --auto-remove unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -48,22 +38,23 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
-
 # Create non-root user and the /data directory for SQLite.
 # The entrypoint will dynamically add ferret to the docker socket group at runtime.
 RUN useradd -m -u 1000 ferret \
     && mkdir -p /data \
-    && chown -R ferret:ferret /app /data \
+    && chown -R ferret:ferret /data \
     && echo "ferret ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ferret \
     && chmod 0440 /etc/sudoers.d/ferret
 
-# Install RTK for ferret user
+# Install RTK for ferret user (before COPY . . so source changes don't re-trigger)
 USER ferret
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 USER root
+
+# Copy application code — this invalidates most frequently, keep it last
+COPY . .
+RUN chown -R ferret:ferret /app
 
 # Ensure rtk is on the PATH globally for non-interactive shells
 ENV PATH="/home/ferret/.local/bin:${PATH}"

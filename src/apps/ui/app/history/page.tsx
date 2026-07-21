@@ -293,7 +293,7 @@ export default function HistoryPage() {
             if (exists) {
               return prev.map((r) => r.id === msg.data.id ? msg.data : r)
             }
-            return [msg.data, ...prev].slice(0, pageSize)
+            return [msg.data, ...prev]
           })
           setTotalCount((c) => c + 1)
         }

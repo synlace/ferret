@@ -182,16 +182,18 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
   const [panelHeight, setPanelHeight] = useState(380)
   const [copiedUrl, setCopiedUrl] = useState(false)
   const [copiedCurl, setCopiedCurl] = useState(false)
+  const [activePane, setActivePane] = useState<'request' | 'response' | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const reqPaneRef = useRef<HTMLDivElement>(null)
   const respPaneRef = useRef<HTMLDivElement>(null)
 
   // Prevent scroll from leaking out of the CM panes into the host page
+  // but only when the user has clicked that specific pane (making it "active")
   useEffect(() => {
-    const isolate = (el: HTMLDivElement | null) => {
+    const isolate = (el: HTMLDivElement | null, pane: 'request' | 'response') => {
       if (!el) return () => {}
       const handler = (e: WheelEvent) => {
-        // Find the actual scrollable CM scroller inside this pane
+        if (activePane !== pane) return
         const scroller = el.querySelector(".cm-scroller") as HTMLElement | null
         if (!scroller) return
         const atTop = scroller.scrollTop === 0
@@ -204,10 +206,25 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
       el.addEventListener("wheel", handler, { passive: false })
       return () => el.removeEventListener("wheel", handler)
     }
-    const cleanReq = isolate(reqPaneRef.current)
-    const cleanResp = isolate(respPaneRef.current)
+    const cleanReq = isolate(reqPaneRef.current, 'request')
+    const cleanResp = isolate(respPaneRef.current, 'response')
     return () => { cleanReq(); cleanResp() }
-  }, [])
+  }, [activePane])
+
+  // Deactivate pane on outside click
+  useEffect(() => {
+    if (!activePane) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const inReqPane = reqPaneRef.current?.contains(target)
+      const inRespPane = respPaneRef.current?.contains(target)
+      if (!inReqPane && !inRespPane) {
+        setActivePane(null)
+      }
+    }
+    document.addEventListener("mousedown", handler, true)
+    return () => document.removeEventListener("mousedown", handler, true)
+  }, [activePane])
 
   // Horizontal drag (left/right split between request and response panes)
   const onDragStart = useCallback((e: React.MouseEvent) => {
@@ -376,7 +393,11 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
               <div className="px-4 h-8 bg-neutral-900 border-b border-neutral-700 flex-shrink-0 flex items-center">
                 <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider">Request</span>
               </div>
-              <div ref={reqPaneRef} className="flex-1 min-h-0 overflow-hidden">
+              <div
+                ref={reqPaneRef}
+                className={`flex-1 min-h-0 overflow-hidden ${activePane === 'request' ? '' : 'cursor-default'}`}
+                onClick={() => setActivePane('request')}
+              >
                 <CodeMirror
                   value={requestText}
                   extensions={requestExtensions}
@@ -401,7 +422,11 @@ export function DetailPanel({ request, onAnnotate, annotating, maximized = false
                   </span>
                 )}
               </div>
-              <div ref={respPaneRef} className="flex-1 min-h-0 overflow-hidden">
+              <div
+                ref={respPaneRef}
+                className={`flex-1 min-h-0 overflow-hidden ${activePane === 'response' ? '' : 'cursor-default'}`}
+                onClick={() => setActivePane('response')}
+              >
                 <CodeMirror
                   value={responseText}
                   extensions={responseExtensions}

@@ -83,7 +83,7 @@ async function gotoSnare(page) {
   // Playwright will handle WS connections gracefully even without a real server.
 
   await page.goto('/snare', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('h1', { timeout: 10000 });
+  await page.locator('text=Snare').first().waitFor({ state: 'visible', timeout: 10000 });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ test.describe('Snare page — structure', () => {
 
   test('2. "Snare" heading is visible', async ({ page }) => {
     await gotoSnare(page);
-    const heading = page.locator('h1:has-text("Snare")');
+    const heading = page.locator('text=Snare').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

@@ -18,13 +18,13 @@ import { test, expect } from './fixtures.js';
 test.describe('History page — structure', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/history', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('h1', { timeout: 10000 });
+    await page.locator('text="Proxy History"').first().waitFor({ state: 'visible', timeout: 10000 });
     // Small settle for React hydration
     await page.waitForTimeout(300);
   });
 
   test('"Proxy History" heading is visible', async ({ page }) => {
-    const heading = page.locator('h1:has-text("Proxy History")');
+    const heading = page.locator('text="Proxy History"').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

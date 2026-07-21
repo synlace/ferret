@@ -147,11 +147,8 @@ class ScriptExecutionEngine:
             run_record = await self.db_client.get_run(run_id)
             target_den_id = run_record.get("den_id", "local") if run_record else "local"
 
-            # If targeting a non-local Fargate Den, the script execution engine should NOT
-            # run the job locally. Instead, it should wait for the polling cloud runner
-            # to fetch it.
             if target_den_id != "local":
-                _log.info("Run %s: targeting AWS Fargate Den '%s' — bypassing local scheduling execution flow.", run_id, target_den_id)
+                _log.info("Run %s: targeting non-local Den '%s' — bypassing local scheduling execution flow.", run_id, target_den_id)
                 return
 
             # Deduplicate workspaces from existing children
@@ -215,11 +212,9 @@ class ScriptExecutionEngine:
             active_runners = await self.db_client.get_active_runners(timeout_seconds=30)
             runner_executor = deps.sandbox_executor
             
-            # Filter active runners to only select local ones (non-fargate) when running locally
-            local_runners = [r for r in active_runners if "runner-fargate-" not in r["id"]]
-            if local_runners:
+            if active_runners:
                 import random
-                chosen_runner = random.choice(local_runners)
+                chosen_runner = random.choice(active_runners)
                 _log.info("Run %s: scheduling execution on local runner %s", run_id, chosen_runner["id"])
                 runner_executor = deps.sandbox_executor.with_container(chosen_runner["id"])
             else:
@@ -438,21 +433,15 @@ class ScriptExecutionEngine:
                         den_id=den_id,
                     )
                     await self.db_client.create_run(child_run)
-                    if den_id != "local":
-                        # Fan-out: ensure runner capacity exists on the targeted Den
-                        asyncio.create_task(
-                            deps.fargate_orchestrator.ensure_runner_capacity(den_id, 1)
+                    asyncio.create_task(
+                        self.execute_run_in_background(
+                            run_id=child_run_id,
+                            workspace_id=child_ws.id,
+                            project_id=project_id,
+                            plan=child_plan,
+                            target_url=plan_target,
                         )
-                    else:
-                        asyncio.create_task(
-                            self.execute_run_in_background(
-                                run_id=child_run_id,
-                                workspace_id=child_ws.id,
-                                project_id=project_id,
-                                plan=child_plan,
-                                target_url=plan_target,
-                            )
-                        )
+                    )
             _log.info("manifest_entry: created child workspace %s (%s)", child_ws.id, ws_name)
         except Exception as exc:
             _log.warning("manifest_entry: failed to create workspace %r: %s", ws_name, exc)
@@ -553,9 +542,6 @@ class ScriptExecutionEngine:
 
         while True:
             try:
-                # Check and maintain warm Fargate runner pools
-                await self._maintain_warm_pools()
-
                 # Query pending local runs in creation order (oldest first)
                 async with self.db_client._db.execute(
                     "SELECT id, workspace_id, project_id, plan_id, target_url, follow_on_plan_id, follow_on_path_plan_id FROM runs WHERE status = 'pending' AND COALESCE(den_id, 'local') = 'local' ORDER BY created_at ASC"
@@ -611,87 +597,3 @@ class ScriptExecutionEngine:
                 _log.error("Scheduler loop error: %s", e, exc_info=True)
 
             await asyncio.sleep(5)
-
-    _last_spawn_times = {}
-
-    async def _maintain_warm_pools(self) -> None:
-        """Query all AWS Dens and replenish warm runner pools if needed."""
-        try:
-            # Prevent duplicate spawning storm on startup/rebuild: Allow 60 seconds grace period
-            # for existing living warm runners to send their heartbeats and register.
-            if time.time() - self._startup_time < 60.0:
-                _log.debug("Skipping warm pool maintenance during startup grace period.")
-                return
-
-            # Check if setup is marked as complete before spawning runners
-            setup_complete = await self.db_client.get_setting("setup_complete")
-            if setup_complete != "1":
-                _log.debug("Skipping warm pool maintenance because setup is not complete.")
-                return
-
-            dens = await self.db_client.get_dens()
-            active_runners = await self.db_client.get_active_runners(timeout_seconds=30)
-            
-            for den in dens:
-                if den.get("type") != "aws":
-                    continue
-                
-                warm_count = den.get("warm_runners") or 0
-                if warm_count <= 0:
-                    continue
-                
-                den_id = den["id"]
-                
-                # Check spawn cool-down (e.g. wait at least 60 seconds between warm pool spawn attempts)
-                now = time.time()
-                last_spawn = self._last_spawn_times.get(den_id, 0.0)
-                if now - last_spawn < 60.0:
-                    continue
-                
-                # Count current active+provisioning runners for this specific Den
-                # (provisioning = ECS task launched but not yet booted)
-                den_active_count = len([
-                    r for r in active_runners
-                    if r["id"].startswith(f"runner-fargate-{den_id}-")
-                    and r.get("status") in ("active", "provisioning")
-                ])
-                
-                if den_active_count < warm_count:
-                    needed = warm_count - den_active_count
-                    _log.info("[WARM_POOL] Den '%s' has %d active runners, needs %d warm runners. Spawning %d more...", den_id, den_active_count, warm_count, needed)
-                    self._last_spawn_times[den_id] = now
-                    asyncio.create_task(
-                        deps.fargate_orchestrator.spawn_runners_if_needed(den_id, needed, is_warm=True)
-                    )
-                elif den_active_count > warm_count:
-                    # Query all busy runner IDs currently executing a run to identify idle runners
-                    async with self.db_client._db.execute(
-                        "SELECT DISTINCT runner_id FROM runs WHERE status = 'running' AND runner_id IS NOT NULL"
-                    ) as cur:
-                        busy_runner_rows = await cur.fetchall()
-                    busy_runner_ids = {row[0] for row in busy_runner_rows}
-
-                    den_runners = [
-                        r for r in active_runners
-                        if r["id"].startswith(f"runner-fargate-{den_id}-")
-                        and r.get("status") in ("active", "provisioning")
-                    ]
-                    # Idle runners are active/provisioning runners that are not currently busy
-                    idle_den_runners = [
-                        r for r in den_runners
-                        if r["id"] not in busy_runner_ids
-                    ]
-                    # Sort by last_heartbeat ascending (oldest first)
-                    idle_den_runners.sort(key=lambda r: r.get("last_heartbeat", ""))
-
-                    excess_count = den_active_count - warm_count
-                    reapable_runners = idle_den_runners[:excess_count]
-                    if reapable_runners:
-                        _log.info("[WARM_POOL] Den '%s' has %d active runners, but only needs %d warm runners. Reaping %d oldest idle excess runner(s)...", den_id, den_active_count, warm_count, len(reapable_runners))
-                        for runner in reapable_runners:
-                            runner_id = runner["id"]
-                            asyncio.create_task(
-                                deps.fargate_orchestrator.stop_runner_task(den_id, runner_id)
-                            )
-        except Exception as err:
-            _log.warning("Error maintaining warm pools: %s", err)

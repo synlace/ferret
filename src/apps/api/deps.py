@@ -23,7 +23,6 @@ from mitmproxy_manager import MitmproxyManager
 from sandbox import DockerSandboxExecutor
 from services.workspace_service import WorkspaceService
 from services.script_execution_engine import ScriptExecutionEngine
-from services.fargate_wg_orchestrator import FargateWGOrchestrator
 
 _log = logging.getLogger(__name__)
 
@@ -37,7 +36,6 @@ mitm_manager = MitmproxyManager()
 sandbox_executor = DockerSandboxExecutor(os.getenv("FERRET_SANDBOX_CONTAINER", "ferret-runner"))
 workspace_service = WorkspaceService()
 script_execution_engine = ScriptExecutionEngine()
-fargate_orchestrator = FargateWGOrchestrator()
 
 
 # ---------------------------------------------------------------------------

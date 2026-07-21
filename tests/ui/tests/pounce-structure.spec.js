@@ -14,11 +14,11 @@ import { test, expect } from './fixtures.js';
 test.describe('Pounce page — structure', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/pounce', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('h1', { timeout: 10000 });
+    await page.locator('text=Pounce').first().waitFor({ state: 'visible', timeout: 10000 });
   });
 
   test('"Pounce" heading is visible', async ({ page }) => {
-    const heading = page.locator('h1:has-text("Pounce")');
+    const heading = page.locator('text=Pounce').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

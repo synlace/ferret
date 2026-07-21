@@ -17,8 +17,6 @@ jobs:
       id-token: write
       contents: read
       packages: write
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
 
     steps:
       - name: Checkout
@@ -31,21 +29,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure AWS Credentials
-        if: ${{ env.AWS_ACCESS_KEY_ID != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || 'eu-west-1' }}
-
-      - name: Log in to AWS Public Elastic Container Registry (ECR)
-        if: ${{ env.AWS_ACCESS_KEY_ID != '' }}
-        id: login-ecr-public
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -53,26 +36,13 @@ jobs:
         id: meta
         run: |
           GH_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          AWS_LOGGED_IN="${{ steps.login-ecr-public.outputs.registry }}"
-          AWS_ALIAS="${{ secrets.AWS_ECR_PUBLIC_ALIAS || 'synlace' }}"
-          AWS_REGISTRY="public.ecr.aws/${AWS_ALIAS}"
-          
-          # Initialize standard GHCR tags
+
           TAGS="ghcr.io/${GH_OWNER}/ferret-runner:latest"
           TAGS="${TAGS},ghcr.io/${GH_OWNER}/ferret-runner:${{ github.sha }}"
-          
-          # Add AWS ECR Public tags ONLY if the ECR login step succeeded
-          if [ -n "${AWS_LOGGED_IN}" ]; then
-            TAGS="${TAGS},${AWS_REGISTRY}/ferret-runner:latest"
-            TAGS="${TAGS},${AWS_REGISTRY}/ferret-runner:${{ github.sha }}"
-          fi
-          
+
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${{ github.ref_name }}"
             TAGS="${TAGS},ghcr.io/${GH_OWNER}/ferret-runner:${VERSION}"
-            if [ -n "${AWS_LOGGED_IN}" ]; then
-              TAGS="${TAGS},${AWS_REGISTRY}/ferret-runner:${VERSION}"
-            fi
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 

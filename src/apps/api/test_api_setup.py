@@ -442,77 +442,6 @@ class TestGetKeyForProject:
 
 
 # ---------------------------------------------------------------------------
-# AWS Den existing infrastructure check tests
-# ---------------------------------------------------------------------------
-
-class TestCheckExistingAWSSetup:
-    async def test_check_existing_no_aws_den_saved(self, client):
-        """Should return exists=False and working=False if no AWS Den is saved in DB."""
-        r = await client.post("/api/settings/dens/check-existing")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["exists"] is False
-        assert data["working"] is False
-        assert "No AWS Den configuration saved" in data["detail"]
-
-    async def test_check_existing_missing_credentials(self, client):
-        """Should return exists=False and working=False if credentials are empty."""
-        # Save a config with empty credentials
-        await client.post("/api/settings/dens", json={
-            "id": "aws",
-            "name": "AWS Fargate Den",
-            "den_type": "aws",
-            "den_max_runners": 10,
-            "den_aws_access_key": "",
-            "den_aws_secret_key": "",
-            "den_aws_region": "eu-west-1"
-        })
-        r = await client.post("/api/settings/dens/check-existing")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["exists"] is False
-        assert data["working"] is False
-        assert "Missing AWS credentials" in data["detail"]
-
-    async def test_check_existing_working_bypassed_mock(self, client):
-        """In testing environments, verify checking for existing works when mocked."""
-        from unittest.mock import MagicMock, patch
-
-        mock_ec2 = MagicMock()
-        mock_ec2.describe_instances.return_value = {
-            "Reservations": [
-                {
-                    "Instances": [
-                        {
-                            "InstanceId": "i-mock-instance-123",
-                            "PublicIpAddress": "127.0.0.1",
-                            "PrivateIpAddress": "10.0.0.1"
-                        }
-                    ]
-                }
-            ]
-        }
-
-        await client.post("/api/settings/dens", json={
-            "id": "aws",
-            "name": "AWS Fargate Den",
-            "den_type": "aws",
-            "den_max_runners": 10,
-            "den_aws_access_key": "AKIAIOSFODNN7EXAMPLE",
-            "den_aws_secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-            "den_aws_region": "eu-west-1"
-        })
-
-        with patch("boto3.client", return_value=mock_ec2):
-            r = await client.post("/api/settings/dens/check-existing")
-            assert r.status_code == 200
-            data = r.json()
-            assert data["exists"] is True
-            assert data["instance_id"] == "i-mock-instance-123"
-            assert "working" in data
-
-
-# ---------------------------------------------------------------------------
 # Setup Progress Table tests
 # ---------------------------------------------------------------------------
 
@@ -523,12 +452,10 @@ class TestSetupProgress:
         assert r.status_code == 200
         data = r.json()
         assert data["step"] is None
-        assert data["den_type"] is None
 
-        # 2. Save progress (step 2, den_type="local")
+        # 2. Save progress (step 2)
         payload = {
             "step": 2,
-            "den_type": "local",
             "verified": False,
             "verifying": True,
             "verify_logs": ["Log line 1", "Log line 2"],
@@ -544,7 +471,6 @@ class TestSetupProgress:
         assert r.status_code == 200
         data = r.json()
         assert data["step"] == 2
-        assert data["den_type"] == "local"
         assert data["verified"] is False
         assert data["verifying"] is True
         assert data["verify_logs"] == ["Log line 1", "Log line 2"]
@@ -555,12 +481,11 @@ class TestSetupProgress:
         r = await client.post("/api/setup/progress", json={"step": 3})
         assert r.status_code == 200
 
-        # Retrieve and assert step updated but others remained intact
+        # Retrieve and assert step updated
         r = await client.get("/api/setup/progress")
         assert r.status_code == 200
         data = r.json()
         assert data["step"] == 3
-        assert data["den_type"] == "local"
 
         # 5. Delete progress
         r = await client.delete("/api/setup/progress")
@@ -572,7 +497,6 @@ class TestSetupProgress:
         assert r.status_code == 200
         data = r.json()
         assert data["step"] is None
-        assert data["den_type"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -596,9 +520,8 @@ class TestBackupImportInSetup:
             },
             "dens": [
                 {
-                    "id": "aws",
-                    "name": "aws",
-                    "type": "aws",
+                    "id": "local",
+                    "name": "local",
                     "max_runners": 10,
                     "warm_runners": 5
                 }

@@ -49,6 +49,7 @@ class HttpRequest(BaseModel):
     modified: bool = Field(False, description="Whether request was modified")
     annotation: Optional[str] = Field(None, description="AI-generated annotation for this request")
     source: str = Field("proxy", description="Traffic source: 'proxy' (human) or 'test' (automated)")
+    project_id: str = Field("temp", description="Owning project ID")
 
     class Config:
         json_encoders = {

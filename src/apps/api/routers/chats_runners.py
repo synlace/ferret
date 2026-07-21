@@ -560,6 +560,18 @@ async def stream_tool_over_websocket(
     from routers.runners import _active_runners_ws, _active_runs_futures
     from models import Run
 
+    # Resolve the actual workspace_id from the chat session (session_id is a
+    # chat_sessions.id, not a workspaces.id — using it directly would violate
+    # the FK constraint on runs.workspace_id).
+    _run_workspace_id: str = session_id
+    if session_id:
+        try:
+            _session_rec = await deps.db_client.get_chat_session(session_id)
+            if _session_rec and _session_rec.get("workspace_id"):
+                _run_workspace_id = _session_rec["workspace_id"]
+        except Exception:
+            pass
+
     ws = _active_runners_ws.get(runner_id)
     if not ws:
         raise ValueError(f"Runner {runner_id} is not connected via WebSocket")
@@ -569,7 +581,7 @@ async def stream_tool_over_websocket(
 
     new_run = Run(
         id=run_id,
-        workspace_id=session_id,
+        workspace_id=_run_workspace_id,
         project_id=project_id,
         plan_id="",
         target_url=target,
@@ -580,7 +592,7 @@ async def stream_tool_over_websocket(
         finished_at=None,
         created_at=datetime.utcnow(),
         runner_id=None,
-        den_id="local" if "runner-fargate" not in runner_id else runner_id.split("-")[2],
+        den_id="local",
         script=script,
         interpreter=interpreter,
         timeout=timeout

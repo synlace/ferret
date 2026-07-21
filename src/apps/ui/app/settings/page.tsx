@@ -275,14 +275,7 @@ export default function SettingsPage() {
           .then(res => res.ok ? res.json() : null)
           .then(d => {
             if (d) {
-              setDenType(d.den_type)
               setDenMaxRunners(d.den_max_runners)
-              setDenAwsKey(d.den_aws_access_key ?? "")
-              setDenAwsSecret(d.den_aws_secret_key ?? "")
-              setDenAwsRegion(d.den_aws_region ?? "eu-west-1")
-              setDenRunnerImage(d.den_runner_image ?? "")
-              setDenWarmRunners(d.den_warm_runners ?? 0)
-              setDenKillIfUnreachable(d.den_kill_if_unreachable !== false)
             }
           })
           .catch(() => {})
@@ -317,14 +310,7 @@ export default function SettingsPage() {
   const [disableError, setDisableError] = useState<string | null>(null)
 
   // Den State Variables
-  const [denType, setDenType]         = useState<"local" | "aws">("local")
   const [denMaxRunners, setDenMaxRunners] = useState<number>(10)
-  const [denAwsKey, setDenAwsKey]         = useState("")
-  const [denAwsSecret, setDenAwsSecret]   = useState("")
-  const [denAwsRegion, setDenAwsRegion]   = useState("eu-west-1")
-  const [denRunnerImage, setDenRunnerImage] = useState("")
-  const [denWarmRunners, setDenWarmRunners] = useState<number>(0)
-  const [denKillIfUnreachable, setDenKillIfUnreachable] = useState<boolean>(true)
   const [denStatus, setDenStatus]         = useState<"idle" | "saving" | "ok" | "error">("idle")
   const [denError, setDenError]       = useState<string | null>(null)
 
@@ -457,18 +443,11 @@ export default function SettingsPage() {
   useEffect(() => {
     apiFetch(`${API_BASE}/api/settings/den`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d) {
-          setDenType(d.den_type)
-          setDenMaxRunners(d.den_max_runners)
-          setDenAwsKey(d.den_aws_access_key)
-          setDenAwsSecret(d.den_aws_secret_key)
-          setDenAwsRegion(d.den_aws_region)
-          setDenRunnerImage(d.den_runner_image || "")
-          setDenWarmRunners(d.den_warm_runners || 0)
-          setDenKillIfUnreachable(d.den_kill_if_unreachable !== false)
-        }
-      })
+.then(d => {
+            if (d) {
+              setDenMaxRunners(d.den_max_runners)
+            }
+          })
       .catch(() => {})
   }, [])
 
@@ -481,14 +460,7 @@ export default function SettingsPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          den_type: denType,
           den_max_runners: denMaxRunners,
-          den_aws_access_key: denAwsKey || undefined,
-          den_aws_secret_key: denAwsSecret || undefined,
-          den_aws_region: denAwsRegion || "eu-west-1",
-          den_runner_image: denRunnerImage || undefined,
-          den_warm_runners: denWarmRunners,
-          den_kill_if_unreachable: denKillIfUnreachable
         }),
       })
       if (!res.ok) {
@@ -510,21 +482,15 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          den_type: denType,
           den_max_runners: denMaxRunners,
-          den_aws_access_key: denAwsKey || undefined,
-          den_aws_secret_key: denAwsSecret || undefined,
-          den_aws_region: denAwsRegion || "eu-west-1",
-          den_runner_image: denRunnerImage || undefined,
-          den_warm_runners: denWarmRunners,
-          den_kill_if_unreachable: denKillIfUnreachable
         }),
       })
       const d = await res.json()
       if (res.ok) {
         setTestDenResult({ ok: d.ok, detail: d.detail })
       } else {
-        setTestDenResult({ ok: false, detail: d.detail ?? "Test request failed" })
+        const detail = typeof d.detail === "string" ? d.detail : JSON.stringify(d)
+        setTestDenResult({ ok: false, detail })
       }
     } catch (err) {
       setTestDenResult({ ok: false, detail: err instanceof Error ? err.message : "Test request failed" })
@@ -785,7 +751,7 @@ export default function SettingsPage() {
               {activeSection === "ca-cert" && "HTTPS interception credentials"}
               {activeSection === "security" && "Access control, session keys, and MFA"}
               {activeSection === "ai-proxy" && "Configure LLM connections, keys, and intercept modes"}
-              {activeSection === "den" && "Configure Local Docker and AWS Fargate runner pools"}
+              {activeSection === "den" && "Configure local Docker runner pools"}
               {activeSection === "backup" && "Import and export workspace and proxy history databases"}
             </span>
           </div>
@@ -1112,117 +1078,10 @@ export default function SettingsPage() {
           {activeSection === "den" && (
             <div className="p-6 space-y-4 max-w-2xl">
               <p className="text-xs text-neutral-400">
-                Configure how Ferret scales and manages scanning environments. Fallback to Local Den if AWS Fargate is not configured or disabled.
+                Configure how Ferret scales and manages scanning environments using the local Docker sandbox.
               </p>
 
               <form onSubmit={saveDenSettings} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setDenType("local")}
-                    className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
-                      ${denType === "local"
-                        ? "border-brand-500 bg-brand-500/10 text-white"
-                        : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
-                      }`}
-                  >
-                    <span className="text-sm font-semibold text-white leading-tight">🖥️ Local Den</span>
-                    <span className="text-[10px] text-neutral-500 mt-0.5">Run scanning tasks inside the local sandbox container</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setDenType("aws")}
-                    className={`flex flex-col items-start gap-1 rounded-none border p-3 text-left transition-all w-full
-                      ${denType === "aws"
-                        ? "border-brand-500 bg-brand-500/10 text-white"
-                        : "border-neutral-800 bg-neutral-900/50 text-neutral-300 hover:border-neutral-700"
-                      }`}
-                  >
-                    <span className="text-sm font-semibold text-white leading-tight">☁️ AWS Fargate Den</span>
-                    <span className="text-[10px] text-neutral-500 mt-0.5">Deploy ephemeral dynamic unprivileged cloud runner tasks</span>
-                  </button>
-                </div>
-
-                {denType === "aws" && (
-                  <div className="space-y-3 bg-neutral-900/40 p-3 border border-neutral-800">
-                    <div className="space-y-1">
-                      <label className="block text-[11px] text-neutral-400">AWS Access Key ID</label>
-                      <Input
-                        type="text"
-                        value={denAwsKey}
-                        onChange={e => setDenAwsKey(e.target.value)}
-                        placeholder="AKIA..."
-                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-[11px] text-neutral-400">AWS Secret Access Key</label>
-                      <Input
-                        type="password"
-                        value={denAwsSecret}
-                        onChange={e => setDenAwsSecret(e.target.value)}
-                        placeholder={denAwsSecret ? "••••••••••••••••" : "Enter AWS Secret Key"}
-                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-[11px] text-neutral-400">AWS Region</label>
-                      <Input
-                        type="text"
-                        value={denAwsRegion}
-                        onChange={e => setDenAwsRegion(e.target.value)}
-                        placeholder="eu-west-1"
-                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-[11px] text-neutral-400">Custom ECR/Docker Runner Image (Optional)</label>
-                      <Input
-                        type="text"
-                        value={denRunnerImage}
-                        onChange={e => setDenRunnerImage(e.target.value)}
-                        placeholder="e.g. 1234567890.dkr.ecr.eu-west-1.amazonaws.com/ferret-runner:latest"
-                        className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                      />
-                      <p className="text-[9px] text-neutral-500">
-                        Use a pre-cached ECR image inside your AWS account to eliminate internet pull latency.
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="block text-[11px] text-neutral-400">Warm Idle Runners Count</label>
-                        <Input
-                          type="number"
-                          value={denWarmRunners}
-                          onChange={e => setDenWarmRunners(Math.max(0, parseInt(e.target.value) || 0))}
-                          className="h-7 text-xs bg-neutral-900 border-neutral-700 text-white rounded-none focus:border-brand-500"
-                        />
-                        <p className="text-[9px] text-neutral-500">
-                          Keep these running/connected to eliminate scan start delays.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 pt-5">
-                        <input
-                          type="checkbox"
-                          id="kill_if_unreachable"
-                          checked={denKillIfUnreachable}
-                          onChange={e => setDenKillIfUnreachable(e.target.checked)}
-                          className="rounded-none border-neutral-700 bg-neutral-900 text-brand-500 focus:ring-brand-500"
-                        />
-                        <div className="space-y-0.5">
-                          <label htmlFor="kill_if_unreachable" className="block text-[11px] text-neutral-400 cursor-pointer">
-                            Kill on API loss
-                          </label>
-                          <p className="text-[9px] text-neutral-500">
-                            Auto-terminate runners if offline for over 3m (highly recommended).
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-1">
                   <label className="block text-[11px] text-neutral-400">Global Max Concurrent Runners</label>
                   <Input
@@ -1329,7 +1188,7 @@ export default function SettingsPage() {
                     />
                     <div>
                       <span className="font-medium text-neutral-200">Runner Environments</span>
-                      <p className="text-[10px] text-neutral-500">Local and AWS Fargate runner specifications and credentials.</p>
+                      <p className="text-[10px] text-neutral-500">Local Docker runner specifications and credentials.</p>
                     </div>
                   </label>
 

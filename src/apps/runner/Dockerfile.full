@@ -60,7 +60,6 @@ RUN apt-get update && apt-get install -y \
     whois \
     proxychains4 \
     openvpn \
-    wireguard-tools \
     aircrack-ng \
     theharvester \
     sublist3r \
@@ -168,7 +167,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ── Layer 14: Data directory & entrypoint ────────────────────────────────────
 RUN mkdir -p /data/tests
 
-# Remove file capabilities from nmap binary so it can run unprivileged under Docker/Fargate
+# Remove file capabilities from nmap binary so it can run unprivileged under Docker
 RUN setcap -r /usr/bin/nmap 2>/dev/null || true
 RUN setcap -r /usr/lib/nmap/nmap 2>/dev/null || true
 
