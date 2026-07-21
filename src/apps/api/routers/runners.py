@@ -84,13 +84,7 @@ async def prepare_execution_payload(run: dict) -> dict:
 def notify_new_run(den_id: str):
     """Notify any active WebSocket-connected runner in the target Den of a new pending run."""
     for runner_id, ws in list(_active_runners_ws.items()):
-        target_den = "local"
-        if "runner-fargate-" in runner_id:
-            parts = runner_id.split("-")
-            if len(parts) >= 4:
-                target_den = parts[2]
-        
-        if target_den == den_id:
+        if runner_id:  # all runner IDs are local
             async def trigger():
                 try:
                     run = await deps.db_client.lease_pending_run(runner_id)
@@ -314,12 +308,6 @@ async def runner_control_channel(websocket: WebSocket, runner_id: str):
 
     async def dispatch_next():
         try:
-            target_den = "local"
-            if "runner-fargate-" in runner_id:
-                parts = runner_id.split("-")
-                if len(parts) >= 4:
-                    target_den = parts[2]
-
             run = await deps.db_client.lease_pending_run(runner_id)
             if run:
                 _log.info(f"Leased Run {run['id']} on WebSocket connection for runner {runner_id}")

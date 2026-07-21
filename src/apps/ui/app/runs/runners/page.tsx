@@ -46,7 +46,6 @@ interface Run {
 interface Den {
   id: string
   name: string
-  den_type: string
 }
 
 function formatDuration(startedAt: string | null, finishedAt: string | null): string {
@@ -60,12 +59,6 @@ function formatDuration(startedAt: string | null, finishedAt: string | null): st
 }
 
 function getRunnerDenId(runnerId: string): string {
-  if (runnerId.startsWith("runner-fargate-")) {
-    const parts = runnerId.split("-");
-    if (parts.length >= 4) {
-      return parts[2];
-    }
-  }
   return "local";
 }
 
@@ -111,7 +104,7 @@ function LiveShellTerminal({ runnerId, visible, isMaximized = false, onRestart }
     wsRef.current = ws
 
     ws.onopen = () => {
-      terminal.write("\r\n\x1b[32m=== Connected to Fargate Live Shell ===\x1b[0m\r\n")
+      terminal.write("\r\n\x1b[32m=== Connected to Live Shell ===\x1b[0m\r\n")
       if (terminal.cols > 0 && terminal.rows > 0) {
         const dims = { type: "resize", cols: terminal.cols, rows: terminal.rows }
         ws.send(JSON.stringify(dims))
@@ -451,9 +444,6 @@ export default function RunnersPage() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [copiedKey, setCopiedKey] = useState(false)
   const [copiedLogs, setCopiedLogs] = useState(false)
-  const [copiedAwsCmd, setCopiedAwsCmd] = useState(false)
-  const [copiedJustCmd, setCopiedJustCmd] = useState(false)
-  const [activeExecTab, setActiveExecTab] = useState<'A' | 'B' | 'C'>('C')
   const [isShellMaximized, setIsShellMaximized] = useState(false)
   const [showTmuxHelp, setShowTmuxHelp] = useState(false)
   // Incrementing this key forces LiveShellTerminal to remount (explicit restart)
@@ -622,7 +612,7 @@ export default function RunnersPage() {
     const allDenIdsInRunners = Array.from(new Set(runners.map(r => getRunnerDenId(r.id))))
     const extraDens = allDenIdsInRunners
       .filter(id => !dens.some(d => d.id === id))
-      .map(id => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1), den_type: "fargate" }))
+      .map(id => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1) }))
     
     const allDens = [...dens, ...extraDens]
 
@@ -946,88 +936,51 @@ export default function RunnersPage() {
                 </div>
               </div>
 
-              {/* CLI Exec & Logs Side by Side for both Fargate and Local Dens */}
+              {/* CLI Exec & Logs Side by Side */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left: Container/Local Terminal */}
+                {/* Left: Local Terminal */}
                 <div className="border border-neutral-800 rounded-lg overflow-hidden flex flex-col bg-neutral-900/10 gap-px h-[354px]">
                   <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between flex-shrink-0">
                     <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Terminal className="w-3.5 h-3.5" />
-                      {selectedRunner.id.startsWith("runner-fargate-") ? "CONTAINER TERMINAL" : "LOCAL TERMINAL"}
+                      TERMINAL
                     </span>
-                    {(!selectedRunner.id.startsWith("runner-fargate-") || activeExecTab === "C") && (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setShowTmuxHelp(true)}
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors"
-                          title="Show tmux shortcuts help"
-                        >
-                          <HelpCircle className="w-3 h-3" />
-                          Help
-                        </button>
-                        <button
-                          onClick={handleRestartShell}
-                          disabled={isRestarting}
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors disabled:opacity-50"
-                          title="Kill tmux session and reconnect"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isRestarting ? "animate-spin" : ""}`} />
-                          Restart
-                        </button>
-                        <button
-                          onClick={() => setIsShellMaximized(true)}
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors"
-                          title="Maximize terminal"
-                        >
-                          <Maximize2 className="w-3 h-3" />
-                          Maximize
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {selectedRunner.id.startsWith("runner-fargate-") && (
-                    <div className="flex border-b border-neutral-800 bg-neutral-900/20 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">
+                    <div className="flex items-center gap-1">
                       <button
-                        onClick={() => setActiveExecTab("A")}
-                        className={`flex-1 py-2 text-center transition-colors border-r border-neutral-800 ${
-                          activeExecTab === "A"
-                            ? "bg-neutral-950 text-brand-400 border-b-2 border-brand-500"
-                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
-                        }`}
+                        onClick={() => setShowTmuxHelp(true)}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors"
+                        title="Show tmux shortcuts help"
                       >
-                        Justfile CLI
+                        <HelpCircle className="w-3 h-3" />
+                        Help
                       </button>
                       <button
-                        onClick={() => setActiveExecTab("C")}
-                        className={`flex-1 py-2 text-center transition-colors border-r border-neutral-800 ${
-                          activeExecTab === "C"
-                            ? "bg-neutral-950 text-brand-400 border-b-2 border-brand-500"
-                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
-                        }`}
+                        onClick={handleRestartShell}
+                        disabled={isRestarting}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors disabled:opacity-50"
+                        title="Kill tmux session and reconnect"
                       >
-                        Live Shell
+                        <RefreshCw className={`w-3 h-3 ${isRestarting ? "animate-spin" : ""}`} />
+                        Restart
                       </button>
                       <button
-                        onClick={() => setActiveExecTab("B")}
-                        className={`flex-1 py-2 text-center transition-colors ${
-                          activeExecTab === "B"
-                            ? "bg-neutral-950 text-brand-400 border-b-2 border-brand-500"
-                            : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900/40"
-                        }`}
+                        onClick={() => setIsShellMaximized(true)}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[9px] text-neutral-300 font-semibold transition-colors"
+                        title="Maximize terminal"
                       >
-                        Native AWS CLI
+                        <Maximize2 className="w-3 h-3" />
+                        Maximize
                       </button>
                     </div>
-                  )}
+                  </div>
                   <div className="flex-1 overflow-hidden flex flex-col">
-                    {/* LiveShellTerminal stays mounted regardless of tab — only CSS-hidden when not active */}
-                    <div className={`flex-1 flex flex-col overflow-hidden min-h-0${(!selectedRunner.id.startsWith("runner-fargate-") || activeExecTab === "C") ? "" : " hidden"}`}>
+                    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                       <div className={isShellMaximized ? "fixed inset-0 z-50 p-6 bg-neutral-950 flex flex-col" : "flex-1 flex flex-col min-h-0 relative overflow-hidden"}>
-                         {isShellMaximized && (
+                        {isShellMaximized && (
                           <div className="px-4 py-3 bg-neutral-900/40 border-b border-neutral-800 flex items-center justify-between flex-shrink-0 mb-4 rounded-lg">
                             <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
                               <Terminal className="w-3.5 h-3.5" />
-                              {selectedRunner.id.startsWith("runner-fargate-") ? "CONTAINER TERMINAL (MAXIMIZED)" : "LOCAL TERMINAL (MAXIMIZED)"}
+                              TERMINAL (MAXIMIZED)
                             </span>
                             <div className="flex items-center gap-1.5">
                               <button
@@ -1060,7 +1013,7 @@ export default function RunnersPage() {
                           <LiveShellTerminal
                             key={`${rid}-${shellRestartKey}`}
                             runnerId={rid}
-                            visible={selectedRunner.id === rid && (!selectedRunner.id.startsWith("runner-fargate-") || activeExecTab === "C")}
+                            visible={selectedRunner.id === rid}
                             isMaximized={isShellMaximized}
                           />
                         ))}
@@ -1071,62 +1024,6 @@ export default function RunnersPage() {
                         </p>
                       )}
                     </div>
-                    {selectedRunner.id.startsWith("runner-fargate-") && activeExecTab === "A" && (
-                      /* Option A: Justfile Shell */
-                      <div className="space-y-2 p-4">
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => {
-                              const cmd = `just den shell ${selectedRunner.id}`;
-                              navigator.clipboard.writeText(cmd);
-                              setCopiedJustCmd(true);
-                              setTimeout(() => setCopiedJustCmd(false), 2000);
-                            }}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                            title="Copy Justfile CLI command to clipboard"
-                          >
-                            {copiedJustCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                            {copiedJustCmd ? "Copied!" : "Copy Command"}
-                          </button>
-                        </div>
-                        <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
-                          <code className="text-[10px] text-emerald-400 font-mono block whitespace-pre-wrap leading-relaxed select-all">
-                            {`just den shell ${selectedRunner.id}`}
-                          </code>
-                        </div>
-                        <p className="text-[11px] text-neutral-400 leading-relaxed">
-                          Tunnels securely via your local Docker API container. <strong>Does not require local AWS CLI, credentials, or Session Manager plugins installed on your host.</strong>
-                        </p>
-                      </div>
-                    )}
-                    {selectedRunner.id.startsWith("runner-fargate-") && activeExecTab === "B" && (
-                      /* Option B: Native AWS CLI */
-                      <div className="space-y-2 p-4">
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => {
-                              const cmd = `TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == \$rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`;
-                              navigator.clipboard.writeText(cmd);
-                              setCopiedAwsCmd(true);
-                              setTimeout(() => setCopiedAwsCmd(false), 2000);
-                            }}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-[10px] text-neutral-300 font-semibold transition-colors"
-                            title="Copy AWS CLI query to clipboard"
-                          >
-                            {copiedAwsCmd ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                            {copiedAwsCmd ? "Copied!" : "Copy Command"}
-                          </button>
-                        </div>
-                        <div className="bg-neutral-950 p-2.5 rounded border border-neutral-800 relative">
-                          <code className="text-[10px] text-neutral-500 font-mono block whitespace-pre-wrap leading-relaxed select-all">
-                            {`TASK_ARN=$(aws ecs describe-tasks --region eu-west-1 --cluster ferret-runners --tasks $(aws ecs list-tasks --region eu-west-1 --cluster ferret-runners --query "taskArns" --output text) | jq -r --arg rid "${selectedRunner.id}" '.tasks[] | select(any(.overrides?.containerOverrides[]?.environment[]?; .name == "FERRET_RUNNER_ID" and .value == $rid)) | .taskArn') && aws ecs execute-command --region eu-west-1 --cluster ferret-runners --task \n\${TASK_ARN##*/} --container runner --command "/bin/bash" --interactive`}
-                          </code>
-                        </div>
-                        <p className="text-[11px] text-neutral-400 leading-relaxed">
-                          Requires AWS CLI, <code>session-manager-plugin</code>, and authorized local AWS credentials configured on your host machine.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
 

@@ -57,7 +57,7 @@ export function NewRunModal({
   const [pathFollowOnIds, setPathFollowOnIds] = useState<string[]>([])
 
   // Dens selection (multi-den sharding)
-  const [dens, setDens] = useState<{ id: string; name: string; den_type: string }[]>([])
+  const [dens, setDens] = useState<{ id: string; name: string }[]>([])
   const [selectedDenIds, setSelectedDenIds] = useState<string[]>(["local"])
   const [shardingStrategy, setShardingStrategy] = useState("round_robin")
   const [maxConcurrency, setMaxConcurrency] = useState(5)
@@ -590,7 +590,7 @@ export function NewRunModal({
                     onChange={() => toggleDen(d.id)}
                     className="accent-brand-500"
                   />
-                  <span>{d.name} (AWS Fargate)</span>
+                  <span>{d.name} (AWS)</span>
                 </label>
               ))}
             </div>

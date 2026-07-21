@@ -233,9 +233,6 @@ const getFriendlySource = (component: string): string => {
   if (comp.includes("script_execution") || comp.includes("execution_engine")) {
     return "Workflow Executor"
   }
-  if (comp.includes("fargate") || comp.includes("wg_orchestrator")) {
-    return "AWS Cloud Scaling"
-  }
   if (comp.includes("session_tunnel") || comp.includes("tunnel")) {
     return "Log Stream Tunnel"
   }
@@ -273,9 +270,6 @@ const getSourceColor = (component: string): string => {
   }
   if (comp.includes("script_execution") || comp.includes("execution_engine")) {
     return "text-emerald-400"
-  }
-  if (comp.includes("fargate") || comp.includes("wg_orchestrator")) {
-    return "text-orange-400"
   }
   if (comp.includes("session_tunnel") || comp.includes("tunnel")) {
     return "text-pink-400"
@@ -316,7 +310,6 @@ const SEVERITIES = [
 const SOURCES = [
   { value: "chats_engine", label: "AI Agent Loop" },
   { value: "script_execution_engine", label: "Workflow Executor" },
-  { value: "fargate_wg_orchestrator", label: "AWS Cloud Scaling" },
   { value: "session_tunnel", label: "Log Stream Tunnel" },
   { value: "runners", label: "Runner Controller" },
   { value: "docker-shim", label: "Container Sandbox" },

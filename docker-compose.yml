@@ -55,18 +55,20 @@ services:
       # Mount source over the built image so Python changes are picked up
       # without rebuilding. watchfiles (below) auto-restarts uvicorn on change.
       - ./src/apps/api:/app
-      - ./terraform:/app/terraform
     # Use watchfiles to restart uvicorn when source files change.
     # WATCHFILES_FORCE_POLLING=true uses stat() instead of inotify so it works
     # reliably across Docker bind mounts where the host does not propagate inotify
     # events into the container (the common case on Linux with overlayfs/bind mounts).
     # This avoids the --reload fork that breaks Docker port mapping.
+    # NOTE: watchfiles CLI signature is `watchfiles <target-command> <paths...>`.
+    # The target command must come first; --ignore-paths takes directory names
+    # to ignore (e.g. __pycache__), not the target command.
     command:
       - python
       - -m
       - watchfiles
       - --ignore-paths
-      - /app/terraform
+      - "__pycache__,.pytest_cache"
       - "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --ws websockets"
       - /app
     networks:

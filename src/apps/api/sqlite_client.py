@@ -236,7 +236,6 @@ class SQLiteClient(ProjectsMixin):
             CREATE TABLE IF NOT EXISTS setup_progress (
                 id            INTEGER PRIMARY KEY CHECK (id = 1),
                 step          INTEGER,
-                den_type      TEXT,
                 verified      INTEGER,
                 verifying     INTEGER,
                 verify_logs   TEXT,
@@ -349,15 +348,11 @@ class SQLiteClient(ProjectsMixin):
                 created_at TEXT NOT NULL
             );
 
-            -- Dens: runner providers (Local vs. multiple AWS Fargate environments)
+            -- Dens: runner providers
             CREATE TABLE IF NOT EXISTS dens (
                 id                 TEXT PRIMARY KEY,
                 name               TEXT NOT NULL,
-                type               TEXT NOT NULL DEFAULT 'local', -- 'local' or 'aws'
                 max_runners        INTEGER NOT NULL DEFAULT 10,
-                aws_access_key     TEXT DEFAULT '',
-                aws_secret_key     TEXT DEFAULT '',
-                aws_region         TEXT DEFAULT 'eu-west-1',
                 runner_image       TEXT DEFAULT '',
                 warm_runners       INTEGER NOT NULL DEFAULT 0,
                 kill_if_unreachable INTEGER NOT NULL DEFAULT 1,
@@ -1046,10 +1041,6 @@ class SQLiteClient(ProjectsMixin):
         d.setdefault("annotation", None)
         # source may be absent in rows from older schema versions
         d["source"] = row["source"] if "source" in row.keys() else "proxy"
-        # project_id may be absent in rows from older schema versions
-        d.setdefault("project_id", "temp")
-        # Remove project_id from dict before passing to HttpRequest (not a field on it)
-        d.pop("project_id", None)
         return HttpRequest(**d)
 
     # ------------------------------------------------------------------

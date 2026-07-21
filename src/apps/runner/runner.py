@@ -253,7 +253,6 @@ async def execute_job_async(ws, run_payload):
         except Exception:
             pass
     finally:
-        global _current_subprocess
         if _current_subprocess:
             try:
                 os.killpg(os.getpgid(_current_subprocess.pid), 9)
@@ -312,16 +311,6 @@ async def async_main():
                             
                             last_active_time = time.time()
                             _active_task = asyncio.create_task(execute_job_async(ws, payload))
-                            
-                            # Single-use Fargate runner: initiate shutdown after a job runs and finishes
-                            if RUNNER_ID.startswith("runner-fargate-") and not IS_WARM_RUNNER:
-                                logger.info("Single-use Fargate runner waiting for job execution to complete...")
-                                try:
-                                    await _active_task
-                                except asyncio.CancelledError:
-                                    logger.warning("Single-use task execution was cancelled.")
-                                logger.info("Single-use Fargate runner completed its run. Shutting down daemon...")
-                                return  # Exits async_main, shutting down the container
                 except websockets.ConnectionClosed:
                     logger.warning("WebSocket control connection closed by server.")
                 finally:
@@ -338,28 +327,6 @@ async def async_main():
                         _active_task = None
         except Exception as e:
             logger.error(f"Failed to connect or maintain WebSocket: {e}. Reconnecting in {backoff}s...")
-            
-            # Fargate runner lifecycle checks during API outage
-            now = time.time()
-            if RUNNER_ID.startswith("runner-fargate-"):
-                if _has_connected:
-                    if not IS_WARM_RUNNER:
-                        if now - last_active_time > 60.0:
-                            logger.info("Fargate runner idle timeout reached. Initiating shutdown...")
-                            break
-                    if KILL_IF_UNREACHABLE and (now - last_successful_contact > KILL_TIMEOUT_SECONDS):
-                        logger.critical(
-                            f"Fargate runner lost contact with Ferret API for over {int(KILL_TIMEOUT_SECONDS // 60)} minutes. "
-                            "Initiating self-preservation shutdown..."
-                        )
-                        break
-                else:
-                    if KILL_IF_UNREACHABLE and (now - RUNNER_START_TIME > KILL_TIMEOUT_SECONDS):
-                        logger.critical(
-                            f"Fargate runner failed to reach API during boot window of {int(KILL_TIMEOUT_SECONDS // 60)} minutes. "
-                            "Initiating self-preservation shutdown..."
-                        )
-                        break
             
             await asyncio.sleep(backoff)
             backoff = min(60, backoff * 2)

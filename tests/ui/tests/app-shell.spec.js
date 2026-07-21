@@ -28,17 +28,17 @@ test.describe('App shell — sidebar structure', () => {
     await expect(subtitle).toBeVisible({ timeout: 5000 });
   });
 
-  test('sidebar contains all 9 nav items', async ({ page }) => {
-    // Current navItems: History, Snare, Gnaw, Pounce, Plans, Hunts, Findings, Projects, Settings
+  test('sidebar contains all 12 nav items', async ({ page }) => {
+    // Current navItems: History, Snare, Gnaw, Pounce, Plans, Workspaces, Runs, Hunts, Findings, Projects, Logs, Settings
     const navLinks = page.locator('aside nav a');
-    await expect(navLinks).toHaveCount(9, { timeout: 5000 });
+    await expect(navLinks).toHaveCount(12, { timeout: 5000 });
   });
 
   test('nav items include expected labels', async ({ page }) => {
     // Current nav as defined in app-shell.tsx navItems array.
     const expectedLabels = [
       'History', 'Snare', 'Gnaw', 'Pounce', 'Plans',
-      'Hunts', 'Findings', 'Projects', 'Settings',
+      'Workspaces', 'Runs', 'Hunts', 'Findings', 'Projects', 'Logs', 'Settings',
     ];
     for (const label of expectedLabels) {
       const link = page.locator(`aside nav a:has-text("${label}")`);

@@ -17,7 +17,7 @@ def main():
     rows = []
     for d in data:
         rid = d.get("id") or "N/A"
-        rtype = "Fargate" if "fargate" in rid else "Local"
+        rtype = "Local"
         
         # Last seen formatting
         last_seen_epoch = d.get("last_seen", 0)

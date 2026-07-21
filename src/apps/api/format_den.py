@@ -3,15 +3,13 @@ import json
 import argparse
 
 def format_list(data):
-    headers = ["ID", "Name", "Type", "Max Runners", "AWS Region"]
+    headers = ["ID", "Name", "Max Runners"]
     rows = []
     for d in data:
         rows.append([
             d.get("id") or "",
             d.get("name") or "",
-            d.get("den_type") or d.get("type") or "",
             str(d.get("den_max_runners") or d.get("max_runners") or ""),
-            d.get("den_aws_region") or d.get("aws_region") or ""
         ])
     col_widths = [max(len(h), max(len(row[i]) for row in rows)) for i, h in enumerate(headers)]
     col_fmt = "  ".join("%-" + str(w) + "s" for w in col_widths)
@@ -25,14 +23,9 @@ def format_info(d):
     fields = [
         ("ID", d.get("id") or ""),
         ("Name", d.get("name") or ""),
-        ("Type", d.get("den_type") or d.get("type") or ""),
         ("Max Runners", str(d.get("den_max_runners") or d.get("max_runners") or "")),
-        ("AWS Access Key", d.get("den_aws_access_key") or d.get("aws_access_key") or ""),
-        ("AWS Secret Key", d.get("den_aws_secret_key") or d.get("aws_secret_key") or ""),
-        ("AWS Region", d.get("den_aws_region") or d.get("aws_region") or ""),
     ]
-    # Filter out empty fields except ID, Name, Type
-    fields = [f for f in fields if f[1] or f[0] in ("ID", "Name", "Type")]
+    fields = [f for f in fields if f[1] or f[0] in ("ID", "Name")]
     
     col_widths = [max(len(f[0]) for f in fields), max(len(f[1]) for f in fields)]
     col_fmt = "  ".join("%-" + str(w) + "s" for w in col_widths)
@@ -54,7 +47,6 @@ def main():
         print("Failed to parse JSON. Is the API running?")
         sys.exit(1)
 
-    # Check for API error details
     if isinstance(data, dict) and "detail" in data:
         print(f"Error: {data['detail']}")
         sys.exit(1)

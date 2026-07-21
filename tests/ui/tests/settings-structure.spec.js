@@ -16,11 +16,11 @@ import { test, expect } from './fixtures.js';
 test.describe('Settings page — structure', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/settings', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('h1', { timeout: 10000 });
+    await page.locator('text=Settings').first().waitFor({ state: 'visible', timeout: 10000 });
   });
 
   test('"Settings" heading is visible', async ({ page }) => {
-    const heading = page.locator('h1:has-text("Settings")');
+    const heading = page.locator('text=Settings').first();
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 

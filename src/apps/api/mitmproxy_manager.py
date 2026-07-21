@@ -140,6 +140,13 @@ class FerretAddon:
     # ------------------------------------------------------------------
 
     async def _broadcast(self, http_request: HttpRequest) -> None:
+        # Look up the rowid (seq) from the DB so the UI gets a proper integer ID
+        row = await self.db_client._db.execute(
+            "SELECT rowid FROM requests WHERE id = ?", (http_request.id,)
+        )
+        row_data = await row.fetchone()
+        if row_data:
+            http_request.seq = row_data[0]
         message = json.dumps({"type": "new_request", "data": http_request.model_dump(mode="json")})
         await self.ws_manager.broadcast(message)
 

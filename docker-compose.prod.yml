@@ -36,7 +36,6 @@ services:
       FERRET_RUNNER_IMAGE: "ghcr.io/synlace/ferret-runner:${FERRET_VERSION:-v1.6.3}"
     volumes:
       - ${FERRET_DATA_DIR:-./data}:/data
-      - ./terraform:/app/terraform
     networks:
       - default
       - docker-internal

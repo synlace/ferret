@@ -143,6 +143,15 @@ async function gotoWithSession(page, files = [], fileContents = {}) {
   const sessionBtn = page.locator('text="File Tree Test Session"').first();
   await sessionBtn.click();
   await page.waitForTimeout(500);
+
+  // If files are provided, click the Scripts button to expand the file list
+  if (files.length > 0) {
+    const scriptsBtn = page.locator('button:has-text("Scripts")');
+    if (await scriptsBtn.isVisible()) {
+      await scriptsBtn.click();
+      await page.waitForTimeout(300);
+    }
+  }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

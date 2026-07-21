@@ -174,14 +174,8 @@ async def create_run(request: Request, project_id: str = "temp"):
                     follow_on_plan_ids=follow_on_plan_ids,
                     follow_on_path_plan_ids=follow_on_path_plan_ids,
                 )
-            )
-            
-            # Ensure sufficient runner capacity exists on the targeted Den
-            if first_run.den_id and first_run.den_id != "local":
-                asyncio.create_task(
-                    deps.fargate_orchestrator.ensure_runner_capacity(first_run.den_id, 1)
-                )
-                
+)
+
             # Schedule sequential execution of the remaining steps in the pipeline
             if len(runspec.pipeline) > 1:
                 async def _run_remaining_steps():
@@ -226,12 +220,6 @@ async def create_run(request: Request, project_id: str = "temp"):
                         )
                         await deps.db_client.create_run(next_run)
                         
-                        # Ensure sufficient runner capacity exists on the dynamically targeted Den
-                        if next_run.den_id and next_run.den_id != "local":
-                            asyncio.create_task(
-                                deps.fargate_orchestrator.ensure_runner_capacity(next_run.den_id, 1)
-                            )
-
                         await deps.script_execution_engine.execute_run_in_background(
                             run_id=next_run_id,
                             workspace_id=workspace_id,
@@ -313,11 +301,6 @@ async def create_run(request: Request, project_id: str = "temp"):
                     follow_on_path_plan_ids=body.follow_on_path_plan_ids,
                 )
             )
-
-            if run.den_id and run.den_id != "local":
-                asyncio.create_task(
-                    deps.fargate_orchestrator.ensure_runner_capacity(run.den_id, body.runner_count or 1)
-                )
 
             return run.model_dump()
             
